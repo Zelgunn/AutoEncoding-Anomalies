@@ -1,10 +1,11 @@
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
+from keras.optimizers import Adam
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
+from keras.backend import binary_crossentropy
 from keras.utils import conv_utils
 from keras.utils.generic_utils import to_list
 import tensorflow as tf
-import numpy as np
 from abc import ABC, abstractmethod
 import os
 import json
@@ -41,6 +42,7 @@ class AutoEncoderBaseModel(ABC):
         self._scales_input_shapes = None
         self.default_activation = None
         self.embeddings_activation = None
+        self.optimizer = None
 
         self.log_dir = None
         self.tensorboard = None
@@ -66,6 +68,11 @@ class AutoEncoderBaseModel(ABC):
 
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
+
+        self.optimizer = Adam(lr=self.config["optimizer"]["lr"],
+                              beta_1=self.config["optimizer"]["beta_1"],
+                              beta_2=self.config["optimizer"]["beta_2"],
+                              decay=self.config["optimizer"]["decay"])
 
     # region Model building
     def build_layers(self):
@@ -239,7 +246,7 @@ class AutoEncoderBaseModel(ABC):
                         epoch_length: int,
                         epochs: int,
                         **kwargs):
-        raise NotImplementedError
+        self.train_loop(database, callbacks, batch_size, epoch_length, epochs, scale)
 
     def train_loop(self,
                    database: Database,
@@ -551,7 +558,7 @@ def absolute_error(y_true, y_pred, axis=None):
 
 
 def squared_error(y_true, y_pred, axis=None):
-    error = tf.square(y_true, y_pred)
+    error = tf.square(y_true - y_pred)
     return tf.reduce_mean(error, axis)
 
 
@@ -563,5 +570,12 @@ def cosine_distance(y_true, y_pred, axis=None):
         return tf.reduce_mean(distance, axis)
 
 
-reconstruction_metrics = {"L1": absolute_error, "L2": squared_error, "cos": cosine_distance}
+def mean_binary_crossentropy(y_true, y_pred, axis=None):
+    return tf.reduce_mean(binary_crossentropy(y_true, y_pred), axis=axis)
+
+
+reconstruction_metrics = {"L1": absolute_error,
+                          "L2": squared_error,
+                          "cos": cosine_distance,
+                          "bce": mean_binary_crossentropy}
 # endregion

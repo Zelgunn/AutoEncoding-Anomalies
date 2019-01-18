@@ -35,5 +35,5 @@ max_scale = 3
 auto_encoder.train(ucsd_database,
                    scale=max_scale,
                    epoch_length=250,
-                   epochs=[90, 100, 200, 1000],
+                   epochs=[90, 100, 200, 300],
                    batch_size=[128, 128, 64, 32])

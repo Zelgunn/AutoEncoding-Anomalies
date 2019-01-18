@@ -1,8 +1,10 @@
 <component name="ProjectDictionaryState">
   <dictionary name="zelgunn">
     <words>
+      <w>autoencoded</w>
       <w>conv</w>
       <w>convolutional</w>
+      <w>crossentropy</w>
       <w>cuda</w>
       <w>dataset</w>
       <w>datasets</w>

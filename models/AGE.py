@@ -1,6 +1,6 @@
 from keras.layers import Input, Conv2D, Dense, Reshape
 from keras.optimizers import Adam
-from keras.callbacks import CallbackList, ProgbarLogger, BaseLogger, LearningRateScheduler
+from keras.callbacks import CallbackList
 from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
@@ -51,30 +51,25 @@ class AGE(AutoEncoderBaseModel):
         fake_data_encoder_loss = self.build_loss(True, False, fake_data_latent)
         fake_data_decoder_loss = self.build_loss(False, False, fake_data_latent)
 
-        optimizer = Adam(lr=self.config["optimizer"]["lr"],
-                         beta_1=self.config["optimizer"]["beta_1"],
-                         beta_2=self.config["optimizer"]["beta_2"],
-                         decay=self.config["optimizer"]["decay"])
-
         # Real Data
         encoder.trainable = True
         decoder.trainable = True
         encoder_real_data_trainer = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output,
                                                name="Encoder_real_data_Model_scale_{0}".format(scale))
-        encoder_real_data_trainer.compile(optimizer, loss=real_data_encoder_loss)
+        encoder_real_data_trainer.compile(self.optimizer, loss=real_data_encoder_loss)
         encoder_fake_data_trainer = KerasModel(inputs=decoder_encoder_input, outputs=decoder_encoder_output,
                                                name="Encoder_fake_data_Model_scale_{0}".format(scale))
-        encoder_fake_data_trainer.compile(optimizer, loss=fake_data_encoder_loss)
+        encoder_fake_data_trainer.compile(self.optimizer, loss=fake_data_encoder_loss)
 
         # Fake Data
         encoder.trainable = False
         decoder.trainable = True
         decoder_real_data_trainer = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output,
                                                name="Decoder_real_data_Model_scale_{0}".format(scale))
-        decoder_real_data_trainer.compile(optimizer, loss=real_data_decoder_loss)
+        decoder_real_data_trainer.compile(self.optimizer, loss=real_data_decoder_loss)
         decoder_fake_data_trainer = KerasModel(inputs=decoder_encoder_input, outputs=decoder_encoder_output,
                                                name="Decoder_fake_data_Model_scale_{0}".format(scale))
-        decoder_fake_data_trainer.compile(optimizer, loss=fake_data_decoder_loss)
+        decoder_fake_data_trainer.compile(self.optimizer, loss=fake_data_decoder_loss)
 
         scale_models = AGE_Scale(encoder, decoder,
                                  encoder_real_data_trainer, encoder_fake_data_trainer,
@@ -113,7 +108,7 @@ class AGE(AutoEncoderBaseModel):
                 latent = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(latent)
 
             outputs = latent
-        encoder = KerasModel(inputs=input_layer, outputs=outputs, name="encoder_name")
+        encoder = KerasModel(inputs=input_layer, outputs=outputs, name=encoder_name)
         return encoder
 
     def build_decoder_for_scale(self, scale: int):
@@ -183,16 +178,6 @@ class AGE(AutoEncoderBaseModel):
     @property
     def can_be_pre_trained(self):
         return True
-
-    def pre_train_scale(self,
-                        database: Database,
-                        callbacks: CallbackList,
-                        scale: int,
-                        batch_size: int,
-                        epoch_length: int,
-                        epochs: int,
-                        **kwargs):
-        self.train_loop(database, callbacks, batch_size, epoch_length, epochs, scale)
 
     def train_loop(self,
                    database: Database,

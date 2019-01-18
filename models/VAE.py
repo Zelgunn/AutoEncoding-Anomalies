@@ -63,18 +63,13 @@ class VAE(AutoEncoderBaseModel):
             output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
                                   activation="sigmoid")(layer)
 
-        model = KerasModel(inputs=input_layer, outputs=output_layer)
-        optimizer = Adam(lr=self.config["optimizer"]["lr"],
-                         beta_1=self.config["optimizer"]["beta_1"],
-                         beta_2=self.config["optimizer"]["beta_2"],
-                         decay=self.config["optimizer"]["decay"])
-
         def vae_loss(y_true, y_pred):
-            reconstruction_loss = reconstruction_metrics[self.config["reconstruction_metrics"]](y_true, y_pred)
+            reconstruction_loss = reconstruction_metrics[self.config["reconstruction_loss"]](y_true, y_pred)
             divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_log_var)
             return reconstruction_loss + divergence
 
-        model.compile(optimizer, loss=vae_loss, metrics=self.config["metrics"])
+        model = KerasModel(inputs=input_layer, outputs=output_layer)
+        model.compile(self.optimizer, loss=vae_loss, metrics=self.config["metrics"])
         self._models_per_scale[scale] = model
         return model
 
