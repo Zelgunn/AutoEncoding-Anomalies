@@ -80,7 +80,7 @@ class AUCCallback(TensorBoardPlugin):
 
         tpr, fnr, fpr = self.session.run([self.true_positive_rate, self.false_negative_rate, self.false_positive_rate])
 
-        auc_plot_image = plot_line2d_to_array(tpr, fpr, self.plot_size)
+        auc_plot_image = plot_line2d_to_array(fpr, tpr, self.plot_size)
         auc_plot_image = cv2.cvtColor(auc_plot_image, cv2.COLOR_RGB2GRAY)
 
         rp_plot_x = tpr / (tpr + fnr + 1e-7)
