@@ -1,6 +1,6 @@
 from keras.layers import Input, Conv2D, Dense, Reshape
 from keras.optimizers import Adam
-from keras.callbacks import CallbackList, ProgbarLogger, LearningRateScheduler
+from keras.callbacks import CallbackList, ProgbarLogger, BaseLogger, LearningRateScheduler
 from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
@@ -185,17 +185,18 @@ class AGE(AutoEncoderBaseModel):
 
     def pre_train_scale(self, database: Database, callbacks: CallbackList, scale: int, batch_size, epoch_length, epochs,
                         **kwargs):
-        scale_shape = self.scales_input_shapes[scale]
-        database = database.resized_to_scale(scale_shape)
-        train_images = database.train_dataset.images
-        test_images = database.test_dataset.images
-
-        generator = NoisyImagesGenerator(train_images, dropout_rate=0.0, batch_size=batch_size,
-                                         epoch_length=epoch_length)
-        test_generator = NoisyImagesGenerator(test_images, dropout_rate=0.0, batch_size=batch_size)
-
-        for epoch in range(epochs):
-            self.train_epoch(epoch, generator, test_generator, scale=scale, callbacks=callbacks)
+        self.train_loop(database, callbacks, batch_size, epoch_length, epochs, scale)
+        # scale_shape = self.scales_input_shapes[scale]
+        # database = database.resized_to_scale(scale_shape)
+        # train_images = database.train_dataset.images
+        # test_images = database.test_dataset.images
+        #
+        # train_generator = NoisyImagesGenerator(train_images, dropout_rate=0.0, batch_size=batch_size,
+        #                                        epoch_length=epoch_length)
+        # test_generator = NoisyImagesGenerator(test_images, dropout_rate=0.0, batch_size=batch_size)
+        #
+        # for epoch in range(epochs):
+        #     self.train_epoch(epoch, train_generator, test_generator, scale=scale, callbacks=callbacks)
 
     def train_loop(self, database: Database, callbacks: CallbackList, batch_size, epoch_length, epochs, scale,
                    **kwargs):
@@ -206,10 +207,10 @@ class AGE(AutoEncoderBaseModel):
                                                epoch_length=epoch_length)
         test_generator = NoisyImagesGenerator(database.test_dataset.images, dropout_rate=0.0, batch_size=batch_size)
 
-        for i in range(epochs):
-            self.train_epoch(i, train_generator, test_generator, scale, callbacks)
+        for _ in range(epochs):
+            self.train_epoch(train_generator, test_generator, scale, callbacks)
 
-    def train_epoch(self, epoch: int,
+    def train_epoch(self,
                     train_generator,
                     test_generator=None,
                     scale: int = None,
@@ -218,7 +219,7 @@ class AGE(AutoEncoderBaseModel):
         scale_models = self.get_scale_models(scale)
         base_model = self.get_model_at_scale(scale)
 
-        AGE.on_epoch_begin(epoch, callbacks)
+        self.on_epoch_begin(callbacks)
 
         for batch_index in range(epoch_length):
             decoder_steps = self.config["decoder_steps"]
@@ -242,7 +243,7 @@ class AGE(AutoEncoderBaseModel):
             AGE.on_batch_end(batch_index, batch_size,
                              encoder_real_data_loss, encoder_fake_data_loss, decoder_fake_data_loss, callbacks)
 
-        AGE.on_epoch_end(epoch, base_model, train_generator, test_generator, callbacks)
+        self.on_epoch_end(base_model, train_generator, test_generator, callbacks)
 
     # endregion
 
@@ -265,13 +266,12 @@ class AGE(AutoEncoderBaseModel):
         if callbacks:
             callbacks.on_batch_end(batch_index, batch_logs)
 
-    @staticmethod
-    def on_epoch_begin(epoch, callbacks: CallbackList = None):
+    def on_epoch_begin(self, callbacks: CallbackList = None):
         if callbacks:
-            callbacks.on_epoch_begin(epoch)
+            callbacks.on_epoch_begin(self.epochs_seen)
 
-    @staticmethod
-    def on_epoch_end(epoch, base_model,
+    def on_epoch_end(self,
+                     base_model,
                      train_generator, test_generator=None,
                      callbacks: CallbackList = None,
                      epoch_logs=None):
@@ -288,14 +288,20 @@ class AGE(AutoEncoderBaseModel):
 
         train_generator.on_epoch_end()
         if callbacks:
-            callbacks.on_epoch_end(epoch, epoch_logs)
+            callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
+        self.epochs_seen += 1
 
     # endregion
 
     # region Callbacks (building)
     def build_common_callbacks(self):
         common_callbacks = super(AGE, self).build_common_callbacks()
-        progbar_logger = ProgbarLogger(count_mode="steps", stateful_metrics=["val_loss", "val_mean_absolute_error"])
+        stateful_metrics = []  # ["val_loss", "val_mean_absolute_error"]
+
+        base_logger = BaseLogger(stateful_metrics=stateful_metrics)
+        common_callbacks.insert(0, base_logger)
+
+        progbar_logger = ProgbarLogger(count_mode="steps", stateful_metrics=stateful_metrics)
         common_callbacks.append(progbar_logger)
 
         if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):

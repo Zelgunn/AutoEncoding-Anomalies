@@ -41,6 +41,7 @@ class AutoEncoderBaseModel(ABC):
 
         self.log_dir = None
         self.tensorboard = None
+        self.epochs_seen = 0
 
     def load_config(self, config_file):
         with open(config_file) as tmp_file:
@@ -181,8 +182,7 @@ class AutoEncoderBaseModel(ABC):
         # endregion
 
         # region Max scale training
-        AutoEncoderBaseModel.update_callbacks_param(common_callbacks, "epochs", epochs)
-
+        AutoEncoderBaseModel.update_callbacks_param(common_callbacks, "epochs", epochs + self.epochs_seen)
         anomaly_callbacks = self.build_anomaly_callbacks(database, scale=scale)
         anomaly_callbacks = self.setup_callbacks(anomaly_callbacks, model, batch_size, pre_train_epochs, epoch_length,
                                                  samples_count)
@@ -204,6 +204,7 @@ class AutoEncoderBaseModel(ABC):
         for scale in range(max_scale):
             # model = self.get_model_at_scale(scale)
             # callbacks.set_model(model)
+            AutoEncoderBaseModel.update_callbacks_param(callbacks, "epochs", epochs + self.epochs_seen)
             self.print_training_model_at_scale_header(scale, max_scale)
             self.pre_train_scale(database, callbacks, scale, batch_size, epoch_length, epochs, max_scale=max_scale,
                                  **kwargs)
