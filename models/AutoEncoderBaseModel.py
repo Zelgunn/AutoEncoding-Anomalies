@@ -11,6 +11,7 @@ from typing import List, Any
 
 from layers import ResBlock2D, ResBlock2DTranspose, SpectralNormalization
 from scheme import Database, Dataset
+from generators import NoisyImagesGenerator
 from train_utils import get_log_dir
 from callbacks import ImageCallback, AUCCallback
 
@@ -228,7 +229,6 @@ class AutoEncoderBaseModel(ABC):
             self.pre_train_scale(database, callbacks, scale, batch_size[scale], epoch_length, epochs[scale],
                                  max_scale=max_scale, **kwargs)
 
-    @abstractmethod
     def pre_train_scale(self,
                         database: Database,
                         callbacks: CallbackList,
@@ -239,7 +239,6 @@ class AutoEncoderBaseModel(ABC):
                         **kwargs):
         raise NotImplementedError
 
-    @abstractmethod
     def train_loop(self,
                    database: Database,
                    callbacks: CallbackList,
@@ -248,7 +247,21 @@ class AutoEncoderBaseModel(ABC):
                    epochs: int,
                    scale: int,
                    **kwargs):
-        raise NotImplementedError
+        model = self.get_model_at_scale(scale)
+
+        scale_shape = self.scales_input_shapes[scale]
+        database = database.resized_to_scale(scale_shape)
+
+        train_noisy_images_generator = NoisyImagesGenerator(database.train_dataset.images,
+                                                            dropout_rate=0.5, batch_size=batch_size,
+                                                            epoch_length=epoch_length)
+        test_noisy_images_generator = NoisyImagesGenerator(database.test_dataset.images,
+                                                           dropout_rate=0.5, batch_size=batch_size)
+
+        model.fit_generator(train_noisy_images_generator,
+                            validation_data=test_noisy_images_generator,
+                            epochs=epochs,
+                            callbacks=callbacks.callbacks)
 
     def print_training_model_at_scale_header(self,
                                              scale: int,
@@ -456,3 +469,26 @@ class AutoEncoderBaseModel(ABC):
         return self._error_rate
 
     # endregion
+
+
+# region Reconstruction metrics
+def absolute_error(y_true, y_pred, axis=None):
+    error = tf.abs(y_true - y_pred)
+    return tf.reduce_mean(error, axis)
+
+
+def squared_error(y_true, y_pred, axis=None):
+    error = tf.square(y_true, y_pred)
+    return tf.reduce_mean(error, axis)
+
+
+def cosine_distance(y_true, y_pred, axis=None):
+    with tf.name_scope("Cosine_distance"):
+        y_true = tf.nn.l2_normalize(y_true, axis=axis)
+        y_pred = tf.nn.l2_normalize(y_pred, axis=axis)
+        distance = 2.0 - y_true * y_pred
+        return tf.reduce_mean(distance, axis)
+
+
+reconstruction_metrics = {"L1": absolute_error, "L2": squared_error, "cos": cosine_distance}
+# endregion

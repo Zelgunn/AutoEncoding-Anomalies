@@ -1,0 +1,27 @@
+{
+    "input_shape": [128, 192, 1],
+    "embeddings_size": 240,
+    "embeddings_reshape": [2, 3],
+    "use_resblock": "True",
+    "use_spectral_norm": "True",
+    "encoder": [
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 128, "kernel_size": 3, "strides": 2, "padding": "same"}
+    ],
+    "decoder": [
+        {"filters": 128, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"}
+    ],
+    "default_activation": {"name": "leaky_relu", "alpha": 0.2},
+    "embeddings_activation": {"name": "linear"},
+    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 1e-8},
+    "reconstruction_metrics": "L1"
+}

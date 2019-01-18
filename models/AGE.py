@@ -8,7 +8,8 @@ import copy
 from collections import namedtuple
 from typing import List
 
-from models import AutoEncoderBaseModel, KerasModel
+from models import AutoEncoderBaseModel, KerasModel, reconstruction_metrics
+from models.VAE import kullback_leibler_divergence_mean0_var1
 from scheme import Database
 from generators import NoisyImagesGenerator
 
@@ -154,7 +155,7 @@ class AGE(AutoEncoderBaseModel):
                 latent_mean = tf.reduce_mean(latent, axis=0)
                 latent_var = tf.square(latent - latent_mean)
                 latent_var = tf.reduce_mean(latent_var, axis=0)
-                divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_var)
+                divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_var, use_variance_log=False)
 
                 divergence *= tf.constant(divergence_weight)
             else:
@@ -192,17 +193,6 @@ class AGE(AutoEncoderBaseModel):
                         epochs: int,
                         **kwargs):
         self.train_loop(database, callbacks, batch_size, epoch_length, epochs, scale)
-        # scale_shape = self.scales_input_shapes[scale]
-        # database = database.resized_to_scale(scale_shape)
-        # train_images = database.train_dataset.images
-        # test_images = database.test_dataset.images
-        #
-        # train_generator = NoisyImagesGenerator(train_images, dropout_rate=0.0, batch_size=batch_size,
-        #                                        epoch_length=epoch_length)
-        # test_generator = NoisyImagesGenerator(test_images, dropout_rate=0.0, batch_size=batch_size)
-        #
-        # for epoch in range(epochs):
-        #     self.train_epoch(epoch, train_generator, test_generator, scale=scale, callbacks=callbacks)
 
     def train_loop(self,
                    database: Database,
@@ -347,42 +337,3 @@ class AGE(AutoEncoderBaseModel):
     # endregion
 
 
-# region Utils
-def sampling(args):
-    latent_mean, latent_log_var = args
-
-    shape = tf.shape(latent_mean)
-    batch_size = shape[0]
-    latent_dim = shape[1]
-
-    epsilon = tf.random_normal(shape=[batch_size, latent_dim], mean=0., stddev=1.0)
-    return latent_mean + tf.exp(0.5 * latent_log_var) * epsilon
-
-
-def kullback_leibler_divergence_mean0_var1(mean, variance):
-    divergence = (variance + tf.square(mean)) - tf.log(variance)
-    divergence = (tf.reduce_mean(divergence) - 1.0) * 0.5
-    return divergence
-    # return 0.5 * tf.reduce_mean(-(log_variance + 1) + tf.exp(log_variance) + tf.square(mean))
-
-
-def absolute_error(y_true, y_pred, axis):
-    error = tf.abs(y_true - y_pred)
-    return tf.reduce_mean(error, axis)
-
-
-def squared_error(y_true, y_pred, axis):
-    error = tf.square(y_true, y_pred)
-    return tf.reduce_mean(error, axis)
-
-
-def cosine_distance(y_true, y_pred, axis):
-    with tf.name_scope("Cosine_distance"):
-        y_true = tf.nn.l2_normalize(y_true, axis=axis)
-        y_pred = tf.nn.l2_normalize(y_pred, axis=axis)
-        distance = 2.0 - y_true * y_pred
-        return tf.reduce_mean(distance, axis)
-
-
-reconstruction_metrics = {"L1": absolute_error, "L2": squared_error, "cos": cosine_distance}
-# endregion
