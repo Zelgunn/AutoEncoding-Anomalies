@@ -14,6 +14,8 @@ ucsd_database.shuffle(seed=0)
 
 max_scale = 3
 
-auto_encoder.train(ucsd_database, scale=max_scale,
-                   epoch_length=500, pre_train_epochs=100, epochs=250,
-                   batch_size=64)
+auto_encoder.train(ucsd_database,
+                   scale=max_scale,
+                   epoch_length=500,
+                   epochs=[90, 100, 200, 1000],
+                   batch_size=[64, 64, 32, 16])

@@ -1,13 +1,13 @@
 import tensorflow as tf
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
-from keras.callbacks import TensorBoard, CallbackList
+from keras.callbacks import TensorBoard, CallbackList, Callback
 from keras.utils import conv_utils
 from abc import ABC, abstractmethod
 import os
 import json
 import copy
-from typing import List
+from typing import List, Any
 
 from layers import ResBlock2D, ResBlock2DTranspose, SpectralNormalization
 from scheme import Database, Dataset
@@ -17,7 +17,7 @@ from callbacks import ImageCallback, AUCCallback
 
 class AutoEncoderBaseModel(ABC):
     def __init__(self,
-                 image_summaries_max_outputs: int):
+                 image_summaries_max_outputs=3):
         self.image_summaries_max_outputs = image_summaries_max_outputs
 
         self.keras_model: KerasModel = None
@@ -43,7 +43,7 @@ class AutoEncoderBaseModel(ABC):
         self.tensorboard = None
         self.epochs_seen = 0
 
-    def load_config(self, config_file):
+    def load_config(self, config_file: str):
         with open(config_file) as tmp_file:
             self.config = json.load(tmp_file)
 
@@ -102,11 +102,11 @@ class AutoEncoderBaseModel(ABC):
             self.decoder_layers.append(layer)
 
     @abstractmethod
-    def build_model(self, config_file):
+    def build_model(self, config_file: str):
         raise NotImplementedError
 
     @abstractmethod
-    def build_model_for_scale(self, scale):
+    def build_model_for_scale(self, scale: int):
         raise NotImplementedError
 
     def get_model_at_scale(self, scale: int) -> KerasModel:
@@ -118,7 +118,7 @@ class AutoEncoderBaseModel(ABC):
             model = self._models_per_scale[scale]
         return model
 
-    def link_encoder_conv_layer(self, layer, scale, index):
+    def link_encoder_conv_layer(self, layer, scale: int, index: int):
         with tf.name_scope("encoder_scale_{0}".format(index)):
             # Layer
             layer_index = index + self.depth - (scale + 1)
@@ -133,7 +133,7 @@ class AutoEncoderBaseModel(ABC):
                                 name="encoder_dropout_{0}".format(index + 1))(layer)
         return layer
 
-    def link_decoder_deconv_layer(self, layer, scale, index):
+    def link_decoder_deconv_layer(self, layer, scale: int, index: int):
         with tf.name_scope("decoder_scale_{0}".format(index)):
             # Layer
             layer = self.decoder_layers[index](layer)
@@ -157,7 +157,15 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     # region Training
-    def train(self, database: Database, batch_size=64, epoch_length=None, epochs=1, pre_train_epochs=None, **kwargs):
+    def train(self,
+              database: Database,
+              batch_size: int or List[int] = 64,
+              epoch_length: int = None,
+              epochs: int or List[int] = 1,
+              **kwargs):
+        assert isinstance(batch_size, int) or isinstance(batch_size, list)
+        assert isinstance(epochs, int) or isinstance(epochs, list)
+
         if self.log_dir is not None:
             return
         self.log_dir = self.__class__.make_log_dir(database)
@@ -167,31 +175,37 @@ class AutoEncoderBaseModel(ABC):
         model = self.get_model_at_scale(scale)
         self.save_model_info(self.log_dir, model)
 
+        if isinstance(batch_size, int):
+            batch_size = [batch_size] * (scale + 1)
+
+        if isinstance(epochs, int):
+            epochs = [epochs] * (scale + 1)
+
         samples_count = database.train_dataset.samples_count
         if epoch_length is None:
-            epoch_length = samples_count // batch_size
+            epoch_length = [samples_count // scale_batch_size for scale_batch_size in batch_size]
 
         # region Pre-train
         common_callbacks = self.build_common_callbacks()
-        common_callbacks = self.setup_callbacks(common_callbacks, model, batch_size, pre_train_epochs, epoch_length,
-                                                samples_count)
+        common_callbacks = self.setup_callbacks(common_callbacks, model, batch_size[0], epochs[0],
+                                                epoch_length, samples_count)
 
         common_callbacks.on_train_begin()
-        if self.can_be_pre_trained and pre_train_epochs is not None:
-            self.pre_train_loop(database, common_callbacks, batch_size, epoch_length, pre_train_epochs, scale, **kwargs)
+        if self.can_be_pre_trained:
+            self.pre_train_loop(database, common_callbacks, batch_size, epoch_length, epochs, scale, **kwargs)
         # endregion
 
         # region Max scale training
-        AutoEncoderBaseModel.update_callbacks_param(common_callbacks, "epochs", epochs + self.epochs_seen)
+        AutoEncoderBaseModel.update_callbacks_param(common_callbacks, "epochs", epochs[scale] + self.epochs_seen)
         anomaly_callbacks = self.build_anomaly_callbacks(database, scale=scale)
-        anomaly_callbacks = self.setup_callbacks(anomaly_callbacks, model, batch_size, pre_train_epochs, epoch_length,
-                                                 samples_count)
+        anomaly_callbacks = self.setup_callbacks(anomaly_callbacks, model, batch_size[scale], epochs[scale],
+                                                 epoch_length, samples_count)
 
         callbacks = CallbackList(common_callbacks.callbacks + anomaly_callbacks.callbacks)
         self.print_training_model_at_scale_header(scale, scale)
 
         anomaly_callbacks.on_train_begin()
-        self.train_loop(database, callbacks, batch_size, epoch_length, epochs, scale, **kwargs)
+        self.train_loop(database, callbacks, batch_size[scale], epoch_length, epochs[scale], scale, **kwargs)
         callbacks.on_train_end()
         # endregion
 
@@ -199,27 +213,46 @@ class AutoEncoderBaseModel(ABC):
     def can_be_pre_trained(self):
         return False
 
-    def pre_train_loop(self, database: Database, callbacks: CallbackList, batch_size, epoch_length, epochs, max_scale,
+    def pre_train_loop(self,
+                       database: Database,
+                       callbacks: CallbackList,
+                       batch_size: List[int],
+                       epoch_length,
+                       epochs: List[int],
+                       max_scale: int,
                        **kwargs):
         for scale in range(max_scale):
-            # model = self.get_model_at_scale(scale)
-            # callbacks.set_model(model)
-            AutoEncoderBaseModel.update_callbacks_param(callbacks, "epochs", epochs + self.epochs_seen)
+            AutoEncoderBaseModel.update_callbacks_param(callbacks, "epochs", epochs[scale] + self.epochs_seen)
+            AutoEncoderBaseModel.update_callbacks_param(callbacks, "batch_size", batch_size[scale])
             self.print_training_model_at_scale_header(scale, max_scale)
-            self.pre_train_scale(database, callbacks, scale, batch_size, epoch_length, epochs, max_scale=max_scale,
-                                 **kwargs)
+            self.pre_train_scale(database, callbacks, scale, batch_size[scale], epoch_length, epochs[scale],
+                                 max_scale=max_scale, **kwargs)
 
     @abstractmethod
-    def pre_train_scale(self, database: Database, callbacks: CallbackList, scale: int, batch_size, epoch_length, epochs,
+    def pre_train_scale(self,
+                        database: Database,
+                        callbacks: CallbackList,
+                        scale: int,
+                        batch_size: int,
+                        epoch_length: int,
+                        epochs: int,
                         **kwargs):
         raise NotImplementedError
 
     @abstractmethod
-    def train_loop(self, database: Database, callbacks: CallbackList, batch_size, epoch_length, epochs, scale,
+    def train_loop(self,
+                   database: Database,
+                   callbacks: CallbackList,
+                   batch_size: int,
+                   epoch_length: int,
+                   epochs: int,
+                   scale: int,
                    **kwargs):
         raise NotImplementedError
 
-    def print_training_model_at_scale_header(self, scale, max_scale):
+    def print_training_model_at_scale_header(self,
+                                             scale: int,
+                                             max_scale: int):
         scale_shape = self.scales_input_shapes[scale]
         tmp = len(str(scale_shape[0])) + len(str(scale_shape[1]))
         print("=============================================" + "=" * tmp)
@@ -236,7 +269,9 @@ class AutoEncoderBaseModel(ABC):
         self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq="epoch")
         return [self.tensorboard]
 
-    def build_anomaly_callbacks(self, database, scale=None):
+    def build_anomaly_callbacks(self,
+                                database: Database,
+                                scale: int = None):
         scale_shape = self.scales_input_shapes[scale]
         database = database.resized_to_scale(scale_shape)
 
@@ -250,8 +285,13 @@ class AutoEncoderBaseModel(ABC):
 
         return [train_image_summary_callback, eval_image_summary_callback, auc_callback]
 
-    def setup_callbacks(self, callbacks: CallbackList or List, model: KerasModel,
-                        batch_size: int, epochs: int, epoch_length: int, samples_count: int) -> CallbackList:
+    def setup_callbacks(self,
+                        callbacks: CallbackList or List[Callback],
+                        model: KerasModel,
+                        batch_size: int,
+                        epochs: int,
+                        epoch_length: int,
+                        samples_count: int) -> CallbackList:
         callbacks = CallbackList(callbacks)
         callbacks.set_model(model)
         callbacks.set_params({
@@ -265,17 +305,19 @@ class AutoEncoderBaseModel(ABC):
         })
         return callbacks
 
-    def callback_metrics(self, model):
+    def callback_metrics(self, model: KerasModel):
         metrics_names = model.metrics_names
         validation_callbacks = ["val_{0}".format(name) for name in metrics_names]
         callback_metrics = copy.copy(metrics_names) + validation_callbacks
         return callback_metrics
 
-    def get_image_summaries(self, name):
+    def get_image_summaries(self, name: str):
         assert (self.keras_model is not None) and isinstance(self.keras_model, KerasModel)
         return self._get_images_summary(name, self.input, self.output, self.io_delta)
 
-    def get_image_summaries_at_scale(self, name, scale):
+    def get_image_summaries_at_scale(self,
+                                     name: str,
+                                     scale: int):
         inputs = self._models_per_scale[scale].input
         outputs = self._models_per_scale[scale].output
         delta = inputs - outputs
@@ -283,16 +325,19 @@ class AutoEncoderBaseModel(ABC):
 
         return self._get_images_summary(name, inputs, outputs, delta)
 
-    def image_summary_from_dataset(self, dataset: Dataset, name: str, tensorboard: TensorBoard,
-                                   frequency="epoch", scale: int = None) -> ImageCallback:
-        return ImageCallback.from_dataset(dataset.images,
-                                          self,
-                                          tensorboard,
-                                          name,
-                                          update_freq=frequency,
-                                          scale=scale)
+    def image_summary_from_dataset(self,
+                                   dataset: Dataset,
+                                   name: str,
+                                   tensorboard: TensorBoard,
+                                   frequency="epoch",
+                                   scale: int = None) -> ImageCallback:
+        return ImageCallback.from_dataset(dataset.images, self, tensorboard, name, update_freq=frequency, scale=scale)
 
-    def _get_images_summary(self, name, inputs, outputs, io_delta):
+    def _get_images_summary(self,
+                            name: str,
+                            inputs: tf.Tensor,
+                            outputs: tf.Tensor,
+                            io_delta: tf.Tensor):
         summaries = [tf.summary.image(name + "_inputs", inputs,
                                       max_outputs=self.image_summaries_max_outputs),
                      tf.summary.image(name + "_outputs", outputs,
@@ -302,7 +347,9 @@ class AutoEncoderBaseModel(ABC):
                      ]
         return tf.summary.merge(summaries)
 
-    def frame_level_average_error(self, scale=None, normalize_error=True):
+    def frame_level_average_error(self,
+                                  scale: int = None,
+                                  normalize_error=True):
         model = self.get_model_at_scale(scale)
 
         squared_delta = tf.square(model.input - model.output)
@@ -319,7 +366,9 @@ class AutoEncoderBaseModel(ABC):
         return average_error
 
     @staticmethod
-    def update_callbacks_param(callbacks: CallbackList, param_name: str, param_value):
+    def update_callbacks_param(callbacks: CallbackList,
+                               param_name: str,
+                               param_value: Any):
         for callback in callbacks:
             callback.params[param_name] = param_value
             if hasattr(callback, param_name):
@@ -355,13 +404,16 @@ class AutoEncoderBaseModel(ABC):
     # region Log dir
 
     @classmethod
-    def make_log_dir(cls, database: Database):
+    def make_log_dir(cls,
+                     database: Database):
         project_log_dir = "../logs/AnomalyBasicModelsBenchmark"
         base_dir = os.path.join(project_log_dir, cls.__name__, database.__class__.__name__)
         log_dir = get_log_dir(base_dir)
         return log_dir
 
-    def save_model_info(self, log_dir, model: KerasModel = None):
+    def save_model_info(self,
+                        log_dir: str,
+                        model: KerasModel = None):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 

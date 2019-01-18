@@ -19,17 +19,17 @@ AGE_Scale = namedtuple("AGE_Scale", ["encoder", "decoder",
 
 class AGE(AutoEncoderBaseModel):
     def __init__(self,
-                 image_summaries_max_outputs: int):
+                 image_summaries_max_outputs=3):
         super(AGE, self).__init__(image_summaries_max_outputs)
         self._scales: List[AGE_Scale] = []
 
     # region Model building
-    def build_model(self, config_file):
+    def build_model(self, config_file: str):
         self.load_config(config_file)
         self._scales = [None] * self.depth
         self.build_layers()
 
-    def build_model_for_scale(self, scale):
+    def build_model_for_scale(self, scale: int):
         encoder = self.build_encoder_for_scale(scale)
         decoder = self.build_decoder_for_scale(scale)
 
@@ -90,7 +90,7 @@ class AGE(AutoEncoderBaseModel):
         self._models_per_scale[scale] = base_model
         return base_model
 
-    def build_encoder_for_scale(self, scale):
+    def build_encoder_for_scale(self, scale: int):
         scale_input_shape = self.scales_input_shapes[scale]
         scale_channels = scale_input_shape[-1]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
@@ -115,7 +115,7 @@ class AGE(AutoEncoderBaseModel):
         encoder = KerasModel(inputs=input_layer, outputs=outputs, name="encoder_name")
         return encoder
 
-    def build_decoder_for_scale(self, scale):
+    def build_decoder_for_scale(self, scale: int):
         decoder_name = "Decoder_scale_{0}".format(scale)
         with tf.name_scope(decoder_name):
             input_layer = Input([self.embeddings_size])
@@ -133,7 +133,7 @@ class AGE(AutoEncoderBaseModel):
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 
-    def build_loss(self, is_encoder: bool, real_data: bool, latent):
+    def build_loss(self, is_encoder: bool, real_data: bool, latent: tf.Tensor):
         loss_weights = self.config["loss_weights"][
             "encoder" if is_encoder else "decoder"][
             "real_data" if real_data else "fake_data"]
@@ -183,7 +183,13 @@ class AGE(AutoEncoderBaseModel):
     def can_be_pre_trained(self):
         return True
 
-    def pre_train_scale(self, database: Database, callbacks: CallbackList, scale: int, batch_size, epoch_length, epochs,
+    def pre_train_scale(self,
+                        database: Database,
+                        callbacks: CallbackList,
+                        scale: int,
+                        batch_size: int,
+                        epoch_length: int,
+                        epochs: int,
                         **kwargs):
         self.train_loop(database, callbacks, batch_size, epoch_length, epochs, scale)
         # scale_shape = self.scales_input_shapes[scale]
@@ -198,7 +204,13 @@ class AGE(AutoEncoderBaseModel):
         # for epoch in range(epochs):
         #     self.train_epoch(epoch, train_generator, test_generator, scale=scale, callbacks=callbacks)
 
-    def train_loop(self, database: Database, callbacks: CallbackList, batch_size, epoch_length, epochs, scale,
+    def train_loop(self,
+                   database: Database,
+                   callbacks: CallbackList,
+                   batch_size: int,
+                   epoch_length: int,
+                   epochs: int,
+                   scale: int,
                    **kwargs):
         scale_shape = self.scales_input_shapes[scale]
         database = database.resized_to_scale(scale_shape)
@@ -238,7 +250,7 @@ class AGE(AutoEncoderBaseModel):
             for i in range(1, decoder_steps + 1):
                 decoder_fake_data_loss = scale_models.decoder_fake_data_trainer.train_on_batch(x=z[i], y=z[i])
                 decoder_fake_data_losses.append(decoder_fake_data_loss)
-            decoder_fake_data_loss = np.mean(decoder_fake_data_losses)
+            decoder_fake_data_loss = float(np.mean(decoder_fake_data_losses))
 
             AGE.on_batch_end(batch_index, batch_size,
                              encoder_real_data_loss, encoder_fake_data_loss, decoder_fake_data_loss, callbacks)
@@ -249,15 +261,19 @@ class AGE(AutoEncoderBaseModel):
 
     # region Callbacks (on_batch_x, on_epoch_x)
     @staticmethod
-    def on_batch_begin(batch_index: int, batch_size: int,
+    def on_batch_begin(batch_index: int,
+                       batch_size: int,
                        callbacks: CallbackList = None):
         if callbacks:
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
     @staticmethod
-    def on_batch_end(batch_index: int, batch_size: int,
-                     encoder_real_data_loss, encoder_fake_data_loss, decoder_fake_data_loss,
+    def on_batch_end(batch_index: int,
+                     batch_size: int,
+                     encoder_real_data_loss: float,
+                     encoder_fake_data_loss: float,
+                     decoder_fake_data_loss: float,
                      callbacks: CallbackList = None):
         batch_logs = {"batch": batch_index, "size": batch_size,
                       "loss": encoder_real_data_loss,
@@ -271,10 +287,11 @@ class AGE(AutoEncoderBaseModel):
             callbacks.on_epoch_begin(self.epochs_seen)
 
     def on_epoch_end(self,
-                     base_model,
-                     train_generator, test_generator=None,
+                     base_model: KerasModel,
+                     train_generator,
+                     test_generator=None,
                      callbacks: CallbackList = None,
-                     epoch_logs=None):
+                     epoch_logs: dict = None):
         if epoch_logs is None:
             epoch_logs = {}
 
@@ -320,7 +337,7 @@ class AGE(AutoEncoderBaseModel):
 
         return schedule
 
-    def callback_metrics(self, model):
+    def callback_metrics(self, model: KerasModel):
         out_labels = model.metrics_names
         real_data_metrics = copy.copy(out_labels)
         fake_data_metrics = ["fake_{0}".format(name) for name in out_labels]
