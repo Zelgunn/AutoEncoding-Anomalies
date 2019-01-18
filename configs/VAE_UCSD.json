@@ -23,5 +23,6 @@
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
     "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 1e-8},
-    "reconstruction_metrics": "L1"
+    "reconstruction_metrics": "L1",
+    "metrics": ["mean_squared_error"]
 }

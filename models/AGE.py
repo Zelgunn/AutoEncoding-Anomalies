@@ -221,15 +221,16 @@ class AGE(AutoEncoderBaseModel):
         scale_models = self.get_scale_models(scale)
         base_model = self.get_model_at_scale(scale)
 
-        self.on_epoch_begin(callbacks)
+        callbacks.on_epoch_begin(self.epochs_seen)
 
         for batch_index in range(epoch_length):
             decoder_steps = self.config["decoder_steps"]
             x, y = train_generator[0]
             batch_size = x.shape[0]
-            z = np.random.normal(size=[decoder_steps + 1, train_generator.batch_size, self.embeddings_size])
+            z = np.random.normal(size=[decoder_steps + 1, batch_size, self.embeddings_size])
 
-            AGE.on_batch_begin(batch_index, batch_size, callbacks)
+            batch_logs = {"batch": batch_index, "size": batch_size}
+            callbacks.on_batch_begin(batch_index, batch_logs)
 
             # Train Encoder
             encoder_real_data_loss = scale_models.encoder_real_data_trainer.train_on_batch(x=x, y=y)
@@ -242,39 +243,12 @@ class AGE(AutoEncoderBaseModel):
                 decoder_fake_data_losses.append(decoder_fake_data_loss)
             decoder_fake_data_loss = float(np.mean(decoder_fake_data_losses))
 
-            AGE.on_batch_end(batch_index, batch_size,
-                             encoder_real_data_loss, encoder_fake_data_loss, decoder_fake_data_loss, callbacks)
-
-        self.on_epoch_end(base_model, train_generator, test_generator, callbacks)
-
-    # endregion
-
-    # region Callbacks (on_batch_x, on_epoch_x)
-    @staticmethod
-    def on_batch_begin(batch_index: int,
-                       batch_size: int,
-                       callbacks: CallbackList = None):
-        if callbacks:
-            batch_logs = {"batch": batch_index, "size": batch_size}
-            callbacks.on_batch_begin(batch_index, batch_logs)
-
-    @staticmethod
-    def on_batch_end(batch_index: int,
-                     batch_size: int,
-                     encoder_real_data_loss: float,
-                     encoder_fake_data_loss: float,
-                     decoder_fake_data_loss: float,
-                     callbacks: CallbackList = None):
-        batch_logs = {"batch": batch_index, "size": batch_size,
-                      "loss": encoder_real_data_loss,
-                      "fake_loss": encoder_fake_data_loss,
-                      "decoder_loss": decoder_fake_data_loss}
-        if callbacks:
+            batch_logs["loss"] = encoder_real_data_loss
+            batch_logs["fake_loss"] = encoder_fake_data_loss
+            batch_logs["decoder_loss"] = decoder_fake_data_loss
             callbacks.on_batch_end(batch_index, batch_logs)
 
-    def on_epoch_begin(self, callbacks: CallbackList = None):
-        if callbacks:
-            callbacks.on_epoch_begin(self.epochs_seen)
+        self.on_epoch_end(base_model, train_generator, test_generator, callbacks)
 
     def on_epoch_end(self,
                      base_model: KerasModel,
@@ -301,32 +275,6 @@ class AGE(AutoEncoderBaseModel):
     # endregion
 
     # region Callbacks (building)
-    def build_common_callbacks(self):
-        common_callbacks = super(AGE, self).build_common_callbacks()
-        stateful_metrics = []  # ["val_loss", "val_mean_absolute_error"]
-
-        base_logger = BaseLogger(stateful_metrics=stateful_metrics)
-        common_callbacks.insert(0, base_logger)
-
-        progbar_logger = ProgbarLogger(count_mode="steps", stateful_metrics=stateful_metrics)
-        common_callbacks.append(progbar_logger)
-
-        if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
-            lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule())
-            common_callbacks.append(lr_scheduler)
-        return common_callbacks
-
-    def get_learning_rate_schedule(self):
-        lr_drop_epochs = self.config["lr_drop_epochs"]
-
-        def schedule(epoch, learning_rate):
-            if (epoch % lr_drop_epochs) == (lr_drop_epochs - 1):
-                return learning_rate * 0.5
-            else:
-                return learning_rate
-
-        return schedule
-
     def callback_metrics(self, model: KerasModel):
         out_labels = model.metrics_names
         real_data_metrics = copy.copy(out_labels)
@@ -335,5 +283,3 @@ class AGE(AutoEncoderBaseModel):
         val_metrics = ["val_{0}".format(name) for name in out_labels]
         return real_data_metrics + fake_data_metrics + decoder_metrics + val_metrics
     # endregion
-
-

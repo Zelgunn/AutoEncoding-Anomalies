@@ -74,7 +74,7 @@ class VAE(AutoEncoderBaseModel):
             divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_log_var)
             return reconstruction_loss + divergence
 
-        model.compile(optimizer, loss=vae_loss, metrics=["mae"])
+        model.compile(optimizer, loss=vae_loss, metrics=self.config["metrics"])
         self._models_per_scale[scale] = model
         return model
 

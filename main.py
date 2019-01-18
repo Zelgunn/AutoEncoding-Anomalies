@@ -12,7 +12,7 @@ if model_used == "BasicAE":
     auto_encoder.build_model("configs/BasicAE_UCSD.json")
 
 elif model_used == "ProgAE":
-    auto_encoder = BasicAE(image_summaries_max_outputs=3)
+    auto_encoder = ProgAE(image_summaries_max_outputs=3)
     auto_encoder.build_model("configs/BasicAE_UCSD.json")
 
 elif model_used == "AGE":

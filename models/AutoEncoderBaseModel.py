@@ -1,8 +1,10 @@
-import tensorflow as tf
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
-from keras.callbacks import TensorBoard, CallbackList, Callback
+from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
 from keras.utils import conv_utils
+from keras.utils.generic_utils import to_list
+import tensorflow as tf
+import numpy as np
 from abc import ABC, abstractmethod
 import os
 import json
@@ -247,21 +249,71 @@ class AutoEncoderBaseModel(ABC):
                    epochs: int,
                    scale: int,
                    **kwargs):
-        model = self.get_model_at_scale(scale)
-
         scale_shape = self.scales_input_shapes[scale]
         database = database.resized_to_scale(scale_shape)
 
-        train_noisy_images_generator = NoisyImagesGenerator(database.train_dataset.images,
-                                                            dropout_rate=0.5, batch_size=batch_size,
-                                                            epoch_length=epoch_length)
-        test_noisy_images_generator = NoisyImagesGenerator(database.test_dataset.images,
-                                                           dropout_rate=0.5, batch_size=batch_size)
+        train_generator = NoisyImagesGenerator(database.train_dataset.images,
+                                               dropout_rate=0.5,
+                                               batch_size=batch_size,
+                                               epoch_length=epoch_length)
 
-        model.fit_generator(train_noisy_images_generator,
-                            validation_data=test_noisy_images_generator,
-                            epochs=epochs,
-                            callbacks=callbacks.callbacks)
+        test_generator = NoisyImagesGenerator(database.test_dataset.images,
+                                              dropout_rate=0.5,
+                                              batch_size=batch_size)
+
+        for _ in range(epochs):
+            self.train_epoch(train_generator, test_generator, scale, callbacks)
+
+    def train_epoch(self,
+                    train_generator,
+                    test_generator=None,
+                    scale: int = None,
+                    callbacks: CallbackList = None):
+        epoch_length = len(train_generator)
+        model = self.get_model_at_scale(scale)
+
+        callbacks.on_epoch_begin(self.epochs_seen)
+
+        for batch_index in range(epoch_length):
+            x, y = train_generator[0]
+
+            batch_logs = {"batch": batch_index, "size": x.shape[0]}
+            callbacks.on_batch_begin(batch_index, batch_logs)
+
+            results = model.train_on_batch(x=x, y=y)
+
+            if "metrics" in self.config:
+                batch_logs["loss"] = results[0]
+                for metric_name, result in zip(self.config["metrics"], results[1:]):
+                    batch_logs[metric_name] = result
+            else:
+                batch_logs["loss"] = results
+
+            callbacks.on_batch_end(batch_index, batch_logs)
+
+        self.on_epoch_end(model, train_generator, test_generator, callbacks)
+
+    def on_epoch_end(self,
+                     base_model: KerasModel,
+                     train_generator,
+                     test_generator=None,
+                     callbacks: CallbackList = None,
+                     epoch_logs: dict = None):
+        if epoch_logs is None:
+            epoch_logs = {}
+
+        if test_generator:
+            out_labels = base_model.metrics_names
+            val_outs = base_model.evaluate_generator(test_generator)
+            val_outs = to_list(val_outs)
+            for label, val_out in zip(out_labels, val_outs):
+                epoch_logs["val_{0}".format(label)] = val_out
+            test_generator.on_epoch_end()
+
+        train_generator.on_epoch_end()
+        if callbacks:
+            callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
+        self.epochs_seen += 1
 
     def print_training_model_at_scale_header(self,
                                              scale: int,
@@ -280,7 +332,17 @@ class AutoEncoderBaseModel(ABC):
     def build_common_callbacks(self):
         assert self.tensorboard is None
         self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq="epoch")
-        return [self.tensorboard]
+
+        base_logger = BaseLogger()
+        progbar_logger = ProgbarLogger(count_mode="steps")
+
+        common_callbacks = [base_logger, self.tensorboard, progbar_logger]
+
+        if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
+            lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule())
+            common_callbacks.append(lr_scheduler)
+
+        return common_callbacks
 
     def build_anomaly_callbacks(self,
                                 database: Database,
@@ -386,6 +448,17 @@ class AutoEncoderBaseModel(ABC):
             callback.params[param_name] = param_value
             if hasattr(callback, param_name):
                 setattr(callback, param_name, param_value)
+
+    def get_learning_rate_schedule(self):
+        lr_drop_epochs = self.config["lr_drop_epochs"]
+
+        def schedule(epoch, learning_rate):
+            if (epoch % lr_drop_epochs) == (lr_drop_epochs - 1):
+                return learning_rate * 0.5
+            else:
+                return learning_rate
+
+        return schedule
 
     # endregion
 
