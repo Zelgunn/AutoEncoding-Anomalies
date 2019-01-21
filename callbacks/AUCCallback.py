@@ -1,4 +1,4 @@
-from keras.callbacks import Callback, TensorBoard
+from keras.callbacks import TensorBoard
 import numpy as np
 import tensorflow as tf
 from tensorboard.plugins.pr_curve import summary as pr_summary
@@ -6,7 +6,6 @@ import cv2
 from typing import Tuple
 
 from callbacks import TensorBoardPlugin
-from models import AutoEncoderBaseModel
 from scheme import Dataset
 from plot_utils import plot_line2d_to_array
 
@@ -14,35 +13,34 @@ from plot_utils import plot_line2d_to_array
 class AUCCallback(TensorBoardPlugin):
     def __init__(self,
                  tensorboard: TensorBoard,
-                 autoencoder: AutoEncoderBaseModel,
+                 predictions: tf.Tensor,
+                 inputs_placeholder: tf.Tensor,
                  dataset: Dataset,
                  update_freq: int or str = "epoch",
-                 scale: int = None,
                  plot_size: Tuple = None,
                  batch_size=32,
-                 num_thresholds=100):
+                 num_thresholds=100,
+                 name="AUC_Callback"):
         super(AUCCallback, self).__init__(tensorboard, update_freq)
 
-        self.autoencoder = autoencoder
+        self.predictions = predictions
+        self.inputs_placeholder = inputs_placeholder
         self.images = dataset.images
         self.frame_level_labels = dataset.frame_level_labels()
         self.plot_size = plot_size
         self.batch_size = batch_size
+        self.name = name
 
-        self.autoencoder_model = self.autoencoder.get_model_at_scale(scale)
-
-        with tf.name_scope("AUC_Callback"):
+        with tf.name_scope(self.name):
             self.labels_placeholder = tf.placeholder(dtype=tf.bool, shape=[None],
                                                      name="auc_labels_placeholder")
             self.predictions_placeholder = tf.placeholder(dtype=tf.float32, shape=[None],
                                                           name="auc_predictions_placeholder")
 
-            self.predictions = self.autoencoder.frame_level_average_error(scale, normalize_error=True)
-
             self.auc_op = tf.metrics.auc(labels=self.labels_placeholder,
                                          predictions=self.predictions_placeholder,
                                          num_thresholds=num_thresholds)
-            self.auc_variables = tf.local_variables(scope="AUC_Callback/auc")
+            self.auc_variables = tf.local_variables(scope=self.name + "/auc")
             self.true_positive_rate = self.auc_variables[0]
             self.false_negative_rate = self.auc_variables[1]
             self.false_positive_rate = self.auc_variables[3]
@@ -55,7 +53,7 @@ class AUCCallback(TensorBoardPlugin):
         self.batch_count = int(np.ceil(self.images.shape[0] / self.batch_size))
         self.auc_feed_dicts = []
         for i in range(self.batch_count):
-            batch = {self.autoencoder_model.input: self.images[i * batch_size: (i + 1) * batch_size]}
+            batch = {self.inputs_placeholder: self.images[i * batch_size: (i + 1) * batch_size]}
             self.auc_feed_dicts.append(batch)
 
         self.auc_image_input = None
@@ -72,6 +70,7 @@ class AUCCallback(TensorBoardPlugin):
             batch_predictions = self.session.run(self.predictions, feed_dict=self.auc_feed_dicts[i])
             predictions.append(batch_predictions)
         predictions = np.concatenate(predictions, axis=0)
+        predictions = np.squeeze(predictions)
 
         results = self.session.run([*self.auc_op, self.pr_summary_op],
                                    feed_dict={self.labels_placeholder: self.frame_level_labels,
@@ -96,11 +95,11 @@ class AUCCallback(TensorBoardPlugin):
 
         if self.auc_image_input is None:
             self.auc_image_input = tf.placeholder(dtype=tf.float32, shape=[2, *self.plot_size, 1],
-                                                  name="AUCCallback_image_summary_input")
+                                                  name=self.name + "_image_summary_input")
             self.auc_value_input = tf.placeholder(dtype=tf.float32, shape=[],
-                                                  name="AUCCallback_value_summary_input")
-            self.auc_image_summary = tf.summary.image(name="AUC_plot", tensor=self.auc_image_input)
-            self.auc_value_summary = tf.summary.scalar(name="AUC", tensor=self.auc_value_input)
+                                                  name=self.name + "_value_summary_input")
+            self.auc_image_summary = tf.summary.image(name=self.name + "_plot", tensor=self.auc_image_input)
+            self.auc_value_summary = tf.summary.scalar(name=self.name + "_scalar", tensor=self.auc_value_input)
             self.auc_summary_op = tf.summary.merge([self.auc_image_summary, self.auc_value_summary])
 
         auc_summary_result = self.session.run(self.auc_summary_op, feed_dict={self.auc_image_input: plot_images,

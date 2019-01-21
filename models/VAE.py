@@ -4,7 +4,7 @@ from keras.callbacks import CallbackList
 import tensorflow as tf
 import numpy as np
 
-from models import AutoEncoderBaseModel, KerasModel, reconstruction_metrics
+from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 from scheme import Database
 
 
@@ -64,7 +64,7 @@ class VAE(AutoEncoderBaseModel):
                                   activation="sigmoid")(layer)
 
         def vae_loss(y_true, y_pred):
-            reconstruction_loss = reconstruction_metrics[self.config["reconstruction_loss"]](y_true, y_pred)
+            reconstruction_loss = metrics_dict[self.config["reconstruction_loss"]](y_true, y_pred)
             divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_log_var)
             return reconstruction_loss + divergence
 

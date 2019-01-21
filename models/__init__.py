@@ -1,4 +1,4 @@
-from models.AutoEncoderBaseModel import AutoEncoderBaseModel, KerasModel, reconstruction_metrics
+from models.AutoEncoderBaseModel import AutoEncoderBaseModel, KerasModel, metrics_dict
 from models.BasicAE import BasicAE
 from models.ProgAE import ProgAE
 from models.AGE import AGE

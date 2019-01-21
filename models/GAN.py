@@ -4,11 +4,11 @@ import tensorflow as tf
 import numpy as np
 from collections import namedtuple
 from typing import List
-import copy
 
-from models import AutoEncoderBaseModel, KerasModel, reconstruction_metrics
+from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 from layers import ResBlock2D, SpectralNormalization
 from scheme import Database
+from callbacks import AUCCallback
 
 GAN_Scale = namedtuple("GAN_Scale", ["encoder", "decoder", "discriminator",
                                      "adversarial_generator", "autoencoder"])
@@ -65,16 +65,16 @@ class GAN(AutoEncoderBaseModel):
         adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
                                            name="AdversarialGenerator_scale_{0}".format(scale))
 
-        discriminator_loss = reconstruction_metrics[self.config["losses"]["discriminator"]]
+        discriminator_loss = metrics_dict[self.config["losses"]["discriminator"]]
         discriminator_metrics = self.config["metrics"]["discriminator"]
         discriminator.compile(self.optimizer, loss=discriminator_loss, metrics=discriminator_metrics)
 
-        autoencoder_loss = reconstruction_metrics[self.config["losses"]["autoencoder"]]
+        autoencoder_loss = metrics_dict[self.config["losses"]["autoencoder"]]
         autoencoder_metrics = self.config["metrics"]["autoencoder"]
         autoencoder.compile(self.optimizer, loss=autoencoder_loss, metrics=autoencoder_metrics)
 
         discriminator.trainable = False
-        adversarial_generator_loss = reconstruction_metrics[self.config["losses"]["generator"]]
+        adversarial_generator_loss = metrics_dict[self.config["losses"]["generator"]]
         adversarial_generator_metrics = self.config["metrics"]["generator"]
         adversarial_generator.compile(self.optimizer, loss=adversarial_generator_loss,
                                       metrics=adversarial_generator_metrics)
@@ -176,18 +176,18 @@ class GAN(AutoEncoderBaseModel):
         base_model = self.get_model_at_scale(scale)
 
         callbacks.on_epoch_begin(self.epochs_seen)
-
+        discriminator_metrics = [0, 0.5]
         for batch_index in range(epoch_length):
             x, y = train_generator[0]
             batch_size = x.shape[0]
             z = np.random.normal(size=[batch_size, self.embeddings_size])
-            ones = np.ones(shape=[batch_size])
-            zeros = np.zeros(shape=[batch_size * 2])
+            zeros = np.zeros(shape=[batch_size])
+            ones = np.ones(shape=[batch_size * 2])
 
             x_autoencoded = autoencoder.predict(x=x)
             x_generated = decoder.predict(x=z)
             x_combined = np.concatenate([y, x_autoencoded, x_generated])
-            y_combined = np.concatenate([ones, zeros])
+            y_combined = np.concatenate([zeros, ones])
             shuffle_indices = np.random.permutation(np.arange(batch_size * 3))
             x_combined = x_combined[shuffle_indices]
             y_combined = y_combined[shuffle_indices]
@@ -195,22 +195,40 @@ class GAN(AutoEncoderBaseModel):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            autoencoder_loss = autoencoder.train_on_batch(x=x, y=y)
-            generator_loss = adversarial_generator.train_on_batch(x=z, y=ones)
-            discriminator_loss = discriminator.train_on_batch(x=x_combined, y=y_combined)
+            autoencoder_metrics = autoencoder.train_on_batch(x=x, y=y)
+            generator_metrics = adversarial_generator.train_on_batch(x=z, y=zeros)
+            if discriminator_metrics[1] < 0.8:
+                discriminator_metrics = discriminator.train_on_batch(x=x_combined, y=y_combined)
 
             def add_metrics_to_batch_logs(model_name, losses):
                 metric_names = ["loss", *self.config["metrics"][model_name]]
                 for i in range(len(losses)):
                     batch_logs[model_name + '_' + metric_names[i]] = losses[i]
 
-            add_metrics_to_batch_logs("autoencoder", autoencoder_loss)
-            add_metrics_to_batch_logs("generator", generator_loss)
-            add_metrics_to_batch_logs("discriminator", discriminator_loss)
+            add_metrics_to_batch_logs("autoencoder", autoencoder_metrics)
+            add_metrics_to_batch_logs("generator", generator_metrics)
+            add_metrics_to_batch_logs("discriminator", discriminator_metrics)
 
             callbacks.on_batch_end(batch_index, batch_logs)
 
         self.on_epoch_end(base_model, train_generator, test_generator, callbacks)
+
+    def build_anomaly_callbacks(self,
+                                database: Database,
+                                scale: int = None):
+        scale_shape = self.scales_input_shapes[scale]
+        database = database.resized_to_scale(scale_shape)
+        anomaly_callbacks = super(GAN, self).build_anomaly_callbacks(database, scale)
+
+        discriminator: KerasModel = self.get_scale_models(scale).discriminator
+        discriminator_prediction = discriminator.get_output_at(0)
+        discriminator_inputs_placeholder = discriminator.get_input_at(0)
+        disc_auc_callback = AUCCallback(self.tensorboard, discriminator_prediction, discriminator_inputs_placeholder,
+                                        database.test_dataset, plot_size=(256, 256), batch_size=128,
+                                        name="Discriminator_AUC")
+
+        anomaly_callbacks.append(disc_auc_callback)
+        return anomaly_callbacks
 
     def callback_metrics(self, model: KerasModel):
         def model_metric_names(model_name):

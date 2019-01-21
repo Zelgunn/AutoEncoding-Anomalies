@@ -8,7 +8,7 @@ import copy
 from collections import namedtuple
 from typing import List
 
-from models import AutoEncoderBaseModel, KerasModel, reconstruction_metrics
+from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
 from scheme import Database
 from generators import NoisyImagesGenerator
@@ -136,7 +136,7 @@ class AGE(AutoEncoderBaseModel):
         reconstruction_weight: float = loss_weights["reconstruction"]
         divergence_weight: float = loss_weights["divergence"]
         reconstruction_metric_name = self.config["reconstruction_metrics"]["real" if real_data else "fake"]
-        reconstruction_metric = reconstruction_metrics[reconstruction_metric_name]
+        reconstruction_metric = metrics_dict[reconstruction_metric_name]
 
         def loss_function(y_true, y_pred):
             if reconstruction_weight != 0.0:

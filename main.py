@@ -32,12 +32,13 @@ else:
 
 ucsd_database = UCSDDatabase(database_path="datasets/ucsd/")
 ucsd_database = ucsd_database.resized_to_scale(auto_encoder.input_shape)
-ucsd_database.shuffle(seed=0)
+ucsd_database.shuffle(seed=1)
 
 max_scale = 4
 
 auto_encoder.train(ucsd_database,
                    scale=max_scale,
                    epoch_length=250,
-                   epochs=[90, 100, 200, 300, 300],
-                   batch_size=[128, 128, 64, 32, 32])
+                   epochs=[100, 100, 100, 100, 300],
+                   batch_size=[128, 128, 64, 32, 32],
+                   pre_train=False)

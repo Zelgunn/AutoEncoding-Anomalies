@@ -212,7 +212,7 @@ class AutoEncoderBaseModel(ABC):
                                                 epoch_length, samples_count)
 
         common_callbacks.on_train_begin()
-        if self.can_be_pre_trained:
+        if self.can_be_pre_trained and ("pre_train" not in kwargs or kwargs["pre_train"]):
             self.pre_train_loop(database, common_callbacks, batch_size, epoch_length, epochs, scale, **kwargs)
         # endregion
 
@@ -373,8 +373,10 @@ class AutoEncoderBaseModel(ABC):
         eval_image_summary_callback = self.image_summary_from_dataset(database.test_dataset, "test",
                                                                       self.tensorboard, scale=scale)
 
-        auc_callback = AUCCallback(self.tensorboard, self, database.test_dataset,
-                                   scale=scale, plot_size=(256, 256), batch_size=128)
+        auc_predictions = self.frame_level_average_error(scale, normalize_error=True)
+        auc_inputs_placeholder = self.get_model_at_scale(scale).input
+        auc_callback = AUCCallback(self.tensorboard, auc_predictions, auc_inputs_placeholder, database.test_dataset,
+                                   plot_size=(256, 256), batch_size=128, name="Error_AUC")
 
         return [train_image_summary_callback, eval_image_summary_callback, auc_callback]
 
@@ -585,7 +587,7 @@ def mean_binary_crossentropy(y_true, y_pred, axis=None):
     return tf.reduce_mean(binary_crossentropy(y_true, y_pred), axis=axis)
 
 
-reconstruction_metrics = {"L1": absolute_error,
+metrics_dict = {"L1": absolute_error,
                           "L2": squared_error,
                           "cos": cosine_distance,
                           "bce": mean_binary_crossentropy}

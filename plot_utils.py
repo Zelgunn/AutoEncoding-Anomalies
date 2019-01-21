@@ -10,7 +10,7 @@ from typing import Tuple, List
 
 def plot_line2d_to_array(x: np.ndarray, y: np.ndarray,
                          output_size: Tuple or List = None, dpi=75.0,
-                         normalize=True) -> np.ndarray:
+                         normalize=True, use_xy_limits=True) -> np.ndarray:
     if normalize:
         x = (x - x.min()) / (x.max() - x.min())
         y = (y - y.min()) / (y.max() - y.min())
@@ -22,6 +22,9 @@ def plot_line2d_to_array(x: np.ndarray, y: np.ndarray,
 
     figure = plt.Figure(figsize=figsize, dpi=dpi)
     plot = figure.add_subplot(111)
+    if use_xy_limits:
+        plot.set_xlim(0.0, 1.0)
+        plot.set_ylim(0.0, 1.0)
     plot.plot(x, y)
 
     canvas = FigureCanvasAgg(figure)
