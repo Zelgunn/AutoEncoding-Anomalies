@@ -27,6 +27,7 @@
       <w>relu</w>
       <w>resblock</w>
       <w>resized</w>
+      <w>rmsprop</w>
       <w>tanh</w>
       <w>tensorboard</w>
       <w>ucsd</w>

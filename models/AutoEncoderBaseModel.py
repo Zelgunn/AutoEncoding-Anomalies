@@ -1,6 +1,6 @@
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
-from keras.optimizers import Adam
+from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
 from keras.backend import binary_crossentropy
 from keras.utils import conv_utils
@@ -69,12 +69,23 @@ class AutoEncoderBaseModel(ABC):
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
 
-        self.optimizer = Adam(lr=self.config["optimizer"]["lr"],
-                              beta_1=self.config["optimizer"]["beta_1"],
-                              beta_2=self.config["optimizer"]["beta_2"],
-                              decay=self.config["optimizer"]["decay"])
+        self.build_optimizer()
 
     # region Model building
+    def build_optimizer(self):
+        optimizer_name = self.config["optimizer"]["name"].lower()
+        if optimizer_name == "adam":
+            self.optimizer = Adam(lr=self.config["optimizer"]["lr"],
+                                  beta_1=self.config["optimizer"]["beta_1"],
+                                  beta_2=self.config["optimizer"]["beta_2"],
+                                  decay=self.config["optimizer"]["decay"])
+        elif optimizer_name == "rmsprop":
+            self.optimizer = RMSprop(lr=self.config["optimizer"]["lr"],
+                                     rho=self.config["optimizer"]["rho"],
+                                     decay=self.config["optimizer"]["decay"])
+        else:
+            raise ValueError
+
     def build_layers(self):
         use_res_block = ("use_resblock" in self.config["use_resblock"])
         use_res_block &= self.config["use_resblock"] == "True"
@@ -260,12 +271,12 @@ class AutoEncoderBaseModel(ABC):
         database = database.resized_to_scale(scale_shape)
 
         train_generator = NoisyImagesGenerator(database.train_dataset.images,
-                                               dropout_rate=0.5,
+                                               dropout_rate=0.25,
                                                batch_size=batch_size,
                                                epoch_length=epoch_length)
 
         test_generator = NoisyImagesGenerator(database.test_dataset.images,
-                                              dropout_rate=0.5,
+                                              dropout_rate=0.25,
                                               batch_size=batch_size)
 
         for _ in range(epochs):
@@ -499,7 +510,7 @@ class AutoEncoderBaseModel(ABC):
     @classmethod
     def make_log_dir(cls,
                      database: Database):
-        project_log_dir = "../logs/AnomalyBasicModelsBenchmark"
+        project_log_dir = "../logs/AutoEncoding-Anomalies"
         base_dir = os.path.join(project_log_dir, cls.__name__, database.__class__.__name__)
         log_dir = get_log_dir(base_dir)
         return log_dir

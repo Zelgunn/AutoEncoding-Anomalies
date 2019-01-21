@@ -20,14 +20,22 @@
         {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
         {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"}
     ],
+    "discriminator": [
+        {"filters": 16, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 16, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 24, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"}
+    ],
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
-    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.0, "beta_2": 0.99, "decay": 1e-8},
-    "discriminator_steps": 1,
+    "optimizer": {"name": "rmsprop", "lr": 3e-4, "beta_1": 0.0, "beta_2": 0.99, "decay": 0.0, "rho": 0.9},
     "losses": {"discriminator": "bce", "autoencoder": "L1", "generator": "L1"},
     "metrics": {
-        "discriminator": ["accuracy"],
-        "autoencoder": ["mean_squared_error, mean_absolute_error"],
-        "generator": ["mean_squared_error", "mean_absolute_error"]
-    }
+        "discriminator": ["acc"],
+        "autoencoder": ["mse", "mae"],
+        "generator": ["mse", "mae"]
+    },
+    "steps": {"discriminator": 1, "autoencoder": 10, "generator": 10}
 }
