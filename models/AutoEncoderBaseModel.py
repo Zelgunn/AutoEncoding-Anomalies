@@ -1,7 +1,8 @@
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
 from keras.optimizers import Adam, RMSprop
-from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
+from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler, \
+    ModelCheckpoint
 from keras.backend import binary_crossentropy
 from keras.utils import conv_utils
 from keras.utils.generic_utils import to_list
@@ -41,6 +42,8 @@ class AutoEncoderBaseModel(ABC):
         self._scales_input_shapes = None
         self.default_activation = None
         self.embeddings_activation = None
+        self.use_spectral_norm = False
+        self.weight_decay_regularizer = None
         self.optimizer = None
 
         self.log_dir = None
@@ -68,6 +71,11 @@ class AutoEncoderBaseModel(ABC):
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
 
+        # self.weight_decay_regularizer = l1(self.config["weight_decay"] if "weight_decay" in self.config else None)
+
+        self.use_spectral_norm = ("use_spectral_norm" in self.config["use_spectral_norm"])
+        self.use_spectral_norm &= self.config["use_spectral_norm"] == "True"
+
         self.build_optimizer()
 
     # region Model building
@@ -86,40 +94,36 @@ class AutoEncoderBaseModel(ABC):
             raise ValueError
 
     def build_layers(self):
-        use_res_block = ("use_resblock" in self.config["use_resblock"])
-        use_res_block &= self.config["use_resblock"] == "True"
-        use_spectral_norm = ("use_spectral_norm" in self.config["use_spectral_norm"])
-        use_spectral_norm &= self.config["use_spectral_norm"] == "True"
-
         for layer_info in self.config["encoder"]:
-            if use_res_block:
-                layer = ResBlock2D(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
-                                   use_batch_normalization=False)
-            else:
-                layer = Conv2D(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
-                               padding=layer_info["padding"])
-
-            if use_spectral_norm:
-                layer = SpectralNormalization(layer)
-
+            layer = self.build_conv_layer(layer_info)
             self.encoder_layers.append(layer)
 
-        self.embeddings_layer = Dense(units=self.embeddings_size)
+        self.embeddings_layer = Dense(units=self.embeddings_size,
+                                      kernel_regularizer=self.weight_decay_regularizer,
+                                      bias_regularizer=self.weight_decay_regularizer)
 
-        i = 1
         for layer_info in self.config["decoder"]:
-            if use_res_block:
-                layer = ResBlock2DTranspose(layer_info["filters"], layer_info["kernel_size"],
-                                            strides=layer_info["strides"])
-            else:
-                layer = Deconv2D(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
-                                 padding=layer_info["padding"])
-
-            if use_spectral_norm:
-                layer = SpectralNormalization(layer)
-
-            i += 1
+            layer = self.build_deconv_layer(layer_info)
             self.decoder_layers.append(layer)
+
+    def build_conv_layer(self, layer_info, transpose=False):
+        res_block = ResBlock2D if not transpose else ResBlock2DTranspose
+        conv = Conv2D if not transpose else Deconv2D
+        if ("resblock" in layer_info) and (layer_info["resblock"] == "True"):
+            layer = res_block(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
+                              kernel_regularizer=self.weight_decay_regularizer,
+                              bias_regularizer=self.weight_decay_regularizer, use_batch_normalization=False)
+        else:
+            layer = conv(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
+                         kernel_regularizer=self.weight_decay_regularizer,
+                         bias_regularizer=self.weight_decay_regularizer,
+                         padding=layer_info["padding"])
+        if self.use_spectral_norm:
+            layer = SpectralNormalization(layer)
+        return layer
+
+    def build_deconv_layer(self, layer_info):
+        return self.build_conv_layer(layer_info, transpose=True)
 
     @abstractmethod
     def build_model(self, config_file: str):
@@ -352,8 +356,9 @@ class AutoEncoderBaseModel(ABC):
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
+        model_checkpoint = ModelCheckpoint(os.path.join(self.log_dir, "weights.{epoch:02d}.hdf5"), period=10)
 
-        common_callbacks = [base_logger, self.tensorboard, progbar_logger]
+        common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
 
         if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
             lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule())
@@ -372,7 +377,7 @@ class AutoEncoderBaseModel(ABC):
         eval_image_summary_callback = self.image_summary_from_dataset(database.test_dataset, "test",
                                                                       self.tensorboard, scale=scale)
 
-        auc_predictions = self.frame_level_average_error(scale, normalize_error=True)
+        auc_predictions = self.frame_level_average_error(scale, normalize_error=False)
         auc_inputs_placeholder = self.get_model_at_scale(scale).input
         auc_callback = AUCCallback(self.tensorboard, auc_predictions, auc_inputs_placeholder, database.test_dataset,
                                    plot_size=(256, 256), batch_size=128, name="Error_AUC")

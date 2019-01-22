@@ -82,7 +82,6 @@ class _ResBlock(Layer):
             strides = self.get_strides_at_depth(i)
 
             if self.use_batch_normalization:
-                print(outputs)
                 outputs = BatchNormalization()(outputs)
 
             outputs = conv(

@@ -2,6 +2,9 @@ import os
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+import keras.backend as K
+import tensorflow as tf
+
 from models import BasicAE, ProgAE, AGE, VAE, GAN, VAEGAN
 from datasets import UCSDDatabase
 
@@ -40,9 +43,15 @@ ucsd_database.shuffle(seed=1)
 
 max_scale = 4
 
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = False
+config.log_device_placement = False
+session = tf.Session(config=config)
+K.set_session(session)
+
 auto_encoder.train(ucsd_database,
                    scale=max_scale,
                    epoch_length=250,
-                   epochs=[100, 100, 100, 100, 300],
+                   epochs=[50, 50, 250, 250, 2000],
                    batch_size=[128, 128, 64, 32, 32],
                    pre_train=True)

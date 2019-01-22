@@ -6,7 +6,6 @@ from collections import namedtuple
 from typing import List
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
-from layers import ResBlock2D, SpectralNormalization
 from scheme import Database
 from callbacks import AUCCallback
 
@@ -24,21 +23,8 @@ class GAN(AutoEncoderBaseModel):
     def build_layers(self):
         super(GAN, self).build_layers()
 
-        use_res_block = ("use_resblock" in self.config["use_resblock"])
-        use_res_block &= self.config["use_resblock"] == "True"
-        use_spectral_norm = ("use_spectral_norm" in self.config["use_spectral_norm"])
-        use_spectral_norm &= self.config["use_spectral_norm"] == "True"
-
         for layer_info in self.config["discriminator"]:
-            if use_res_block:
-                layer = ResBlock2D(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"])
-            else:
-                layer = Conv2D(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
-                               padding=layer_info["padding"])
-
-            if use_spectral_norm:
-                layer = SpectralNormalization(layer)
-
+            layer = self.build_conv_layer(layer_info)
             self.discriminator_layers.append(layer)
 
     def build_model(self, config_file: str):
@@ -175,19 +161,17 @@ class GAN(AutoEncoderBaseModel):
         base_model = self.get_model_at_scale(scale)
 
         callbacks.on_epoch_begin(self.epochs_seen)
-        discriminator_metrics = [0, 0.5]
         for batch_index in range(epoch_length):
             x, y = train_generator[0]
             batch_size = x.shape[0]
             z = np.random.normal(size=[batch_size, self.embeddings_size])
             zeros = np.zeros(shape=[batch_size])
-            ones = np.ones(shape=[batch_size * 2])
+            ones = np.ones(shape=[batch_size])
 
-            x_autoencoded = autoencoder.predict(x=x)
             x_generated = decoder.predict(x=z)
-            x_combined = np.concatenate([y, x_autoencoded, x_generated])
+            x_combined = np.concatenate([y, x_generated])
             y_combined = np.concatenate([zeros, ones])
-            shuffle_indices = np.random.permutation(np.arange(batch_size * 3))
+            shuffle_indices = np.random.permutation(np.arange(batch_size * 2))
             x_combined = x_combined[shuffle_indices]
             y_combined = y_combined[shuffle_indices]
 
@@ -196,8 +180,7 @@ class GAN(AutoEncoderBaseModel):
 
             autoencoder_metrics = autoencoder.train_on_batch(x=x, y=y)
             generator_metrics = adversarial_generator.train_on_batch(x=z, y=zeros)
-            if discriminator_metrics[1] < 0.8:
-                discriminator_metrics = discriminator.train_on_batch(x=x_combined, y=y_combined)
+            discriminator_metrics = discriminator.train_on_batch(x=x_combined, y=y_combined)
 
             def add_metrics_to_batch_logs(model_name, losses):
                 metric_names = ["loss", *self.config["metrics"][model_name]]

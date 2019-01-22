@@ -71,6 +71,8 @@ class AUCCallback(TensorBoardPlugin):
             predictions.append(batch_predictions)
         predictions = np.concatenate(predictions, axis=0)
         predictions = np.squeeze(predictions)
+        pred_min = predictions.min()
+        predictions = (predictions - pred_min) / (predictions.max() - pred_min)
 
         results = self.session.run([*self.auc_op, self.pr_summary_op],
                                    feed_dict={self.labels_placeholder: self.frame_level_labels,
