@@ -15,9 +15,8 @@ GAN_Scale = namedtuple("GAN_Scale", ["encoder", "decoder", "discriminator",
 
 
 class GAN(AutoEncoderBaseModel):
-    def __init__(self,
-                 image_summaries_max_outputs=3):
-        super(GAN, self).__init__(image_summaries_max_outputs)
+    def __init__(self):
+        super(GAN, self).__init__()
         self.discriminator_layers = []
         self._scales: List[GAN_Scale] = []
 

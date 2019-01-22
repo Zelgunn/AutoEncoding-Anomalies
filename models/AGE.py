@@ -19,9 +19,8 @@ AGE_Scale = namedtuple("AGE_Scale", ["encoder", "decoder",
 
 
 class AGE(AutoEncoderBaseModel):
-    def __init__(self,
-                 image_summaries_max_outputs=3):
-        super(AGE, self).__init__(image_summaries_max_outputs)
+    def __init__(self):
+        super(AGE, self).__init__()
         self._scales: List[AGE_Scale] = []
 
     # region Model building

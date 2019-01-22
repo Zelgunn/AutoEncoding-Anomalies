@@ -20,9 +20,8 @@ from callbacks import ImageCallback, AUCCallback
 
 
 class AutoEncoderBaseModel(ABC):
-    def __init__(self,
-                 image_summaries_max_outputs=3):
-        self.image_summaries_max_outputs = image_summaries_max_outputs
+    def __init__(self):
+        self.image_summaries_max_outputs = 3
 
         self.keras_model: KerasModel = None
 
@@ -588,7 +587,7 @@ def mean_binary_crossentropy(y_true, y_pred, axis=None):
 
 
 metrics_dict = {"L1": absolute_error,
-                          "L2": squared_error,
-                          "cos": cosine_distance,
-                          "bce": mean_binary_crossentropy}
+                "L2": squared_error,
+                "cos": cosine_distance,
+                "bce": mean_binary_crossentropy}
 # endregion

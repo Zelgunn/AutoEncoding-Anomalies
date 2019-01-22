@@ -1,17 +1,13 @@
 from keras.layers import Input, Conv2D, Reshape, Dense, Lambda
-from keras.optimizers import Adam
-from keras.callbacks import CallbackList
 import tensorflow as tf
 import numpy as np
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
-from scheme import Database
 
 
 class VAE(AutoEncoderBaseModel):
-    def __init__(self,
-                 image_summaries_max_outputs=3):
-        super(VAE, self).__init__(image_summaries_max_outputs)
+    def __init__(self):
+        super(VAE, self).__init__()
         self.latent_mean = None
         self.latent_log_var = None
 

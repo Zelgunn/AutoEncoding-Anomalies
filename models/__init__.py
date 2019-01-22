@@ -4,3 +4,4 @@ from models.ProgAE import ProgAE
 from models.AGE import AGE
 from models.VAE import VAE
 from models.GAN import GAN
+from models.VAEGAN import VAEGAN
