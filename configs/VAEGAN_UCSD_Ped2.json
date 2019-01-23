@@ -1,0 +1,43 @@
+{
+    "input_shape": [128, 192, 1],
+    "embeddings_size": 240,
+    "embeddings_reshape": [2, 3],
+    "use_resblock": "True",
+    "use_spectral_norm": "True",
+    "encoder": [
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.25, "resblock": "True"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.25, "resblock": "True"},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.25, "resblock": "True"},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.25, "resblock": "True"},
+        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.25, "resblock": "True"},
+        {"filters": 128, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.25, "resblock": "True"}
+    ],
+    "decoder": [
+        {"filters": 128, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4, "resblock": "True"},
+        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4, "resblock": "True"},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4, "resblock": "True"},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4, "resblock": "True"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4, "resblock": "True"},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4, "resblock": "True"}
+    ],
+    "discriminator": [
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same", "dropout": 0.4}
+    ],
+    "default_activation": {"name": "leaky_relu", "alpha": 0.2},
+    "embeddings_activation": {"name": "linear"},
+    "optimizer": {"name": "adam", "lr": 1e-5, "beta_1": 0.5, "beta_2": 0.999, "decay": 0.0, "rho": 0.9},
+    "losses": {"discriminator": "bce", "autoencoder": "L1", "generator": "bce"},
+    "loss_weights": {"reconstruction": 100.0, "divergence": 0.1, "adversarial": 10.0},
+    "weight_decay": 0.001,
+    "metrics": {
+        "discriminator": ["acc"],
+        "autoencoder": ["mse"],
+        "generator": ["acc"]
+    },
+    "lr_drop_epochs": 1000
+}

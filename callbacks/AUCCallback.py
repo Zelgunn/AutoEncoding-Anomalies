@@ -16,6 +16,7 @@ class AUCCallback(TensorBoardPlugin):
                  predictions: tf.Tensor,
                  inputs_placeholder: tf.Tensor,
                  dataset: Dataset,
+                 use_frame_level_labels: bool,
                  update_freq: int or str = "epoch",
                  plot_size: Tuple = None,
                  batch_size=32,
@@ -26,15 +27,19 @@ class AUCCallback(TensorBoardPlugin):
         self.predictions = predictions
         self.inputs_placeholder = inputs_placeholder
         self.images = dataset.images
-        self.frame_level_labels = dataset.frame_level_labels()
+        if use_frame_level_labels:
+            self.labels = dataset.frame_level_labels()
+        else:
+            self.labels = np.squeeze(dataset.anomaly_labels)
         self.plot_size = plot_size
         self.batch_size = batch_size
         self.name = name
 
         with tf.name_scope(self.name):
-            self.labels_placeholder = tf.placeholder(dtype=tf.bool, shape=[None],
+            labels_shape = [None, *self.labels.shape[1:]]
+            self.labels_placeholder = tf.placeholder(dtype=tf.bool, shape=labels_shape,
                                                      name="auc_labels_placeholder")
-            self.predictions_placeholder = tf.placeholder(dtype=tf.float32, shape=[None],
+            self.predictions_placeholder = tf.placeholder(dtype=tf.float32, shape=labels_shape,
                                                           name="auc_predictions_placeholder")
 
             self.auc_op = tf.metrics.auc(labels=self.labels_placeholder,
@@ -75,7 +80,7 @@ class AUCCallback(TensorBoardPlugin):
         predictions = (predictions - pred_min) / (predictions.max() - pred_min)
 
         results = self.session.run([*self.auc_op, self.pr_summary_op],
-                                   feed_dict={self.labels_placeholder: self.frame_level_labels,
+                                   feed_dict={self.labels_placeholder: self.labels,
                                               self.predictions_placeholder: predictions})
         _, auc, pr_summary_result = results
 
@@ -83,20 +88,14 @@ class AUCCallback(TensorBoardPlugin):
 
         auc_plot_image = plot_line2d_to_array(fpr, tpr, self.plot_size)
         auc_plot_image = cv2.cvtColor(auc_plot_image, cv2.COLOR_RGB2GRAY)
-
-        rp_plot_x = tpr / (tpr + fnr + 1e-7)
-        rp_plot_y = tpr / (tpr + fpr + 1e-7)
-        rp_plot_image = plot_line2d_to_array(rp_plot_x, rp_plot_y, self.plot_size, normalize=False)
-        rp_plot_image = cv2.cvtColor(rp_plot_image, cv2.COLOR_RGB2GRAY)
-
-        plot_images = [auc_plot_image, rp_plot_image]
-        plot_images = np.expand_dims(plot_images, axis=-1)
+        auc_plot_image = np.expand_dims(auc_plot_image, axis=-1)
+        auc_plot_image = np.expand_dims(auc_plot_image, axis=0)
 
         if self.plot_size is None:
-            self.plot_size = tuple(plot_images.shape[1:-1])
+            self.plot_size = tuple(auc_plot_image.shape[1:-1])
 
         if self.auc_image_input is None:
-            self.auc_image_input = tf.placeholder(dtype=tf.float32, shape=[2, *self.plot_size, 1],
+            self.auc_image_input = tf.placeholder(dtype=tf.float32, shape=[1, *self.plot_size, 1],
                                                   name=self.name + "_image_summary_input")
             self.auc_value_input = tf.placeholder(dtype=tf.float32, shape=[],
                                                   name=self.name + "_value_summary_input")
@@ -104,7 +103,7 @@ class AUCCallback(TensorBoardPlugin):
             self.auc_value_summary = tf.summary.scalar(name=self.name + "_scalar", tensor=self.auc_value_input)
             self.auc_summary_op = tf.summary.merge([self.auc_image_summary, self.auc_value_summary])
 
-        auc_summary_result = self.session.run(self.auc_summary_op, feed_dict={self.auc_image_input: plot_images,
+        auc_summary_result = self.session.run(self.auc_summary_op, feed_dict={self.auc_image_input: auc_plot_image,
                                                                               self.auc_value_input: auc})
 
         self.tensorboard.writer.add_summary(auc_summary_result, index)

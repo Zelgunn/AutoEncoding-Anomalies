@@ -207,6 +207,7 @@ class GAN(AutoEncoderBaseModel):
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
         disc_auc_callback = AUCCallback(self.tensorboard, discriminator_prediction, discriminator_inputs_placeholder,
                                         database.test_dataset, plot_size=(256, 256), batch_size=128,
+                                        use_frame_level_labels=True,
                                         name="Discriminator_AUC")
 
         anomaly_callbacks.append(disc_auc_callback)

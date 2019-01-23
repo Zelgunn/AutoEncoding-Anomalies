@@ -1,5 +1,6 @@
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
+from keras.regularizers import l1
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler, \
     ModelCheckpoint
@@ -71,7 +72,7 @@ class AutoEncoderBaseModel(ABC):
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
 
-        # self.weight_decay_regularizer = l1(self.config["weight_decay"] if "weight_decay" in self.config else None)
+        self.weight_decay_regularizer = l1(self.config["weight_decay"]) if "weight_decay" in self.config else None
 
         self.use_spectral_norm = ("use_spectral_norm" in self.config["use_spectral_norm"])
         self.use_spectral_norm &= self.config["use_spectral_norm"] == "True"
@@ -356,9 +357,8 @@ class AutoEncoderBaseModel(ABC):
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
-        model_checkpoint = ModelCheckpoint(os.path.join(self.log_dir, "weights.{epoch:02d}.hdf5"), period=10)
 
-        common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
+        common_callbacks = [base_logger, self.tensorboard, progbar_logger]
 
         if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
             lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule())
@@ -377,12 +377,21 @@ class AutoEncoderBaseModel(ABC):
         eval_image_summary_callback = self.image_summary_from_dataset(database.test_dataset, "test",
                                                                       self.tensorboard, scale=scale)
 
-        auc_predictions = self.frame_level_average_error(scale, normalize_error=False)
         auc_inputs_placeholder = self.get_model_at_scale(scale).input
-        auc_callback = AUCCallback(self.tensorboard, auc_predictions, auc_inputs_placeholder, database.test_dataset,
-                                   plot_size=(256, 256), batch_size=128, name="Error_AUC")
+        frame_level_auc_predictions = self.frame_level_average_error(scale)
+        frame_level_auc_callback = AUCCallback(self.tensorboard, frame_level_auc_predictions, auc_inputs_placeholder,
+                                               database.test_dataset, plot_size=(256, 256), batch_size=128,
+                                               use_frame_level_labels=True,
+                                               name="Frame_Level_Error_AUC")
 
-        return [train_image_summary_callback, eval_image_summary_callback, auc_callback]
+        pixel_level_auc_predictions = self.pixel_level_error(scale)
+        pixel_level_auc_callback = AUCCallback(self.tensorboard, pixel_level_auc_predictions, auc_inputs_placeholder,
+                                               database.test_dataset, plot_size=(256, 256), batch_size=128,
+                                               use_frame_level_labels=False, num_thresholds=10,
+                                               name="Pixel_Level_Error_AUC")
+
+        return [train_image_summary_callback, eval_image_summary_callback,
+                frame_level_auc_callback, pixel_level_auc_callback]
 
     def setup_callbacks(self,
                         callbacks: CallbackList or List[Callback],
@@ -446,21 +455,17 @@ class AutoEncoderBaseModel(ABC):
                      ]
         return tf.summary.merge(summaries)
 
-    def frame_level_average_error(self,
-                                  scale: int = None,
-                                  normalize_error=True):
+    def pixel_level_error(self, scale: int = None):
+        model = self.get_model_at_scale(scale)
+        delta = tf.abs(model.input - model.output)
+        return delta
+
+    def frame_level_average_error(self, scale: int = None):
         model = self.get_model_at_scale(scale)
 
         squared_delta = tf.square(model.input - model.output)
         average_error = tf.reduce_mean(squared_delta, axis=[1, 2, 3])
         average_error = tf.sqrt(average_error)
-
-        if normalize_error:
-            min_error = tf.reduce_min(average_error)
-            max_error = tf.reduce_max(average_error)
-            error_range = max_error - min_error + tf.constant(1e-7)
-
-            average_error = (average_error - min_error) / error_range
 
         return average_error
 
@@ -517,7 +522,7 @@ class AutoEncoderBaseModel(ABC):
     def make_log_dir(cls,
                      database: Database):
         project_log_dir = "../logs/AutoEncoding-Anomalies"
-        base_dir = os.path.join(project_log_dir, cls.__name__, database.__class__.__name__)
+        base_dir = os.path.join(project_log_dir, database.__class__.__name__, cls.__name__)
         log_dir = get_log_dir(base_dir)
         return log_dir
 

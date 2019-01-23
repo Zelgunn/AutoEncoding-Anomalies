@@ -2,13 +2,9 @@ import os
 from PIL import Image
 import numpy as np
 from tqdm import tqdm
-
 from typing import Type
 
 from scheme import Dataset
-
-UCSD_WIDTH = 360
-UCSD_HEIGHT = 240
 
 
 class UCSDDataset(Dataset):
@@ -39,8 +35,8 @@ class UCSDDataset(Dataset):
             else:
                 self.anomaly_labels = None
 
-    def save_to_npz(self):
-        if self.saved_to_npz:
+    def save_to_npz(self, force=False):
+        if self.saved_to_npz and not force:
             return
         print("Saving UCSD dataset : " + self.dataset_path + " (to .npz file)")
         np.savez_compressed(self.npz_filepath, images=self.images, anomaly_labels=self.anomaly_labels)
@@ -112,17 +108,22 @@ class UCSDDataset(Dataset):
         for _, tiff_images_paths in dictionary.items():
             images_count += len(tiff_images_paths)
 
-        images = np.ndarray([images_count, UCSD_HEIGHT, UCSD_WIDTH], dtype=dtype)
+        images = None
         index = 0
-        for sub_directory, tiff_images_paths in dictionary.items():
+        sub_directories = dictionary.keys()
+        sub_directories = sorted(sub_directories)
+        for sub_directory in sub_directories:
+            tiff_images_paths = dictionary[sub_directory]
             images_count_in_folder = len(tiff_images_paths)
             sub_directory_info: str = sub_directory.split(os.path.sep)[-1]
             for i in tqdm(range(images_count_in_folder), desc=sub_directory_info):
                 image_path = os.path.join(sub_directory, tiff_images_paths[i])
                 image = Image.open(image_path)
                 image = np.array(image)
-                images[index: index + images_count_in_folder] = image
-            index += images_count_in_folder
+                if images is None:
+                    images = np.ndarray([images_count, image.shape[0], image.shape[1]], dtype=dtype)
+                images[index] = image
+                index += 1
         images = np.expand_dims(images, axis=-1)
         return images
 

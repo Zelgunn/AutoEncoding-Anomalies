@@ -1,6 +1,7 @@
 from datasets.ucsd.UCSDDataset import UCSDDataset
 import os
 import numpy as np
+import cv2
 
 from scheme import Database
 
@@ -39,4 +40,14 @@ class UCSDDatabase(Database):
         self.train_dataset.normalize(current_min, current_max, target_min, target_max)
         self.test_dataset.normalize(current_min, current_max, target_min, target_max)
 
+    def visualize_test_dataset(self):
+        labels = self.test_dataset.anomaly_labels
 
+        for i in range(len(labels)):
+            tmp: np.ndarray = self.test_dataset.anomaly_labels[i]
+            tmp = tmp.astype(np.float32)
+            inv_tmp = 1.0 - tmp
+            tmp = self.test_dataset.images[i] * tmp
+            tmp += self.test_dataset.images[i] * inv_tmp * 0.25
+            cv2.imshow("test_dataset", tmp)
+            cv2.waitKey(30)
