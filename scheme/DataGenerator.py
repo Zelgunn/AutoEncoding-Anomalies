@@ -44,3 +44,4 @@ class DataGenerator(Sequence, ABC):
     def on_epoch_end(self):
         if self.epoch_length is None and self.shuffle_on_epoch_end:
             self.shuffle()
+        self.index = 0

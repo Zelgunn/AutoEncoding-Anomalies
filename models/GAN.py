@@ -229,9 +229,10 @@ class GAN(AutoEncoderBaseModel):
         discriminator: KerasModel = self.get_scale_models(scale).discriminator
         discriminator_prediction = discriminator.get_output_at(0)
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
+        auc_images = database.test_dataset.images
+        auc_frame_level_labels = database.test_dataset.frame_level_labels()
         disc_auc_callback = AUCCallback(self.tensorboard, discriminator_prediction, discriminator_inputs_placeholder,
-                                        database.test_dataset, plot_size=(256, 256), batch_size=128,
-                                        use_frame_level_labels=True,
+                                        auc_images, auc_frame_level_labels, plot_size=(256, 256), batch_size=128,
                                         name="Discriminator_AUC")
 
         anomaly_callbacks.append(disc_auc_callback)

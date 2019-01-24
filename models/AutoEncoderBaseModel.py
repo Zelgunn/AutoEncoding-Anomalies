@@ -50,6 +50,7 @@ class AutoEncoderBaseModel(ABC):
         self.log_dir = None
         self.tensorboard = None
         self.epochs_seen = 0
+        self.pixel_level_labels_size = None
 
     def load_config(self, config_file: str):
         with open(config_file) as tmp_file:
@@ -78,6 +79,8 @@ class AutoEncoderBaseModel(ABC):
         self.use_spectral_norm &= self.config["use_spectral_norm"] == "True"
 
         self.build_optimizer()
+
+        self.pixel_level_labels_size = tuple(self.config["pixel_level_labels_size"])
 
     # endregion
 
@@ -383,21 +386,23 @@ class AutoEncoderBaseModel(ABC):
         eval_image_summary_callback = self.image_summary_from_dataset(database.test_dataset, "test",
                                                                       self.tensorboard, scale=scale)
 
+        auc_images = database.test_dataset.images
         auc_inputs_placeholder = self.get_model_at_scale(scale).input
         frame_level_auc_predictions = self.frame_level_average_error(scale)
+        frame_level_labels = database.test_dataset.frame_level_labels()
         frame_level_auc_callback = AUCCallback(self.tensorboard, frame_level_auc_predictions, auc_inputs_placeholder,
-                                               database.test_dataset, plot_size=(256, 256), batch_size=128,
-                                               use_frame_level_labels=True,
+                                               auc_images, frame_level_labels, plot_size=(256, 256), batch_size=128,
                                                name="Frame_Level_Error_AUC")
 
-        # pixel_level_auc_predictions = self.pixel_level_error(scale)
-        # pixel_level_auc_callback = AUCCallback(self.tensorboard, pixel_level_auc_predictions, auc_inputs_placeholder,
-        #                                        database.test_dataset, plot_size=(256, 256), batch_size=128,
-        #                                        use_frame_level_labels=False, num_thresholds=10,
-        #                                        name="Pixel_Level_Error_AUC")
+        pixel_level_auc_predictions = self.pixel_level_error(scale)
+        pixel_level_labels = database.test_dataset.resized_anomaly_labels(self.pixel_level_labels_size)
+        pixel_level_auc_callback = AUCCallback(self.tensorboard, pixel_level_auc_predictions, auc_inputs_placeholder,
+                                               auc_images, pixel_level_labels, plot_size=(256, 256), batch_size=128,
+                                               num_thresholds=20,
+                                               name="Pixel_Level_Error_AUC")
 
         return [train_image_summary_callback, eval_image_summary_callback,
-                frame_level_auc_callback]  # , pixel_level_auc_callback]
+                frame_level_auc_callback, pixel_level_auc_callback]
 
     def setup_callbacks(self,
                         callbacks: CallbackList or List[Callback],

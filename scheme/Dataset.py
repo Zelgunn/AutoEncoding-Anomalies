@@ -37,15 +37,22 @@ class Dataset(ABC):
             self.anomaly_labels = self.anomaly_labels[shuffle_indices]
 
     def resized(self, size):
-        images = resize_images(self.images, size)
-        if self.anomaly_labels is None:
-            anomaly_labels = None
-        else:
-            anomaly_labels = resize_images(self.anomaly_labels.astype(np.float32), size).astype(bool)
+        images = self.resized_images(size)
+        anomaly_labels = self.resized_anomaly_labels(size)
 
         dataset_type = type(self)
         dataset: Dataset = dataset_type(images=images, anomaly_labels=anomaly_labels)
         return dataset
+
+    def resized_images(self, size):
+        return resize_images(self.images, size)
+
+    def resized_anomaly_labels(self, size):
+        if self.anomaly_labels is None:
+            anomaly_labels = None
+        else:
+            anomaly_labels = resize_images(self.anomaly_labels.astype(np.float32), size).astype(bool)
+        return anomaly_labels
 
     @property
     def samples_count(self):

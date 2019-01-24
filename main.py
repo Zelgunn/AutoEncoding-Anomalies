@@ -52,8 +52,8 @@ database.shuffle(seed=1)
 
 auto_encoder.train(database,
                    min_scale=2,
-                   max_scale=4,
-                   epoch_length=50,
+                   max_scale=3,
+                   epoch_length=5,
                    epochs=[50, 50, 100, 200, 2000],
                    batch_size=[128, 128, 64, 32, 32],
                    pre_train=False)

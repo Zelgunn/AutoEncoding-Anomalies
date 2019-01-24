@@ -40,5 +40,6 @@
         "generator": ["acc"]
     },
     "lr_drop_epochs": 1000,
-    "discriminator_steps" : 3
+    "discriminator_steps" : 3,
+    "pixel_level_labels_size": [16, 24]
 }
