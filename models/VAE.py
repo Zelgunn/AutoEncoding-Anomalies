@@ -22,7 +22,7 @@ class VAE(AutoEncoderBaseModel):
         self.build_layers()
 
     def build_model_for_scale(self, scale: int):
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 

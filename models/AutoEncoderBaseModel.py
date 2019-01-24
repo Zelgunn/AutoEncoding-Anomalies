@@ -2,8 +2,7 @@ from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
 from keras.regularizers import l1
 from keras.optimizers import Adam, RMSprop
-from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler, \
-    ModelCheckpoint
+from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
 from keras.backend import binary_crossentropy
 from keras.utils import conv_utils
 from keras.utils.generic_utils import to_list
@@ -15,13 +14,14 @@ import copy
 from typing import List, Any
 
 from layers import ResBlock2D, ResBlock2DTranspose, SpectralNormalization
-from scheme import Database, Dataset
+from scheme import Database, Dataset, DataGenerator
 from generators import NoisyImagesGenerator
 from train_utils import get_log_dir
 from callbacks import ImageCallback, AUCCallback
 
 
 class AutoEncoderBaseModel(ABC):
+    # region Initialization
     def __init__(self):
         self.image_summaries_max_outputs = 3
 
@@ -78,6 +78,8 @@ class AutoEncoderBaseModel(ABC):
         self.use_spectral_norm &= self.config["use_spectral_norm"] == "True"
 
         self.build_optimizer()
+
+    # endregion
 
     # region Model building
     def build_optimizer(self):
@@ -195,16 +197,17 @@ class AutoEncoderBaseModel(ABC):
             return
         self.log_dir = self.__class__.make_log_dir(database)
 
-        scale = kwargs.pop("scale") if "scale" in kwargs else self.depth - 1
+        min_scale = kwargs.pop("min_scale") if "min_scale" in kwargs else 0
+        max_scale = kwargs.pop("max_scale") if "max_scale" in kwargs else self.depth - 1
 
-        model = self.get_model_at_scale(scale)
+        model = self.get_model_at_scale(max_scale)
         self.save_model_info(self.log_dir, model)
 
         if isinstance(batch_size, int):
-            batch_size = [batch_size] * (scale + 1)
+            batch_size = [batch_size] * (max_scale + 1)
 
         if isinstance(epochs, int):
-            epochs = [epochs] * (scale + 1)
+            epochs = [epochs] * (max_scale + 1)
 
         samples_count = database.train_dataset.samples_count
         if epoch_length is None:
@@ -217,20 +220,22 @@ class AutoEncoderBaseModel(ABC):
 
         common_callbacks.on_train_begin()
         if self.can_be_pre_trained and ("pre_train" not in kwargs or kwargs["pre_train"]):
-            self.pre_train_loop(database, common_callbacks, batch_size, epoch_length, epochs, scale, **kwargs)
+            self.pre_train_loop(database, common_callbacks, batch_size, epoch_length,
+                                epochs, min_scale, max_scale, **kwargs)
         # endregion
 
         # region Max scale training
-        AutoEncoderBaseModel.update_callbacks_param(common_callbacks, "epochs", epochs[scale] + self.epochs_seen)
-        anomaly_callbacks = self.build_anomaly_callbacks(database, scale=scale)
-        anomaly_callbacks = self.setup_callbacks(anomaly_callbacks, model, batch_size[scale], epochs[scale],
+        AutoEncoderBaseModel.update_callbacks_param(common_callbacks, "epochs", epochs[max_scale] + self.epochs_seen)
+        anomaly_callbacks = self.build_anomaly_callbacks(database, scale=max_scale)
+        anomaly_callbacks = self.setup_callbacks(anomaly_callbacks, model, batch_size[max_scale], epochs[max_scale],
                                                  epoch_length, samples_count)
 
         callbacks = CallbackList(common_callbacks.callbacks + anomaly_callbacks.callbacks)
-        self.print_training_model_at_scale_header(scale, scale)
+        self.print_training_model_at_scale_header(max_scale, max_scale)
 
         anomaly_callbacks.on_train_begin()
-        self.train_loop(database, callbacks, batch_size[scale], epoch_length, epochs[scale], scale, **kwargs)
+        self.train_loop(database, callbacks, batch_size[max_scale], epoch_length,
+                        epochs[max_scale], max_scale, **kwargs)
         callbacks.on_train_end()
         # endregion
 
@@ -244,9 +249,10 @@ class AutoEncoderBaseModel(ABC):
                        batch_size: List[int],
                        epoch_length,
                        epochs: List[int],
+                       min_scale: int,
                        max_scale: int,
                        **kwargs):
-        for scale in range(max_scale):
+        for scale in range(min_scale, max_scale):
             AutoEncoderBaseModel.update_callbacks_param(callbacks, "epochs", epochs[scale] + self.epochs_seen)
             AutoEncoderBaseModel.update_callbacks_param(callbacks, "batch_size", batch_size[scale])
             self.print_training_model_at_scale_header(scale, max_scale)
@@ -271,7 +277,7 @@ class AutoEncoderBaseModel(ABC):
                    epochs: int,
                    scale: int,
                    **kwargs):
-        scale_shape = self.scales_input_shapes[scale]
+        scale_shape = self.input_shape_by_scale[scale]
         database = database.resized_to_scale(scale_shape)
 
         train_generator = NoisyImagesGenerator(database.train_dataset.images,
@@ -287,8 +293,8 @@ class AutoEncoderBaseModel(ABC):
             self.train_epoch(train_generator, test_generator, scale, callbacks)
 
     def train_epoch(self,
-                    train_generator,
-                    test_generator=None,
+                    train_generator: DataGenerator,
+                    test_generator: DataGenerator = None,
                     scale: int = None,
                     callbacks: CallbackList = None):
         epoch_length = len(train_generator)
@@ -317,8 +323,8 @@ class AutoEncoderBaseModel(ABC):
 
     def on_epoch_end(self,
                      base_model: KerasModel,
-                     train_generator,
-                     test_generator=None,
+                     train_generator: DataGenerator,
+                     test_generator: DataGenerator = None,
                      callbacks: CallbackList = None,
                      epoch_logs: dict = None):
         if epoch_logs is None:
@@ -340,7 +346,7 @@ class AutoEncoderBaseModel(ABC):
     def print_training_model_at_scale_header(self,
                                              scale: int,
                                              max_scale: int):
-        scale_shape = self.scales_input_shapes[scale]
+        scale_shape = self.input_shape_by_scale[scale]
         tmp = len(str(scale_shape[0])) + len(str(scale_shape[1]))
         print("=============================================" + "=" * tmp)
         print("===== Training model at scale {0}x{1} (n°{2}/{3}) =====".format(scale_shape[0],
@@ -369,7 +375,7 @@ class AutoEncoderBaseModel(ABC):
     def build_anomaly_callbacks(self,
                                 database: Database,
                                 scale: int = None):
-        scale_shape = self.scales_input_shapes[scale]
+        scale_shape = self.input_shape_by_scale[scale]
         database = database.resized_to_scale(scale_shape)
 
         train_image_summary_callback = self.image_summary_from_dataset(database.train_dataset, "train",
@@ -384,14 +390,14 @@ class AutoEncoderBaseModel(ABC):
                                                use_frame_level_labels=True,
                                                name="Frame_Level_Error_AUC")
 
-        pixel_level_auc_predictions = self.pixel_level_error(scale)
-        pixel_level_auc_callback = AUCCallback(self.tensorboard, pixel_level_auc_predictions, auc_inputs_placeholder,
-                                               database.test_dataset, plot_size=(256, 256), batch_size=128,
-                                               use_frame_level_labels=False, num_thresholds=10,
-                                               name="Pixel_Level_Error_AUC")
+        # pixel_level_auc_predictions = self.pixel_level_error(scale)
+        # pixel_level_auc_callback = AUCCallback(self.tensorboard, pixel_level_auc_predictions, auc_inputs_placeholder,
+        #                                        database.test_dataset, plot_size=(256, 256), batch_size=128,
+        #                                        use_frame_level_labels=False, num_thresholds=10,
+        #                                        name="Pixel_Level_Error_AUC")
 
         return [train_image_summary_callback, eval_image_summary_callback,
-                frame_level_auc_callback, pixel_level_auc_callback]
+                frame_level_auc_callback]  # , pixel_level_auc_callback]
 
     def setup_callbacks(self,
                         callbacks: CallbackList or List[Callback],
@@ -489,10 +495,9 @@ class AutoEncoderBaseModel(ABC):
 
         return schedule
 
-    # endregion
-
+    # region Input Shape by scale
     @property
-    def scales_input_shapes(self):
+    def input_shape_by_scale(self):
         if self._scales_input_shapes is None:
             input_shape = self.input_shape
             self._scales_input_shapes = []
@@ -515,6 +520,10 @@ class AutoEncoderBaseModel(ABC):
 
             self._scales_input_shapes.reverse()
         return self._scales_input_shapes
+
+    # endregion
+
+    # endregion
 
     # region Log dir
 

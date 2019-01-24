@@ -8,6 +8,7 @@ from models.GAN import GAN_Scale
 
 
 class VAEGAN(GAN):
+    # region Initialization
     def __init__(self):
         super(VAEGAN, self).__init__()
         self.latent_mean = None
@@ -18,6 +19,9 @@ class VAEGAN(GAN):
         super(VAEGAN, self).load_config(config_file)
         self.kl_divergence_by_scale = [None] * self.depth
 
+    # endregion
+
+    # region Model building
     def build_layers(self):
         super(VAEGAN, self).build_layers()
         self.latent_mean = self.embeddings_layer
@@ -25,7 +29,7 @@ class VAEGAN(GAN):
         self.embeddings_layer = Lambda(function=sampling)
 
     def build_encoder_for_scale(self, scale: int):
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
@@ -61,7 +65,7 @@ class VAEGAN(GAN):
         decoder = self.build_decoder_for_scale(scale)
         discriminator = self.build_discriminator_for_scale(scale)
 
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
         encoder_input = Input(input_shape)
@@ -101,3 +105,4 @@ class VAEGAN(GAN):
         self._scales[scale] = GAN_Scale(encoder, decoder, discriminator, adversarial_generator, autoencoder)
         self._models_per_scale[scale] = autoencoder
         return autoencoder
+    # endregion

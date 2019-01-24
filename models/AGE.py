@@ -33,7 +33,7 @@ class AGE(AutoEncoderBaseModel):
         encoder = self.build_encoder_for_scale(scale)
         decoder = self.build_decoder_for_scale(scale)
 
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
         encoder_decoder_input = Input(input_shape)
@@ -86,7 +86,7 @@ class AGE(AutoEncoderBaseModel):
         return base_model
 
     def build_encoder_for_scale(self, scale: int):
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
@@ -186,7 +186,7 @@ class AGE(AutoEncoderBaseModel):
                    epochs: int,
                    scale: int,
                    **kwargs):
-        scale_shape = self.scales_input_shapes[scale]
+        scale_shape = self.input_shape_by_scale[scale]
         database = database.resized_to_scale(scale_shape)
 
         train_generator = NoisyImagesGenerator(database.train_dataset.images, dropout_rate=0.0, batch_size=batch_size,

@@ -6,7 +6,7 @@ from collections import namedtuple
 from typing import List
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
-from scheme import Database
+from scheme import Database, DataGenerator
 from callbacks import AUCCallback
 
 GAN_Scale = namedtuple("GAN_Scale", ["encoder", "decoder", "discriminator",
@@ -14,12 +14,12 @@ GAN_Scale = namedtuple("GAN_Scale", ["encoder", "decoder", "discriminator",
 
 
 class GAN(AutoEncoderBaseModel):
+    # region Initialization
     def __init__(self):
         super(GAN, self).__init__()
         self.discriminator_layers = []
         self._scales: List[GAN_Scale] = []
 
-    # region Model building
     def build_layers(self):
         super(GAN, self).build_layers()
 
@@ -27,6 +27,9 @@ class GAN(AutoEncoderBaseModel):
             layer = self.build_conv_layer(layer_info)
             self.discriminator_layers.append(layer)
 
+    # endregion
+
+    # region Model building
     def build_model(self, config_file: str):
         self.load_config(config_file)
         self._scales = [None] * self.depth
@@ -37,7 +40,7 @@ class GAN(AutoEncoderBaseModel):
         decoder = self.build_decoder_for_scale(scale)
         discriminator = self.build_discriminator_for_scale(scale)
 
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
         encoder_input = Input(input_shape)
@@ -69,7 +72,7 @@ class GAN(AutoEncoderBaseModel):
         return autoencoder
 
     def build_encoder_for_scale(self, scale: int):
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
@@ -112,7 +115,7 @@ class GAN(AutoEncoderBaseModel):
         return decoder
 
     def build_discriminator_for_scale(self, scale: int):
-        scale_input_shape = self.scales_input_shapes[scale]
+        scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
@@ -143,15 +146,17 @@ class GAN(AutoEncoderBaseModel):
 
     # endregion
 
+    # region Training
     @property
     def can_be_pre_trained(self):
         return True
 
     def train_epoch(self,
-                    train_generator,
-                    test_generator=None,
+                    train_generator: DataGenerator,
+                    test_generator: DataGenerator = None,
                     scale: int = None,
                     callbacks: CallbackList = None):
+        # region Variables initialization
         epoch_length = len(train_generator)
         scale_models = self.get_scale_models(scale)
         autoencoder: KerasModel = scale_models.autoencoder
@@ -159,46 +164,65 @@ class GAN(AutoEncoderBaseModel):
         adversarial_generator: KerasModel = scale_models.adversarial_generator
         discriminator: KerasModel = scale_models.discriminator
         base_model = self.get_model_at_scale(scale)
+        discriminator_steps = self.config["discriminator_steps"] if "discriminator_steps" in self.config else 1
+        # endregion
 
         callbacks.on_epoch_begin(self.epochs_seen)
         for batch_index in range(epoch_length):
+            # region Generate batch data (common)
             x, y = train_generator[0]
             batch_size = x.shape[0]
             z = np.random.normal(size=[batch_size, self.embeddings_size])
             zeros = np.zeros(shape=[batch_size])
             ones = np.ones(shape=[batch_size])
+            # endregion
 
-            x_generated = decoder.predict(x=z)
-            x_combined = np.concatenate([y, x_generated])
-            y_combined = np.concatenate([zeros, ones])
-            shuffle_indices = np.random.permutation(np.arange(batch_size * 2))
-            x_combined = x_combined[shuffle_indices]
-            y_combined = y_combined[shuffle_indices]
+            # region Generate batch data (discriminator)
+            x_combined, y_combined = [], []
+            for i in range(discriminator_steps):
+                if i > 0:
+                    y = train_generator.sample()[1]
+                x_generated = decoder.predict(x=z)
+                x_combined += [np.concatenate([y, x_generated])]
+                y_combined += [np.concatenate([zeros, ones])]
+            # endregion
 
+            # region Train on Batch
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
             autoencoder_metrics = autoencoder.train_on_batch(x=x, y=y)
             generator_metrics = adversarial_generator.train_on_batch(x=z, y=zeros)
-            discriminator_metrics = discriminator.train_on_batch(x=x_combined, y=y_combined)
 
+            discriminator_metrics = []
+            for i in range(discriminator_steps):
+                step_discriminator_metrics = discriminator.train_on_batch(x=x_combined[i], y=y_combined[i])
+                discriminator_metrics.append(step_discriminator_metrics)
+            discriminator_metrics = np.mean(discriminator_metrics, axis=0)
+
+            # region Batch logs
             def add_metrics_to_batch_logs(model_name, losses):
                 metric_names = ["loss", *self.config["metrics"][model_name]]
-                for i in range(len(losses)):
-                    batch_logs[model_name + '_' + metric_names[i]] = losses[i]
+                for j in range(len(losses)):
+                    batch_logs[model_name + '_' + metric_names[j]] = losses[j]
 
             add_metrics_to_batch_logs("autoencoder", autoencoder_metrics)
             add_metrics_to_batch_logs("generator", generator_metrics)
             add_metrics_to_batch_logs("discriminator", discriminator_metrics)
+            # endregion
 
             callbacks.on_batch_end(batch_index, batch_logs)
+            # endregion
 
         self.on_epoch_end(base_model, train_generator, test_generator, callbacks)
 
+    # endregion
+
+    # region Callbacks
     def build_anomaly_callbacks(self,
                                 database: Database,
                                 scale: int = None):
-        scale_shape = self.scales_input_shapes[scale]
+        scale_shape = self.input_shape_by_scale[scale]
         database = database.resized_to_scale(scale_shape)
         anomaly_callbacks = super(GAN, self).build_anomaly_callbacks(database, scale)
 
@@ -219,3 +243,4 @@ class GAN(AutoEncoderBaseModel):
             return [model_name + "_" + metric_name for metric_name in metric_names]
 
         return model_metric_names("autoencoder") + model_metric_names("generator") + model_metric_names("discriminator")
+    # endregion

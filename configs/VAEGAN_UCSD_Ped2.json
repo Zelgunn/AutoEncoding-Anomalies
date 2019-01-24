@@ -39,5 +39,6 @@
         "autoencoder": ["mse"],
         "generator": ["acc"]
     },
-    "lr_drop_epochs": 1000
+    "lr_drop_epochs": 1000,
+    "discriminator_steps" : 3
 }
