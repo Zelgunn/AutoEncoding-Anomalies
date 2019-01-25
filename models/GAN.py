@@ -18,6 +18,7 @@ class GAN(AutoEncoderBaseModel):
     def __init__(self):
         super(GAN, self).__init__()
         self.discriminator_layers = []
+        self.discriminator_regression_layer = None
         self._scales: List[GAN_Scale] = []
 
     def build_layers(self):
@@ -26,6 +27,8 @@ class GAN(AutoEncoderBaseModel):
         for layer_info in self.config["discriminator"]:
             layer = self.build_conv_layer(layer_info)
             self.discriminator_layers.append(layer)
+
+        self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
 
     # endregion
 
@@ -48,7 +51,7 @@ class GAN(AutoEncoderBaseModel):
         autoencoder = KerasModel(inputs=encoder_input, outputs=autoencoded,
                                  name="AutoEncoder_scale_{0}".format(scale))
 
-        decoder_input = Input([self.embeddings_size])
+        decoder_input = Input(self.embeddings_shape)
         generator_discriminated = discriminator(decoder(decoder_input))
         adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
                                            name="AdversarialGenerator_scale_{0}".format(scale))
@@ -96,8 +99,9 @@ class GAN(AutoEncoderBaseModel):
                 layer = self.link_encoder_conv_layer(layer, scale, i)
 
             with tf.name_scope("embeddings"):
-                layer = Reshape([-1])(layer)
-                layer = Dense(units=self.embeddings_size)(layer)
+                if self.use_dense_embeddings:
+                    layer = Reshape([-1])(layer)
+                layer = self.embeddings_layer(layer)
                 layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
 
             outputs = layer
@@ -107,17 +111,18 @@ class GAN(AutoEncoderBaseModel):
     def build_decoder_for_scale(self, scale: int):
         decoder_name = "Decoder_scale_{0}".format(scale)
         with tf.name_scope(decoder_name):
-            input_layer = Input([self.embeddings_size])
+            input_layer = Input(self.embeddings_shape)
             layer = input_layer
 
-            embeddings_reshape = self.config["embeddings_reshape"]
-            embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
-            layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+            if self.use_dense_embeddings:
+                embeddings_reshape = self.config["embeddings_reshape"]
+                embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
+                layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
 
             for i in range(scale + 1):
                 layer = self.link_decoder_deconv_layer(layer, scale, i)
 
-            output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
+            output_layer = Conv2D(filters=self.input_channels, kernel_size=1, padding="same",
                                   activation=self.output_activation)(layer)
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
@@ -139,7 +144,7 @@ class GAN(AutoEncoderBaseModel):
                 layer = self.link_encoder_conv_layer(layer, scale, i)
 
             layer = Reshape([-1])(layer)
-            layer = Dense(units=1, activation="sigmoid")(layer)
+            layer = self.discriminator_regression_layer(layer)
 
             outputs = layer
         discriminator = KerasModel(inputs=input_layer, outputs=outputs, name=discriminator_name)
@@ -176,12 +181,13 @@ class GAN(AutoEncoderBaseModel):
         # endregion
 
         callbacks.on_epoch_begin(self.epochs_seen)
+        discriminator_metrics = [1.0, 0.75]
         for batch_index in range(epoch_length):
             # region Generate batch data (common)
             noisy_x, x = train_generator[0]
             batch_size = x.shape[0]
             x = [x]
-            z = np.random.normal(size=[discriminator_steps, batch_size, self.embeddings_size])
+            z = np.random.normal(size=[discriminator_steps, batch_size] + self.embeddings_shape)
             zeros = np.zeros(shape=[batch_size])
             ones = np.ones(shape=[batch_size])
             # endregion
@@ -199,7 +205,10 @@ class GAN(AutoEncoderBaseModel):
             callbacks.on_batch_begin(batch_index, batch_logs)
 
             autoencoder_metrics = autoencoder.train_on_batch(x=noisy_x, y=x[0])
-            generator_metrics = adversarial_generator.train_on_batch(x=z[0], y=zeros)
+            if discriminator_metrics[1] > 0.6:
+                generator_metrics = adversarial_generator.train_on_batch(x=z[0], y=zeros)
+            else:
+                generator_metrics = adversarial_generator.test_on_batch(x=z[0], y=zeros)
 
             discriminator_metrics = []
             for i in range(discriminator_steps):

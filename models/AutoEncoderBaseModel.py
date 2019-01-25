@@ -38,6 +38,8 @@ class AutoEncoderBaseModel(ABC):
         self.input_shape = None
         self.input_channels = None
         self.embeddings_size = None
+        self.use_dense_embeddings = None
+        self.embeddings_shape = None
         self.depth = 0
         self._models_per_scale = None
         self._scales_input_shapes = None
@@ -61,6 +63,10 @@ class AutoEncoderBaseModel(ABC):
         self.input_shape = self.config["input_shape"]
         self.input_channels = self.input_shape[-1]
         self.embeddings_size = self.config["embeddings_size"]
+        self.use_dense_embeddings = self.config["use_dense_embeddings"] == "True"
+        self.embeddings_shape = [self.embeddings_size]
+        if not self.use_dense_embeddings:
+            self.embeddings_shape = self.config["embeddings_reshape"] + self.embeddings_shape
 
         self.depth = len(self.config["encoder"])
         self._models_per_scale = [None] * self.depth
@@ -101,9 +107,14 @@ class AutoEncoderBaseModel(ABC):
             layer = self.build_conv_layer(layer_info)
             self.encoder_layers.append(layer)
 
-        self.embeddings_layer = Dense(units=self.embeddings_size,
-                                      kernel_regularizer=self.weight_decay_regularizer,
-                                      bias_regularizer=self.weight_decay_regularizer)
+        if self.use_dense_embeddings:
+            self.embeddings_layer = Dense(units=self.embeddings_size,
+                                          kernel_regularizer=self.weight_decay_regularizer,
+                                          bias_regularizer=self.weight_decay_regularizer)
+        else:
+            self.embeddings_layer = Conv2D(filters=self.embeddings_size, kernel_size=1, padding="same",
+                                           kernel_regularizer=self.weight_decay_regularizer,
+                                           bias_regularizer=self.weight_decay_regularizer)
 
         for layer_info in self.config["decoder"]:
             layer = self.build_deconv_layer(layer_info)
@@ -115,7 +126,7 @@ class AutoEncoderBaseModel(ABC):
         if ("resblock" in layer_info) and (layer_info["resblock"] == "True"):
             layer = res_block(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
                               kernel_regularizer=self.weight_decay_regularizer,
-                              bias_regularizer=self.weight_decay_regularizer, use_batch_normalization=False)
+                              bias_regularizer=self.weight_decay_regularizer, use_batch_normalization=True)
         else:
             layer = conv(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
                          kernel_regularizer=self.weight_decay_regularizer,
@@ -280,13 +291,15 @@ class AutoEncoderBaseModel(ABC):
         scale_shape = self.input_shape_by_scale[scale]
         database = database.resized_to_scale(scale_shape)
 
+        train_dropout_rate = self.config["data_generators"]["train"]["dropout_rate"]
         train_generator = NoisyImagesGenerator(database.train_dataset.images,
-                                               dropout_rate=0.25,
+                                               dropout_rate=train_dropout_rate,
                                                batch_size=batch_size,
                                                epoch_length=epoch_length)
 
+        test_dropout_rate = self.config["data_generators"]["test"]["dropout_rate"]
         test_generator = NoisyImagesGenerator(database.test_dataset.images,
-                                              dropout_rate=0.25,
+                                              dropout_rate=test_dropout_rate,
                                               batch_size=batch_size)
 
         for _ in range(epochs):
