@@ -178,34 +178,34 @@ class GAN(AutoEncoderBaseModel):
         callbacks.on_epoch_begin(self.epochs_seen)
         for batch_index in range(epoch_length):
             # region Generate batch data (common)
-            x, y = train_generator[0]
+            noisy_x, x = train_generator[0]
             batch_size = x.shape[0]
-            z = np.random.normal(size=[batch_size, self.embeddings_size])
+            x = [x]
+            z = np.random.normal(size=[discriminator_steps, batch_size, self.embeddings_size])
             zeros = np.zeros(shape=[batch_size])
             ones = np.ones(shape=[batch_size])
             # endregion
 
             # region Generate batch data (discriminator)
-            x_combined, y_combined = [], []
+            x_generated = []
             for i in range(discriminator_steps):
                 if i > 0:
-                    y = train_generator.sample()[1]
-                x_generated = decoder.predict(x=z)
-                x_combined += [np.concatenate([y, x_generated])]
-                y_combined += [np.concatenate([zeros, ones])]
+                    x += [train_generator.sample()[1]]
+                x_generated += [decoder.predict(x=z[i])]
             # endregion
 
             # region Train on Batch
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            autoencoder_metrics = autoencoder.train_on_batch(x=x, y=y)
-            generator_metrics = adversarial_generator.train_on_batch(x=z, y=zeros)
+            autoencoder_metrics = autoencoder.train_on_batch(x=noisy_x, y=x[0])
+            generator_metrics = adversarial_generator.train_on_batch(x=z[0], y=zeros)
 
             discriminator_metrics = []
             for i in range(discriminator_steps):
-                step_discriminator_metrics = discriminator.train_on_batch(x=x_combined[i], y=y_combined[i])
-                discriminator_metrics.append(step_discriminator_metrics)
+                real_data_discriminator_metrics = discriminator.train_on_batch(x=x[i], y=zeros)
+                fake_data_discriminator_metrics = discriminator.train_on_batch(x=x_generated[i], y=ones)
+                discriminator_metrics += [real_data_discriminator_metrics, fake_data_discriminator_metrics]
             discriminator_metrics = np.mean(discriminator_metrics, axis=0)
 
             # region Batch logs
