@@ -19,7 +19,7 @@ class NoisyImagesGenerator(DataGenerator):
 
         self.index = 0
 
-    def add_noise_to(self, images, dropout_rate=None):
+    def add_dropout_noise_to(self, images, dropout_rate=None):
         if dropout_rate is None:
             dropout_rate = self.dropout_rate
 
@@ -44,13 +44,13 @@ class NoisyImagesGenerator(DataGenerator):
 
         indices = np.random.permutation(np.arange(self.images.shape[0]))[:batch_size]
         images: np.ndarray = self.images[indices]
-        noisy_images = self.add_noise_to(images)
+        noisy_images = self.add_dropout_noise_to(images)
 
         return noisy_images, images
 
     def current_batch(self):
         images: np.ndarray = self.images[self.index * self.batch_size: (self.index + 1) * self.batch_size]
-        noisy_images = self.add_noise_to(images)
+        noisy_images = self.add_dropout_noise_to(images)
         return noisy_images, images
 
     def shuffle(self):

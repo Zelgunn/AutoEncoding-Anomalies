@@ -30,15 +30,16 @@ class VAE(AutoEncoderBaseModel):
             input_layer = Input(input_shape)
             layer = input_layer
 
-            # Encoder
+            # region Encoder
             if scale is not (self.depth - 1):
                 layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
 
             with tf.name_scope("encoder"):
                 for i in range(scale + 1):
                     layer = self.link_encoder_conv_layer(layer, scale, i)
+            # endregion
 
-            # Embeddings
+            # region Embeddings
             with tf.name_scope("embeddings"):
                 layer = Reshape([-1])(layer)
 
@@ -50,14 +51,16 @@ class VAE(AutoEncoderBaseModel):
                 embeddings_reshape = self.config["embeddings_reshape"]
                 embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
                 layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+            # endregion
 
-            # Decoder
+            # region Decoder
             with tf.name_scope("decoder"):
                 for i in range(scale + 1):
                     layer = self.link_decoder_deconv_layer(layer, scale, i)
+            # endregion
 
             output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
-                                  activation="sigmoid")(layer)
+                                  activation=self.output_activation)(layer)
 
         def vae_loss(y_true, y_pred):
             reconstruction_loss = metrics_dict[self.config["reconstruction_loss"]](y_true, y_pred)

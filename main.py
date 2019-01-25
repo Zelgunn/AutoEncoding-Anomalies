@@ -39,6 +39,7 @@ auto_encoder.build_model(config_used)
 database_class, database_path = datasets_dict[dataset_used]
 database = database_class(database_path=database_path)
 database = database.resized_to_scale(auto_encoder.input_shape)
+database.normalize(auto_encoder.output_range[0], auto_encoder.output_range[1])
 database.shuffle(seed=1)
 # endregion
 

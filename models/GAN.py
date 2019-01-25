@@ -118,7 +118,7 @@ class GAN(AutoEncoderBaseModel):
                 layer = self.link_decoder_deconv_layer(layer, scale, i)
 
             output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
-                                  activation="sigmoid")(layer)
+                                  activation=self.output_activation)(layer)
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 

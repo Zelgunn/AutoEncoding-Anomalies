@@ -28,6 +28,9 @@ class Dataset(ABC):
     def load(self, dataset_path: str, **kwargs):
         raise NotImplementedError
 
+    def normalize(self, current_min, current_max, target_min=0.0, target_max=1.0):
+        self.images = (self.images - current_min) / (current_max - current_min) * (target_max - target_min) + target_min
+
     def shuffle(self):
         if self.anomaly_labels is None:
             np.random.shuffle(self.images)

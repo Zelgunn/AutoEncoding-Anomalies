@@ -61,9 +61,6 @@ class UCSDDataset(Dataset):
         self.index_in_epoch += batch_size
         return self.images[start: self.index_in_epoch]
 
-    def normalize(self, current_min, current_max, target_min=0.0, target_max=1.0):
-        self.images = (self.images - current_min) / (current_max - current_min) * (target_max - target_min) + target_min
-
     @property
     def npz_filepath(self) -> str:
         return self.dataset_path + ".npz"

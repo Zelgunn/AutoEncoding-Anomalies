@@ -50,7 +50,7 @@ class AGE(AutoEncoderBaseModel):
         fake_data_encoder_loss = self.build_loss(True, False, fake_data_latent)
         fake_data_decoder_loss = self.build_loss(False, False, fake_data_latent)
 
-        # Real Data
+        # region Real Data
         encoder.trainable = True
         decoder.trainable = True
         encoder_real_data_trainer = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output,
@@ -59,8 +59,9 @@ class AGE(AutoEncoderBaseModel):
         encoder_fake_data_trainer = KerasModel(inputs=decoder_encoder_input, outputs=decoder_encoder_output,
                                                name="Encoder_fake_data_Model_scale_{0}".format(scale))
         encoder_fake_data_trainer.compile(self.optimizer, loss=fake_data_encoder_loss)
+        # endregion
 
-        # Fake Data
+        # region Fake Data
         encoder.trainable = False
         decoder.trainable = True
         decoder_real_data_trainer = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output,
@@ -69,6 +70,7 @@ class AGE(AutoEncoderBaseModel):
         decoder_fake_data_trainer = KerasModel(inputs=decoder_encoder_input, outputs=decoder_encoder_output,
                                                name="Decoder_fake_data_Model_scale_{0}".format(scale))
         decoder_fake_data_trainer.compile(self.optimizer, loss=fake_data_decoder_loss)
+        # endregion
 
         scale_models = AGE_Scale(encoder, decoder,
                                  encoder_real_data_trainer, encoder_fake_data_trainer,
@@ -124,7 +126,7 @@ class AGE(AutoEncoderBaseModel):
                 layer = self.link_decoder_deconv_layer(layer, scale, i)
 
             output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
-                                  activation="sigmoid")(layer)
+                                  activation=self.output_activation)(layer)
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 

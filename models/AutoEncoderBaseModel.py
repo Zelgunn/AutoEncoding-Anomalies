@@ -43,6 +43,8 @@ class AutoEncoderBaseModel(ABC):
         self._scales_input_shapes = None
         self.default_activation = None
         self.embeddings_activation = None
+        self.output_activation = None
+        self.output_range = None
         self.use_spectral_norm = False
         self.weight_decay_regularizer = None
         self.optimizer = None
@@ -56,13 +58,6 @@ class AutoEncoderBaseModel(ABC):
         with open(config_file) as tmp_file:
             self.config = json.load(tmp_file)
 
-        assert "input_shape" in self.config
-        assert "embeddings_size" in self.config
-        assert "encoder" in self.config
-        assert "decoder" in self.config
-        assert "default_activation" in self.config
-        assert "embeddings_activation" in self.config
-
         self.input_shape = self.config["input_shape"]
         self.input_channels = self.input_shape[-1]
         self.embeddings_size = self.config["embeddings_size"]
@@ -72,6 +67,8 @@ class AutoEncoderBaseModel(ABC):
 
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
+        self.output_activation = self.config["output_activation"]
+        self.output_range = output_activation_ranges[self.output_activation]
 
         self.weight_decay_regularizer = l1(self.config["weight_decay"]) if "weight_decay" in self.config else None
 
@@ -586,6 +583,14 @@ class AutoEncoderBaseModel(ABC):
 
     # endregion
 
+
+# region Output activations
+
+output_activation_ranges = {"sigmoid": [0.0, 1.0],
+                            "tanh": [-1.0, 1.0]}
+
+
+# endregion
 
 # region Reconstruction metrics
 def absolute_error(y_true, y_pred, axis=None):

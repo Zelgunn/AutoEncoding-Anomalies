@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 import sys
+import numpy as np
+import cv2
 
 from scheme import Dataset
 
@@ -19,6 +21,17 @@ class Database(ABC):
     @abstractmethod
     def load(self, database_path, **kwargs):
         raise NotImplementedError
+
+    def normalize(self, target_min=0.0, target_max=1.0):
+        current_min = min(self.train_dataset.images.min(), self.test_dataset.images.min())
+        current_max = max(self.train_dataset.images.max(), self.test_dataset.images.max())
+        self.train_dataset.normalize(current_min, current_max, target_min, target_max)
+        self.test_dataset.normalize(current_min, current_max, target_min, target_max)
+
+    def shuffle(self, seed=None):
+        np.random.seed(seed)
+        self.train_dataset.shuffle()
+        self.test_dataset.shuffle()
 
     @property
     def images_size(self):
@@ -50,3 +63,15 @@ class Database(ABC):
 
         print(" Done !")
         return databases
+
+    def visualize_test_dataset(self):
+        labels = self.test_dataset.anomaly_labels
+
+        for i in range(len(labels)):
+            tmp: np.ndarray = self.test_dataset.anomaly_labels[i]
+            tmp = tmp.astype(np.float32)
+            inv_tmp = 1.0 - tmp
+            tmp = self.test_dataset.images[i] * tmp
+            tmp += self.test_dataset.images[i] * inv_tmp * 0.25
+            cv2.imshow("test_dataset", tmp)
+            cv2.waitKey(30)
