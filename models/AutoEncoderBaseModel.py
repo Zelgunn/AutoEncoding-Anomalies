@@ -67,7 +67,7 @@ class AutoEncoderBaseModel(ABC):
 
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
-        self.output_activation = self.config["output_activation"]
+        self.output_activation = self.config["output_activation"]["name"]
         self.output_range = output_activation_ranges[self.output_activation]
 
         self.weight_decay_regularizer = l1(self.config["weight_decay"]) if "weight_decay" in self.config else None
