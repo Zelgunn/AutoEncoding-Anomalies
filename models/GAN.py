@@ -53,18 +53,26 @@ class GAN(AutoEncoderBaseModel):
         adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
                                            name="AdversarialGenerator_scale_{0}".format(scale))
 
-        discriminator_loss = metrics_dict[self.config["losses"]["discriminator"]]
+        discriminator_loss_metric = metrics_dict[self.config["losses"]["discriminator"]]
+
+        def discriminator_loss(y_true, y_pred):
+            return discriminator_loss_metric(y_true, y_pred) * self.config["loss_weights"]["adversarial"]
+
         discriminator_metrics = self.config["metrics"]["discriminator"]
         discriminator.compile(self.optimizer, loss=discriminator_loss, metrics=discriminator_metrics)
 
-        autoencoder_loss = metrics_dict[self.config["losses"]["autoencoder"]]
+        reconstruction_metric = metrics_dict[self.config["losses"]["autoencoder"]]
+
+        def autoencoder_loss(y_true, y_pred):
+            reconstruction_loss = reconstruction_metric(y_true, y_pred) * self.config["loss_weights"]["reconstruction"]
+            return reconstruction_loss
+
         autoencoder_metrics = self.config["metrics"]["autoencoder"]
         autoencoder.compile(self.optimizer, loss=autoencoder_loss, metrics=autoencoder_metrics)
 
         discriminator.trainable = False
-        adversarial_generator_loss = metrics_dict[self.config["losses"]["generator"]]
         adversarial_generator_metrics = self.config["metrics"]["generator"]
-        adversarial_generator.compile(self.optimizer, loss=adversarial_generator_loss,
+        adversarial_generator.compile(self.optimizer, loss=discriminator_loss,
                                       metrics=adversarial_generator_metrics)
 
         self._scales[scale] = GAN_Scale(encoder, decoder, discriminator, adversarial_generator, autoencoder)

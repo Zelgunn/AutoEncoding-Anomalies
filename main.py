@@ -27,7 +27,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "datasets/ucsd/ped2"],
                  }
 # endregion
 
-model_used = "VAEGAN"
+model_used = "GAN"
 dataset_used = "UCSD_Ped2"
 config_used = "configs/{model}_{dataset}.json".format(model=model_used, dataset=dataset_used)
 
@@ -43,17 +43,16 @@ database.shuffle(seed=1)
 # endregion
 
 # region Session initialization
-# config = tf.ConfigProto()
-# config.gpu_options.allow_growth = False
-# config.log_device_placement = False
-# session = tf.Session(config=config)
-# K.set_session(session)
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = False
+session = tf.Session(config=config)
+K.set_session(session)
 # endregion
 
 auto_encoder.train(database,
-                   min_scale=2,
-                   max_scale=3,
-                   epoch_length=5,
-                   epochs=[50, 50, 100, 200, 2000],
+                   min_scale=3,
+                   max_scale=4,
+                   epoch_length=200,
+                   epochs=[20, 20, 50, 50, 2000],
                    batch_size=[128, 128, 64, 32, 32],
                    pre_train=False)

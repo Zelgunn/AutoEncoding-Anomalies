@@ -1,6 +1,7 @@
 import numpy as np
 
 from datasets import UCSDDatabase
+from datasets.ucsd.OldTiffUpdater import update_tiffs
 
 
 def removed_unlabeled_ucsd1_test_samples(database: UCSDDatabase):
@@ -15,6 +16,7 @@ def removed_unlabeled_ucsd1_test_samples(database: UCSDDatabase):
     database.test_dataset.save_to_npz(force=True)
 
 
-# db = UCSDDatabase(database_path="/home/zelgunn/Documents/datasets/UCSDped1_updated")
+# db = UCSDDatabase(database_path=r"D:\Users\Degva\Downloads\UCSD_Anomaly_Dataset\UCSDped1_updated")
+# db = UCSDDatabase(database_path=r"D:\Users\Degva\Downloads\UCSD_Anomaly_Dataset\UCSDped2_updated")
 # removed_unlabeled_ucsd1_test_samples(db)
 # db.visualize_test_dataset()
