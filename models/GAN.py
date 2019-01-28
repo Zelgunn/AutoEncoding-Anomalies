@@ -188,8 +188,10 @@ class GAN(AutoEncoderBaseModel):
             batch_size = x.shape[0]
             x = [x]
             z = np.random.normal(size=[discriminator_steps, batch_size] + self.embeddings_shape)
-            zeros = np.zeros(shape=[batch_size])
-            ones = np.ones(shape=[batch_size])
+            zeros = np.random.normal(size=[discriminator_steps, batch_size], loc=0.1, scale=0.1)
+            zeros = np.clip(zeros, 0.0, 0.3)
+            ones = np.random.normal(size=[discriminator_steps, batch_size], loc=0.9, scale=0.1)
+            ones = np.clip(ones, 0.7, 1.0)
             # endregion
 
             # region Generate batch data (discriminator)
@@ -198,6 +200,14 @@ class GAN(AutoEncoderBaseModel):
                 if i > 0:
                     x += [train_generator.sample()[1]]
                 x_generated += [decoder.predict(x=z[i])]
+
+            x = np.array(x)
+            instance_noise = np.random.normal(size=x.shape, scale=0.2)
+            x = np.clip(x + instance_noise, -1.0, 1.0)
+
+            x_generated = np.array(x_generated)
+            instance_noise = np.random.normal(size=x_generated.shape, scale=0.2)
+            x_generated = np.clip(x_generated + instance_noise, -1.0, 1.0)
             # endregion
 
             # region Train on Batch
@@ -206,14 +216,14 @@ class GAN(AutoEncoderBaseModel):
 
             autoencoder_metrics = autoencoder.train_on_batch(x=noisy_x, y=x[0])
             if discriminator_metrics[1] > 0.6:
-                generator_metrics = adversarial_generator.train_on_batch(x=z[0], y=zeros)
+                generator_metrics = adversarial_generator.train_on_batch(x=z[0], y=zeros[0])
             else:
-                generator_metrics = adversarial_generator.test_on_batch(x=z[0], y=zeros)
+                generator_metrics = adversarial_generator.test_on_batch(x=z[0], y=zeros[0])
 
             discriminator_metrics = []
             for i in range(discriminator_steps):
-                real_data_discriminator_metrics = discriminator.train_on_batch(x=x[i], y=zeros)
-                fake_data_discriminator_metrics = discriminator.train_on_batch(x=x_generated[i], y=ones)
+                real_data_discriminator_metrics = discriminator.train_on_batch(x=x[i], y=zeros[i])
+                fake_data_discriminator_metrics = discriminator.train_on_batch(x=x_generated[i], y=ones[i])
                 discriminator_metrics += [real_data_discriminator_metrics, fake_data_discriminator_metrics]
             discriminator_metrics = np.mean(discriminator_metrics, axis=0)
 
