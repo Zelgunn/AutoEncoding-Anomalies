@@ -49,7 +49,7 @@ print("===== Normalizing data between {0} and {1} for activation \"{2}\"  ====="
     *auto_encoder.output_range, auto_encoder.output_activation))
 database.normalize(auto_encoder.output_range[0], auto_encoder.output_range[1])
 print("===== Shuffling data =====")
-database.shuffle(seed=17)
+database.shuffle(seed=3)
 # endregion
 
 # region Test dataset preview

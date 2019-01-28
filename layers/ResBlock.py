@@ -13,7 +13,7 @@ class _ResBlock(Layer):
                  strides=(1, 1),
                  data_format=None,
                  dilation_rate=1,
-                 activation=None,
+                 activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
                  bias_initializer="zeros",
@@ -84,6 +84,9 @@ class _ResBlock(Layer):
             if self.use_batch_normalization:
                 outputs = BatchNormalization()(outputs)
 
+            if self.activation is not None:
+                outputs = self.activation(outputs)
+
             outputs = conv(
                 outputs,
                 self.kernels[i],
@@ -97,9 +100,6 @@ class _ResBlock(Layer):
                     outputs,
                     self.biases[i],
                     data_format=self.data_format)
-
-            if self.activation is not None:
-                outputs = self.activation(outputs)
 
         if self.use_projection(K.int_shape(inputs)):
             inputs = conv(inputs, self.projection_kernel, strides=self.strides, padding="same")
@@ -204,7 +204,7 @@ class ResBlock1D(_ResBlock):
                  strides=(1, 1),
                  data_format=None,
                  dilation_rate=1,
-                 activation=None,
+                 activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
                  bias_initializer="zeros",
@@ -238,7 +238,7 @@ class ResBlock2D(_ResBlock):
                  strides=(1, 1),
                  data_format=None,
                  dilation_rate=1,
-                 activation=None,
+                 activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
                  bias_initializer="zeros",
@@ -272,7 +272,7 @@ class ResBlock3D(_ResBlock):
                  strides=(1, 1),
                  data_format=None,
                  dilation_rate=1,
-                 activation=None,
+                 activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
                  bias_initializer="zeros",
@@ -320,6 +320,9 @@ class _ResBlockTranspose(_ResBlock):
             if self.use_batch_normalization:
                 outputs = BatchNormalization()(outputs)
 
+            if self.activation is not None:
+                outputs = self.activation(outputs)
+
             deconv_output_shape = self.get_deconv_output_shape(outputs, i)
             if i == 0:
                 projection_output_shape = deconv_output_shape
@@ -338,9 +341,6 @@ class _ResBlockTranspose(_ResBlock):
                     outputs,
                     self.biases[i],
                     data_format=self.data_format)
-
-            if self.activation is not None:
-                outputs = self.activation(outputs)
 
         if self.use_projection(K.int_shape(inputs)):
             inputs = deconv(inputs, self.projection_kernel, projection_output_shape,
@@ -400,7 +400,7 @@ class ResBlock2DTranspose(_ResBlockTranspose):
                  strides=(1, 1),
                  data_format=None,
                  dilation_rate=1,
-                 activation=None,
+                 activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
                  bias_initializer="zeros",
@@ -436,7 +436,7 @@ class ResBlock3DTranspose(_ResBlockTranspose):
                  strides=(1, 1),
                  data_format=None,
                  dilation_rate=1,
-                 activation=None,
+                 activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
                  bias_initializer="zeros",
