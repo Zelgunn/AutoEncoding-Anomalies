@@ -112,7 +112,7 @@ class AutoEncoderBaseModel(ABC):
                                           kernel_regularizer=self.weight_decay_regularizer,
                                           bias_regularizer=self.weight_decay_regularizer)
         else:
-            self.embeddings_layer = Conv2D(filters=self.embeddings_size, kernel_size=1, padding="same",
+            self.embeddings_layer = Conv2D(filters=self.embeddings_size, kernel_size=3, padding="same",
                                            kernel_regularizer=self.weight_decay_regularizer,
                                            bias_regularizer=self.weight_decay_regularizer)
 
@@ -126,7 +126,7 @@ class AutoEncoderBaseModel(ABC):
         if ("resblock" in layer_info) and (layer_info["resblock"] == "True"):
             layer = res_block(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
                               kernel_regularizer=self.weight_decay_regularizer,
-                              bias_regularizer=self.weight_decay_regularizer, use_batch_normalization=True)
+                              bias_regularizer=self.weight_decay_regularizer)
         else:
             layer = conv(layer_info["filters"], layer_info["kernel_size"], strides=layer_info["strides"],
                          kernel_regularizer=self.weight_decay_regularizer,

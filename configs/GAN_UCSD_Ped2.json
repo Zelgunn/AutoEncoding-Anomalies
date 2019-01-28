@@ -1,6 +1,6 @@
 {
     "input_shape": [128, 192, 1],
-    "embeddings_size": 200,
+    "embeddings_size": 128,
     "embeddings_reshape": [2, 3],
     "use_dense_embeddings": "False",
     "use_resblock": "True",
