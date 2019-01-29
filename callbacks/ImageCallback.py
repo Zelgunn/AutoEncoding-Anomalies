@@ -26,11 +26,6 @@ class ImageCallback(TensorBoardPlugin):
                      name: str,
                      update_freq: int or str,
                      scale=None):
-        images_indices = [int(i * (images.shape[0] - 1) / (autoencoder.image_summaries_max_outputs - 1))
-                          for i in range(autoencoder.image_summaries_max_outputs)]
-        images_indices = np.array(images_indices)
-        callback_images = images[images_indices]
-
         if scale is None:
             image_summaries = autoencoder.get_image_summaries(name)
             inputs_placeholder = autoencoder.input
@@ -39,5 +34,5 @@ class ImageCallback(TensorBoardPlugin):
             inputs_placeholder = autoencoder.get_model_at_scale(scale).input
 
         image_callback = ImageCallback(image_summaries, tensorboard, update_freq=update_freq,
-                                       feed_dict={inputs_placeholder: callback_images})
+                                       feed_dict={inputs_placeholder: images})
         return image_callback

@@ -7,11 +7,11 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # region Imports
 import keras.backend as K
 import tensorflow as tf
-import numpy as np
 import cv2
 
 from models import BasicAE, ProgAE, AGE, VAE, GAN, VAEGAN
 from datasets import UCSDDatabase
+from data_preprocessors import DropoutNoiser
 
 # endregion
 
@@ -36,33 +36,51 @@ preview_tensorboard_test_images = False
 allow_gpu_growth = False
 
 # region Model/Dataset initialization
+# region Model
 auto_encoder_class = models_dict[model_used]
 auto_encoder = auto_encoder_class()
 auto_encoder.build_model(config_used)
+# endregion
 
+# region Preprocessors
+train_dropout_noise_rate = auto_encoder.config["data_generators"]["train"]["dropout_rate"]
+train_preprocessors = [DropoutNoiser(inputs_dropout_rate=train_dropout_noise_rate)]
+
+test_preprocessors = []
+# endregion
+
+# region Datasets
 print("===== Loading data =====")
 database_class, database_path = datasets_dict[dataset_used]
-database = database_class(database_path=database_path)
+database = database_class(database_path=database_path,
+                          train_preprocessors=train_preprocessors,
+                          test_preprocessors=test_preprocessors)
+
 print("===== Resizing data to input_shape =====")
 database = database.resized_to_scale(auto_encoder.input_shape)
+
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation))
 database.normalize(auto_encoder.output_range[0], auto_encoder.output_range[1])
+
 print("===== Shuffling data =====")
-database.shuffle(seed=3)
+seed = 8
+database.shuffle(seed=seed)
+database.test_dataset.epoch_length = 10
+# endregion
 # endregion
 
 # region Test dataset preview
 if preview_tensorboard_test_images:
     samples_count = database.test_dataset.samples_count
     preview_count = auto_encoder.image_summaries_max_outputs
+    previewed_image, _ = database.test_dataset.sample(preview_count, apply_preprocess_step=False, seed=0)
+    previewed_image = (previewed_image - previewed_image.min()) / (previewed_image.max() - previewed_image.min())
     for i in range(preview_count):
-        index = int(i * (samples_count - 1) / (preview_count - 1))
-        previewed_image = database.test_dataset.images[index]
-        previewed_image = (previewed_image - previewed_image.min()) / (previewed_image.max() - previewed_image.min())
-        cv2.imshow("preview_{0}".format(index), previewed_image)
+        cv2.imshow("preview_{0} (seed={1})".format(i, seed), previewed_image[i])
     cv2.waitKey(120000)
     cv2.destroyAllWindows()
+    exit()
 
 # endregion
 
@@ -75,7 +93,7 @@ if allow_gpu_growth:
 # endregion
 
 auto_encoder.train(database,
-                   min_scale=3,
+                   min_scale=4,
                    max_scale=4,
                    epoch_length=250,
                    epochs=[20, 20, 50, 50, 2000],

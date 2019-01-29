@@ -1,24 +1,26 @@
 from datasets.ucsd.UCSDDataset import UCSDDataset
 import os
+from typing import List
 
-from datasets import Database
+from datasets import FullyLoadableDatabase
+from data_preprocessors import DataPreprocessor
 
 
-class UCSDDatabase(Database):
-    def load(self, database_path, **kwargs):
+class UCSDDatabase(FullyLoadableDatabase):
+    def load(self, database_path):
         if database_path.endswith("\\"):
             database_path = database_path[:-1]
         self.database_path = database_path
 
-        self.train_dataset = self.load_dataset("Train")
-        self.test_dataset = self.load_dataset("Test")
+        self.train_dataset = self.load_dataset("Train", self.train_preprocessors)
+        self.test_dataset = self.load_dataset("Test", self.test_preprocessors)
 
         if not self.train_dataset.saved_to_npz:
             self.normalize()
             self.train_dataset.save_to_npz()
             self.test_dataset.save_to_npz()
 
-    def load_dataset(self, dataset_name: str):
+    def load_dataset(self, dataset_name: str, data_preprocessors: List[DataPreprocessor]):
         dataset_path = os.path.join(self.database_path, dataset_name)
-        dataset = UCSDDataset(dataset_path=dataset_path)
+        dataset = UCSDDataset(dataset_path=dataset_path, data_preprocessors=data_preprocessors)
         return dataset

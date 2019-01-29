@@ -11,7 +11,6 @@ from typing import List
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
 from datasets import Database
-from generators import NoisyImagesGenerator
 
 AGE_Scale = namedtuple("AGE_Scale", ["encoder", "decoder",
                                      "encoder_real_data_trainer", "encoder_fake_data_trainer",
@@ -180,30 +179,11 @@ class AGE(AutoEncoderBaseModel):
     def can_be_pre_trained(self):
         return True
 
-    def train_loop(self,
-                   database: Database,
-                   callbacks: CallbackList,
-                   batch_size: int,
-                   epoch_length: int,
-                   epochs: int,
-                   scale: int,
-                   **kwargs):
-        scale_shape = self.input_shape_by_scale[scale]
-        database = database.resized_to_scale(scale_shape)
-
-        train_generator = NoisyImagesGenerator(database.train_dataset.images, dropout_rate=0.0, batch_size=batch_size,
-                                               epoch_length=epoch_length)
-        test_generator = NoisyImagesGenerator(database.test_dataset.images, dropout_rate=0.0, batch_size=batch_size)
-
-        for _ in range(epochs):
-            self.train_epoch(train_generator, test_generator, scale, callbacks)
-
     def train_epoch(self,
-                    train_generator,
-                    test_generator=None,
+                    database: Database,
                     scale: int = None,
                     callbacks: CallbackList = None):
-        epoch_length = len(train_generator)
+        epoch_length = len(database.train_dataset)
         scale_models = self.get_scale_models(scale)
         base_model = self.get_model_at_scale(scale)
 
@@ -211,7 +191,7 @@ class AGE(AutoEncoderBaseModel):
 
         for batch_index in range(epoch_length):
             decoder_steps = self.config["decoder_steps"]
-            x, y = train_generator[0]
+            x, y = database.train_dataset[0]
             batch_size = x.shape[0]
             z = np.random.normal(size=[decoder_steps + 1, batch_size, self.embeddings_size])
 
@@ -234,7 +214,7 @@ class AGE(AutoEncoderBaseModel):
             batch_logs["decoder_loss"] = decoder_fake_data_loss
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(base_model, train_generator, test_generator, callbacks)
+        self.on_epoch_end(base_model, database, callbacks)
 
     def on_epoch_end(self,
                      base_model: KerasModel,

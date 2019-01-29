@@ -6,7 +6,7 @@ from collections import namedtuple
 from typing import List
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
-from datasets import Database, DataGenerator
+from datasets import Database
 from callbacks import AUCCallback
 
 GAN_Scale = namedtuple("GAN_Scale", ["encoder", "decoder", "discriminator",
@@ -165,12 +165,11 @@ class GAN(AutoEncoderBaseModel):
         return True
 
     def train_epoch(self,
-                    train_generator: DataGenerator,
-                    test_generator: DataGenerator = None,
+                    database: Database,
                     scale: int = None,
                     callbacks: CallbackList = None):
         # region Variables initialization
-        epoch_length = len(train_generator)
+        epoch_length = len(database.train_dataset)
         scale_models = self.get_scale_models(scale)
         autoencoder: KerasModel = scale_models.autoencoder
         decoder: KerasModel = scale_models.decoder
@@ -184,7 +183,7 @@ class GAN(AutoEncoderBaseModel):
         # discriminator_metrics = [1.0, 0.75]
         for batch_index in range(epoch_length):
             # region Generate batch data (common)
-            noisy_x, x = train_generator[0]
+            noisy_x, x = database.train_dataset[0]
             batch_size = x.shape[0]
             x_real = [x]
             z = np.random.normal(size=[discriminator_steps, batch_size] + self.embeddings_shape)
@@ -198,7 +197,7 @@ class GAN(AutoEncoderBaseModel):
             x_generated = []
             for i in range(discriminator_steps):
                 if i > 0:
-                    x_real += [train_generator.sample()[1]]
+                    x_real += [database.train_dataset.sample()[1]]
                 x_generated += [decoder.predict(x=z[i])]
 
             x_real = np.array(x_real)
@@ -238,7 +237,7 @@ class GAN(AutoEncoderBaseModel):
             callbacks.on_batch_end(batch_index, batch_logs)
             # endregion
 
-        self.on_epoch_end(base_model, train_generator, test_generator, callbacks)
+        self.on_epoch_end(base_model, database, callbacks)
 
     # endregion
 
@@ -254,7 +253,7 @@ class GAN(AutoEncoderBaseModel):
         discriminator_prediction = discriminator.get_output_at(0)
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
         auc_images = database.test_dataset.images
-        auc_frame_level_labels = database.test_dataset.frame_level_labels()
+        auc_frame_level_labels = database.test_dataset.frame_level_labels
         disc_auc_callback = AUCCallback(self.tensorboard, discriminator_prediction, discriminator_inputs_placeholder,
                                         auc_images, auc_frame_level_labels, plot_size=(256, 256), batch_size=128,
                                         name="Discriminator_AUC")

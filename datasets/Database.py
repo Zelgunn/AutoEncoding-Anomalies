@@ -1,37 +1,44 @@
 from abc import ABC, abstractmethod
 import sys
 import numpy as np
-import cv2
+from typing import List
 
+from data_preprocessors import DataPreprocessor
 from datasets import Dataset
 
 
 class Database(ABC):
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 database_path: str = None,
+                 train_preprocessors: List[DataPreprocessor] = None,
+                 test_preprocessors: List[DataPreprocessor] = None):
+        self.database_path = None
+        self.train_preprocessors = train_preprocessors or []
+        self.test_preprocessors = test_preprocessors or []
         self._require_saving = False
         self.train_dataset: Dataset = None
         self.test_dataset: Dataset = None
 
-        if "database_path" in kwargs:
-            self.database_path: str = kwargs["database_path"]
-            self.load(self.database_path)
-        else:
-            self.database_path: str = None
+        if database_path is not None:
+            self.load(database_path)
 
     @abstractmethod
-    def load(self, database_path, **kwargs):
+    def load(self, database_path):
+        self.database_path = database_path
+
+    @abstractmethod
+    def normalize(self, target_min=0.0, target_max=1.0):
         raise NotImplementedError
 
-    def normalize(self, target_min=0.0, target_max=1.0):
-        current_min = min(self.train_dataset.images.min(), self.test_dataset.images.min())
-        current_max = max(self.train_dataset.images.max(), self.test_dataset.images.max())
-        self.train_dataset.normalize(current_min, current_max, target_min, target_max)
-        self.test_dataset.normalize(current_min, current_max, target_min, target_max)
+    def on_epoch_end(self):
+        self.train_dataset.on_epoch_end()
+        self.test_dataset.on_epoch_end()
 
     def shuffle(self, seed=None):
         np.random.seed(seed)
         self.train_dataset.shuffle()
         self.test_dataset.shuffle()
+        np.random.seed(None)
 
     @property
     def images_size(self):
@@ -63,15 +70,3 @@ class Database(ABC):
 
         print(" Done !")
         return databases
-
-    def visualize_test_dataset(self):
-        labels = self.test_dataset.anomaly_labels
-
-        for i in range(len(labels)):
-            tmp: np.ndarray = self.test_dataset.anomaly_labels[i]
-            tmp = tmp.astype(np.float32)
-            inv_tmp = 1.0 - tmp
-            tmp = self.test_dataset.images[i] * tmp
-            tmp += self.test_dataset.images[i] * inv_tmp * 0.25
-            cv2.imshow("test_dataset", tmp)
-            cv2.waitKey(30)

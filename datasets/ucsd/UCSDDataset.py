@@ -4,10 +4,11 @@ import numpy as np
 from tqdm import tqdm
 from typing import Type
 
-from datasets import Dataset
+from datasets import FullyLoadableDataset
 
 
-class UCSDDataset(Dataset):
+class UCSDDataset(FullyLoadableDataset):
+    # region Loading
     def load(self, dataset_path: str, **kwargs):
         self.dataset_path = dataset_path
         if self.dataset_path.endswith(os.path.sep):
@@ -41,30 +42,11 @@ class UCSDDataset(Dataset):
         print("Saving UCSD dataset : " + self.dataset_path + " (to .npz file)")
         np.savez_compressed(self.npz_filepath, images=self.images, anomaly_labels=self.anomaly_labels)
 
-    def next_batch(self, batch_size: int, complete_batch_at_end=True):
-        if self.epochs_completed == 0 and self.index_in_epoch == 0:
-            self.shuffle()
-
-        if (self.index_in_epoch + batch_size) > self.samples_count:
-            self.epochs_completed += 1
-            remaining_images = self.images[self.index_in_epoch: self.samples_count]
-            self.shuffle()
-            if complete_batch_at_end:
-                self.index_in_epoch = batch_size - (self.samples_count - self.index_in_epoch)
-                images = np.concatenate([remaining_images, self.images[0: self.index_in_epoch]], axis=0)
-                return images
-            else:
-                self.index_in_epoch = 0
-                return remaining_images
-
-        start = self.index_in_epoch
-        self.index_in_epoch += batch_size
-        return self.images[start: self.index_in_epoch]
-
     @property
     def npz_filepath(self) -> str:
         return self.dataset_path + ".npz"
 
+    # region Static loading methods
     @staticmethod
     def _get_images_dictionary(dataset_path: str, extension: str):
         if not extension.startswith("."):
@@ -89,15 +71,6 @@ class UCSDDataset(Dataset):
         if sort:
             result.sort()
         return result
-
-    @staticmethod
-    def _load_ucsd_images(dataset_path: str):
-        images_npz_path = os.path.join(dataset_path + ".npz")
-        if os.path.exists(images_npz_path):
-            images = np.load(images_npz_path)
-            return images
-        else:
-            return UCSDDataset._load_ucsd_images_raw(dataset_path)
 
     @staticmethod
     def _load_images_from_dictionary_of_paths(dictionary, dtype: Type = np.float32):
@@ -128,3 +101,5 @@ class UCSDDataset(Dataset):
     def _load_ucsd_images_raw(dataset_path: str):
         tiff_images_dictionary = UCSDDataset._get_images_dictionary(dataset_path, ".tif")
         return UCSDDataset._load_images_from_dictionary_of_paths(tiff_images_dictionary)
+    # endregion
+    # endregion
