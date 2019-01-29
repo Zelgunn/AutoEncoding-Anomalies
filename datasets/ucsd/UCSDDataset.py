@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from typing import Type
 
-from scheme import Dataset
+from datasets import Dataset
 
 
 class UCSDDataset(Dataset):

@@ -1,9 +1,10 @@
+from keras.utils import Sequence
 from abc import ABC, abstractmethod
 import numpy as np
 import cv2
 
 
-class Dataset(ABC):
+class Dataset(Sequence, ABC):
     def __init__(self, **kwargs):
         self.images: np.ndarray = None
         self.anomaly_labels = None

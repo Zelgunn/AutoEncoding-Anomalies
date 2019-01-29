@@ -14,6 +14,7 @@
       <w>dtype</w>
       <w>figsize</w>
       <w>filepath</w>
+      <w>fourcc</w>
       <w>glorot</w>
       <w>infos</w>
       <w>keras</w>

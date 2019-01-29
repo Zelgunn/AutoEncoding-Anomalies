@@ -1,7 +1,7 @@
 from datasets.ucsd.UCSDDataset import UCSDDataset
 import os
 
-from scheme import Database
+from datasets import Database
 
 
 class UCSDDatabase(Database):

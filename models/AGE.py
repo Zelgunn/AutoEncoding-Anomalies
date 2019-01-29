@@ -10,7 +10,7 @@ from typing import List
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
-from scheme import Database
+from datasets import Database
 from generators import NoisyImagesGenerator
 
 AGE_Scale = namedtuple("AGE_Scale", ["encoder", "decoder",

@@ -1,7 +1,7 @@
 import numpy as np
 
 from datasets import UCSDDatabase
-from datasets.ucsd.OldTiffUpdater import update_tiffs
+from datasets.ucsd.tiff_utils import update_tiffs
 
 
 def removed_unlabeled_ucsd1_test_samples(database: UCSDDatabase):

@@ -1,6 +1,6 @@
 import numpy as np
 
-from scheme import DataGenerator
+from datasets import DataGenerator
 
 
 class NoisyImagesGenerator(DataGenerator):

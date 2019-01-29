@@ -6,7 +6,7 @@ from collections import namedtuple
 from typing import List
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
-from scheme import Database, DataGenerator
+from datasets import Database, DataGenerator
 from callbacks import AUCCallback
 
 GAN_Scale = namedtuple("GAN_Scale", ["encoder", "decoder", "discriminator",

@@ -14,9 +14,9 @@ import copy
 from typing import List, Any
 
 from layers import ResBlock2D, ResBlock2DTranspose, SpectralNormalization
-from scheme import Database, Dataset, DataGenerator
+from datasets import Database, Dataset, DataGenerator
 from generators import NoisyImagesGenerator
-from train_utils import get_log_dir
+from utils.train_utils import get_log_dir
 from callbacks import ImageCallback, AUCCallback
 
 

@@ -1,5 +1,4 @@
 from keras import Model
-import keras.utils
 import os
 from time import time
 

@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import cv2
 
-from scheme import Dataset
+from datasets import Dataset
 
 
 class Database(ABC):

@@ -1,1 +1,1 @@
-from datasets.ucsd.OldTiffUpdater import update_tiffs
+from datasets.ucsd.tiff_utils import update_tiffs

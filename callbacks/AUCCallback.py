@@ -6,8 +6,7 @@ import cv2
 from typing import Tuple
 
 from callbacks import TensorBoardPlugin
-from scheme import Dataset
-from plot_utils import plot_line2d_to_array
+from utils.plot_utils import plot_line2d_to_array
 
 
 class AUCCallback(TensorBoardPlugin):
