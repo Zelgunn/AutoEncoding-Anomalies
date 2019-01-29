@@ -1,8 +1,5 @@
-import numpy as np
 import cv2
 import os
-import time
-from tqdm import tqdm
 
 from datasets import Dataset
 
@@ -42,6 +39,38 @@ class SubwayDataset(Dataset):
             frame = cv2.resize(frame, dsize=frame_size)
             video_writer.write(frame)
 
+    def make_copy(self, copy_inputs=False, copy_labels=False):
+        pass
+
+    def shuffle(self):
+        pass
+
+    def resized(self, size):
+        pass
+
+    def sample(self, batch_size=None, apply_preprocess_step=True, seed=None):
+        pass
+
+    def current_batch(self, batch_size: int = None, apply_preprocess_step=True):
+        pass
+
+    @property
+    def samples_count(self):
+        return self.frame_count
+
+    @property
+    def images_size(self):
+        return self.frame_height, self.frame_width
+
+    @property
+    def frame_level_labels(self):
+        pass
+
+    def __getitem__(self, index):
+        pass
+
+    def __len__(self):
+        pass
 
 # subway_dataset = SubwayDataset(dataset_path="/home/zelgunn/Documents/datasets/Subway")
 # for n in range(6):
