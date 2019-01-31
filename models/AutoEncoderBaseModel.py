@@ -468,9 +468,8 @@ class AutoEncoderBaseModel(ABC):
     def frame_level_average_error(self, scale: int = None):
         model = self.get_model_at_scale(scale)
 
-        squared_delta = tf.square(model.input - model.output)
-        average_error = tf.reduce_mean(squared_delta, axis=[1, 2, 3])
-        average_error = tf.sqrt(average_error)
+        squared_delta = tf.abs(model.input - model.output)
+        average_error = tf.reduce_max(squared_delta, axis=[1, 2, 3])
 
         return average_error
 

@@ -2,6 +2,7 @@
   <dictionary name="Degva">
     <words>
       <w>autoencoder</w>
+      <w>tqdm</w>
     </words>
   </dictionary>
 </component>

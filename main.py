@@ -66,7 +66,7 @@ database.normalize(auto_encoder.output_range[0], auto_encoder.output_range[1])
 print("===== Shuffling data =====")
 seed = 8
 database.shuffle(seed=seed)
-database.test_dataset.epoch_length = 10
+database.test_dataset.epoch_length = 2
 # endregion
 # endregion
 
@@ -95,7 +95,7 @@ if allow_gpu_growth:
 auto_encoder.train(database,
                    min_scale=4,
                    max_scale=4,
-                   epoch_length=250,
+                   epoch_length=5,
                    epochs=[20, 20, 50, 50, 2000],
                    batch_size=[128, 128, 64, 32, 32],
                    pre_train=False)

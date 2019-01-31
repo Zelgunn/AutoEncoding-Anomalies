@@ -137,8 +137,9 @@ class FullyLoadableDataset(Dataset, ABC):
 
 def resize_images(images, size) -> np.ndarray:
     result = np.empty((images.shape[0], *size, images.shape[3]))
+    dsize = tuple(reversed(size))
     for i in range(images.shape[0]):
-        resized_one = cv2.resize(images[i], tuple(reversed(size)), interpolation=cv2.INTER_AREA)
+        resized_one = cv2.resize(images[i], dsize, interpolation=cv2.INTER_AREA)
         if images.shape[3] == 1:
             result[i, :, :, 0] = resized_one
         else:

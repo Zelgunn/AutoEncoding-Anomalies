@@ -84,6 +84,10 @@ class AUCCallback(TensorBoardPlugin):
                     dsize = tuple(reversed(resized_predictions.shape[1:3]))
                     for j in range(len(predictions)):
                         resized_predictions[j] = cv2.resize(predictions[j], dsize, interpolation=cv2.INTER_AREA)
+                        # cv2.imshow("base", predictions[j])
+                        # cv2.imshow("resized", resized_predictions[j])
+                        # cv2.imshow("labels", self.labels[j].astype(np.float32))
+                        # cv2.waitKey(1000)
                     predictions = resized_predictions
                 else:
                     predictions = np.reshape(predictions, self.labels.shape)
