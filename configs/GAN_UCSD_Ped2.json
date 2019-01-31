@@ -1,6 +1,6 @@
 {
     "input_shape": [128, 192, 1],
-    "embeddings_size": 128,
+    "embeddings_size": 120,
     "embeddings_reshape": [2, 3],
     "use_dense_embeddings": "False",
     "use_resblock": "True",
@@ -35,6 +35,7 @@
     "optimizer": {"name": "adam", "lr": 2e-5, "beta_1": 0.5, "beta_2": 0.999, "decay": 0.0, "rho": 0.9},
     "losses": {"discriminator": "bce", "autoencoder": "L1", "generator": "bce"},
     "loss_weights": {"reconstruction": 100.0, "adversarial": 1.0},
+    "weight_decay": 0.001,
     "metrics": {
         "discriminator": ["acc"],
         "autoencoder": ["mse"],

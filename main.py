@@ -29,7 +29,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "datasets/ucsd/ped2"],
                  }
 # endregion
 
-model_used = "GAN"
+model_used = "VAEGAN"
 dataset_used = "UCSD_Ped2"
 config_used = "configs/{model}_{dataset}.json".format(model=model_used, dataset=dataset_used)
 preview_tensorboard_test_images = False

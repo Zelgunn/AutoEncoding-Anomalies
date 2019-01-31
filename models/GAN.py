@@ -213,7 +213,7 @@ class GAN(AutoEncoderBaseModel):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            autoencoder_metrics = autoencoder.train_on_batch(x=noisy_x, y=x)
+            autoencoder_metrics = autoencoder.train_on_batch(x=noisy_x, y=x_real[0])
             generator_metrics = adversarial_generator.train_on_batch(x=z[0], y=zeros[0])
 
             discriminator_metrics = []

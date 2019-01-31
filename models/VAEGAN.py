@@ -25,7 +25,15 @@ class VAEGAN(GAN):
     def build_layers(self):
         super(VAEGAN, self).build_layers()
         self.latent_mean = self.embeddings_layer
-        self.latent_log_var = Dense(units=self.embeddings_size)
+        if self.use_dense_embeddings:
+            self.latent_log_var = Dense(units=self.embeddings_size,
+                                        kernel_regularizer=self.weight_decay_regularizer,
+                                        bias_regularizer=self.weight_decay_regularizer)
+        else:
+            self.latent_log_var = Conv2D(filters=self.embeddings_size, kernel_size=3, padding="same",
+                                         kernel_regularizer=self.weight_decay_regularizer,
+                                         bias_regularizer=self.weight_decay_regularizer)
+
         self.embeddings_layer = Lambda(function=sampling)
 
     def build_encoder_for_scale(self, scale: int):
@@ -45,15 +53,23 @@ class VAEGAN(GAN):
                 layer = self.link_encoder_conv_layer(layer, scale, i)
 
             with tf.name_scope("embeddings"):
-                layer = Reshape([-1])(layer)
+                if self.use_dense_embeddings:
+                    layer = Reshape([-1])(layer)
 
                 latent_mean = self.latent_mean(layer)
                 latent_log_var = self.latent_log_var(layer)
+
+                if not self.use_dense_embeddings:
+                    latent_mean = Reshape([-1])(latent_mean)
+                    latent_log_var = Reshape([-1])(latent_log_var)
+
                 layer = self.embeddings_layer([latent_mean, latent_log_var])
 
                 layer = GAN.get_activation(self.embeddings_activation)(layer)
                 embeddings_reshape = self.config["embeddings_reshape"]
-                embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
+                embeddings_filters = self.embeddings_size
+                if self.use_dense_embeddings:
+                    embeddings_filters = embeddings_filters // np.prod(embeddings_reshape)
                 layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
 
             outputs = [layer, latent_mean, latent_log_var]
@@ -74,7 +90,7 @@ class VAEGAN(GAN):
         autoencoder = KerasModel(inputs=encoder_input, outputs=autoencoded,
                                  name="AutoEncoder_scale_{0}".format(scale))
 
-        decoder_input = Input([self.embeddings_size])
+        decoder_input = Input(self.embeddings_shape)
         generator_discriminated = discriminator(decoder(decoder_input))
         adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
                                            name="AdversarialGenerator_scale_{0}".format(scale))
