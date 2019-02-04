@@ -9,15 +9,14 @@ from datasets import FullyLoadableDataset
 
 class UCSDDataset(FullyLoadableDataset):
     # region Loading
-    def load(self, dataset_path: str, **kwargs):
-        self.dataset_path = dataset_path
+    def load(self):
         if self.dataset_path.endswith(os.path.sep):
             self.dataset_path = self.dataset_path[:-1]
 
         self.anomaly_labels = None
 
         self.saved_to_npz = os.path.exists(self.npz_filepath)
-        print("Loading UCSD dataset : " + dataset_path)
+        print("Loading UCSD dataset : " + self.dataset_path)
         if self.saved_to_npz:
             print("Found saved dataset (in .npz file)")
             npz_file = np.load(self.npz_filepath)
@@ -28,8 +27,8 @@ class UCSDDataset(FullyLoadableDataset):
                     self.anomaly_labels = None
         else:
             print("Building dataset from raw data")
-            self.images = UCSDDataset._load_ucsd_images_raw(dataset_path)
-            bmp_images_dictionary = UCSDDataset._get_images_dictionary(dataset_path, ".bmp")
+            self.images = UCSDDataset._load_ucsd_images_raw(self.dataset_path)
+            bmp_images_dictionary = UCSDDataset._get_images_dictionary(self.dataset_path, ".bmp")
             if len(bmp_images_dictionary) > 0:
                 self.anomaly_labels = UCSDDataset._load_images_from_dictionary_of_paths(bmp_images_dictionary,
                                                                                         dtype=np.bool)

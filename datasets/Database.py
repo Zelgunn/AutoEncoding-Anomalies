@@ -9,22 +9,19 @@ from datasets import Dataset
 
 class Database(ABC):
     def __init__(self,
-                 database_path: str = None,
+                 database_path: str,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
-        self.database_path = None
+        self.database_path = database_path
         self.train_preprocessors = train_preprocessors or []
         self.test_preprocessors = test_preprocessors or []
         self._require_saving = False
         self.train_dataset: Dataset = None
         self.test_dataset: Dataset = None
 
-        if database_path is not None:
-            self.load(database_path)
-
     @abstractmethod
-    def load(self, database_path):
-        self.database_path = database_path
+    def load(self):
+        pass
 
     @abstractmethod
     def normalize(self, target_min=0.0, target_max=1.0):
@@ -50,10 +47,9 @@ class Database(ABC):
             return self
 
         database_type = type(self)
-        database: Database = database_type()
+        database: Database = database_type(self.database_path)
         database.train_dataset = self.train_dataset.resized(scale_size)
         database.test_dataset = self.test_dataset.resized(scale_size)
-        database.database_path = self.database_path
         database._require_saving = self._require_saving
 
         return database

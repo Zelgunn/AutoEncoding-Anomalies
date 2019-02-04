@@ -2,6 +2,8 @@
   <dictionary name="Degva">
     <words>
       <w>autoencoder</w>
+      <w>degva</w>
+      <w>filenames</w>
       <w>tqdm</w>
     </words>
   </dictionary>

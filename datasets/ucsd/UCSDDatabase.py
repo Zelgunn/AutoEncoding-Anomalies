@@ -7,11 +7,7 @@ from data_preprocessors import DataPreprocessor
 
 
 class UCSDDatabase(FullyLoadableDatabase):
-    def load(self, database_path):
-        if database_path.endswith("\\"):
-            database_path = database_path[:-1]
-        self.database_path = database_path
-
+    def load(self):
         self.train_dataset = self.load_dataset("Train", self.train_preprocessors)
         self.test_dataset = self.load_dataset("Test", self.test_preprocessors)
 
@@ -23,4 +19,5 @@ class UCSDDatabase(FullyLoadableDatabase):
     def load_dataset(self, dataset_name: str, data_preprocessors: List[DataPreprocessor]):
         dataset_path = os.path.join(self.database_path, dataset_name)
         dataset = UCSDDataset(dataset_path=dataset_path, data_preprocessors=data_preprocessors)
+        dataset.load()
         return dataset

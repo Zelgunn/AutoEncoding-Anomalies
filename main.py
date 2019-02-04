@@ -10,7 +10,7 @@ import tensorflow as tf
 import cv2
 
 from models import BasicAE, ProgAE, AGE, VAE, GAN, VAEGAN
-from datasets import UCSDDatabase
+from datasets import UCSDDatabase, SubwayDatabase
 from data_preprocessors import DropoutNoiser
 
 # endregion
@@ -24,14 +24,15 @@ models_dict = {"BasicAE": BasicAE,
                "VAEGAN": VAEGAN,
                }
 
-datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "datasets/ucsd/ped2"],
-                 "UCSD_Ped1": [UCSDDatabase, "datasets/ucsd/ped1"]
+datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2"],
+                 "UCSD_Ped1": [UCSDDatabase, "../datasets/ucsd/ped1"],
+                 "Subway_Exit": [SubwayDatabase, "../datasets/subway/exit"]
                  }
 # endregion
 
 model_used = "VAEGAN"
-dataset_used = "UCSD_Ped2"
-config_used = "configs/{model}_{dataset}.json".format(model=model_used, dataset=dataset_used)
+dataset_used = "Subway_Exit"
+config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=dataset_used)
 preview_tensorboard_test_images = False
 allow_gpu_growth = False
 
@@ -55,6 +56,7 @@ database_class, database_path = datasets_dict[dataset_used]
 database = database_class(database_path=database_path,
                           train_preprocessors=train_preprocessors,
                           test_preprocessors=test_preprocessors)
+database.load()
 
 print("===== Resizing data to input_shape =====")
 database = database.resized_to_scale(auto_encoder.input_shape)

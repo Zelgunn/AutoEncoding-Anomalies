@@ -1,6 +1,7 @@
 from abc import ABC
 import numpy as np
 import cv2
+import copy
 from typing import List
 
 from datasets import Dataset
@@ -10,11 +11,13 @@ from data_preprocessors import DataPreprocessor
 class FullyLoadableDataset(Dataset, ABC):
     # region Initialization
     def __init__(self,
+                 dataset_path: str,
                  data_preprocessors: List[DataPreprocessor] = None,
                  batch_size=64,
                  epoch_length: int = None,
                  shuffle_on_epoch_end=True,
                  **kwargs):
+        self.dataset_path = dataset_path
         self.images = None
         self.anomaly_labels = None
         self._frame_level_labels = None
@@ -25,7 +28,18 @@ class FullyLoadableDataset(Dataset, ABC):
                                                    **kwargs)
 
     def make_copy(self, copy_inputs=False, copy_labels=False):
-        other: FullyLoadableDataset = super(FullyLoadableDataset, self).make_copy(copy_inputs)
+        dataset_type = type(self)
+        other: FullyLoadableDataset = dataset_type(dataset_path=self.dataset_path)
+        other.data_preprocessors = self.data_preprocessors
+        other.batch_size = self.batch_size
+        other.epoch_length = self.epoch_length
+        other.shuffle_on_epoch_end = self.shuffle_on_epoch_end
+
+        other.saved_to_npz = self.saved_to_npz
+        other.index = self.index
+        other.epochs_completed = self.epochs_completed
+        other._normalization_range = copy.copy(self._normalization_range)
+
         other.images = np.copy(self.images) if copy_inputs else self.images
         if self.anomaly_labels is not None:
             if copy_labels:
@@ -38,18 +52,10 @@ class FullyLoadableDataset(Dataset, ABC):
 
     # endregion
 
-    def set_normalization_ranges(self, current_min, current_max, target_min=0.0, target_max=1.0):
-        super(FullyLoadableDataset, self).set_normalization_ranges(current_min, current_max,
-                                                                   target_min, target_max)
-
+    def normalize(self, current_min, current_max, target_min=0.0, target_max=1.0):
+        super(FullyLoadableDataset, self).normalize(current_min, current_max, target_min, target_max)
         multiplier = (target_max - target_min) / (current_max - current_min)
         self.images = (self.images - current_min) * multiplier + target_min
-
-    def __len__(self):
-        if self.epoch_length is None:
-            return int(np.ceil(self.samples_count / self.batch_size))
-        else:
-            return self.epoch_length
 
     def __getitem__(self, index):
         batch = self.current_batch() if self.epoch_length is None else self.sample()

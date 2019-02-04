@@ -379,7 +379,7 @@ class AutoEncoderBaseModel(ABC):
         eval_image_summary_callback = self.image_summary_from_dataset(database.test_dataset, "test",
                                                                       self.tensorboard, scale=scale)
 
-        auc_images = database.test_dataset.images
+        auc_images = database.test_dataset.sample(batch_size=512, seed=0)
         auc_inputs_placeholder = self.get_model_at_scale(scale).input
         frame_level_auc_predictions = self.frame_level_average_error(scale)
         frame_level_labels = database.test_dataset.frame_level_labels

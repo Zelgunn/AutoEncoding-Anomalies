@@ -9,7 +9,7 @@ from data_preprocessors import DataPreprocessor
 
 class FullyLoadableDatabase(Database, ABC):
     def __init__(self,
-                 database_path: str = None,
+                 database_path: str,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
         super(FullyLoadableDatabase, self).__init__(database_path=database_path,
@@ -21,8 +21,8 @@ class FullyLoadableDatabase(Database, ABC):
     def normalize(self, target_min=0.0, target_max=1.0):
         current_min = min(self.train_dataset.images.min(), self.test_dataset.images.min())
         current_max = max(self.train_dataset.images.max(), self.test_dataset.images.max())
-        self.train_dataset.set_normalization_ranges(current_min, current_max, target_min, target_max)
-        self.test_dataset.set_normalization_ranges(current_min, current_max, target_min, target_max)
+        self.train_dataset.normalize(current_min, current_max, target_min, target_max)
+        self.test_dataset.normalize(current_min, current_max, target_min, target_max)
 
     def visualize_test_dataset(self):
         labels = self.test_dataset.anomaly_labels
