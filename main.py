@@ -35,6 +35,7 @@ dataset_used = "Subway_Exit"
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=dataset_used)
 preview_tensorboard_test_images = False
 allow_gpu_growth = False
+profile = True
 
 # region Model/Dataset initialization
 # region Model
@@ -76,7 +77,8 @@ database.test_dataset.epoch_length = 2
 if preview_tensorboard_test_images:
     samples_count = database.test_dataset.samples_count
     preview_count = auto_encoder.image_summaries_max_outputs
-    previewed_image, _ = database.test_dataset.sample(preview_count, apply_preprocess_step=False, seed=0)
+    previewed_image, _ = database.test_dataset.sample_with_anomaly_labels(preview_count, seed=0,
+                                                                          max_shard_count=preview_count)
     previewed_image = (previewed_image - previewed_image.min()) / (previewed_image.max() - previewed_image.min())
     for i in range(preview_count):
         cv2.imshow("preview_{0} (seed={1})".format(i, seed), previewed_image[i])
@@ -94,10 +96,21 @@ if allow_gpu_growth:
     K.set_session(session)
 # endregion
 
-auto_encoder.train(database,
-                   min_scale=4,
-                   max_scale=4,
-                   epoch_length=5,
-                   epochs=[20, 20, 50, 50, 2000],
-                   batch_size=[128, 128, 64, 32, 32],
-                   pre_train=False)
+if profile:
+    import cProfile
+    print("===== Profiling activated ... =====")
+    cProfile.run("auto_encoder.train(database,\
+                   min_scale=4,\
+                   max_scale=4,\
+                   epoch_length=2,\
+                   epochs=[20, 20, 50, 50, 1],\
+                   batch_size=[128, 128, 64, 32, 32],\
+                   pre_train=False)", sort="cumulative")
+else:
+    auto_encoder.train(database,
+                       min_scale=4,
+                       max_scale=4,
+                       epoch_length=5,
+                       epochs=[20, 20, 50, 50, 2000],
+                       batch_size=[128, 128, 64, 32, 32],
+                       pre_train=False)

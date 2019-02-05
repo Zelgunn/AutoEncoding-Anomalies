@@ -57,11 +57,6 @@ class FullyLoadableDataset(Dataset, ABC):
         multiplier = (target_max - target_min) / (current_max - current_min)
         self.images = (self.images - current_min) * multiplier + target_min
 
-    def __getitem__(self, index):
-        batch = self.current_batch() if self.epoch_length is None else self.sample()
-        self.index += 1
-        return batch
-
     def sample(self, batch_size=None, apply_preprocess_step=True, seed=None):
         np.random.seed(seed)
         if batch_size is None:

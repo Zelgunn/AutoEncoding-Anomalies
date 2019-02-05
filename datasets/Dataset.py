@@ -30,6 +30,11 @@ class Dataset(Sequence, ABC):
         else:
             return self.epoch_length
 
+    def __getitem__(self, index):
+        batch = self.current_batch() if self.epoch_length is None else self.sample()
+        self.index += 1
+        return batch
+
     def normalize(self, current_min, current_max, target_min=0.0, target_max=1.0):
         self._normalization_range = [target_min, target_max]
 
@@ -57,6 +62,10 @@ class Dataset(Sequence, ABC):
     def current_batch(self, batch_size: int = None, apply_preprocess_step=True):
         raise NotImplementedError
 
+    @abstractmethod
+    def sample_with_anomaly_labels(self, batch_size=None, seed=None, max_shard_count=1):
+        raise NotImplementedError
+
     @property
     @abstractmethod
     def samples_count(self):
@@ -67,6 +76,6 @@ class Dataset(Sequence, ABC):
     def images_size(self):
         raise NotImplementedError
 
-    @abstractmethod
-    def sample_with_labels(self, batch_size=None, apply_preprocess_step=True, seed=None):
-        raise NotImplementedError
+    @property
+    def has_pixel_level_anomaly_labels(self):
+        return False

@@ -25,9 +25,63 @@ class PartiallyLoadableDataset(Dataset):
         self.dataset_path = dataset_path
         self.config = copy.deepcopy(config)
         self.sub_config_index = 0
+        self._shard_indices_offset = None
+
+    def sample(self, batch_size=None, apply_preprocess_step=True, seed=None):
+        np.random.seed(seed)
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        shard_index = np.random.randint(len(self.images_filenames))
+        shard_filepath = os.path.join(self.dataset_path, self.images_filenames[shard_index])
+        shard = np.load(shard_filepath, mmap_mode="r")
+        indices = np.random.permutation(np.arange(len(shard)))[:batch_size]
+        images = shard[indices]
+
+        if apply_preprocess_step and (len(self.data_preprocessors) > 0):
+            inputs, outputs = self.apply_preprocess(images, np.copy(images))
+        else:
+            inputs, outputs = images, images
+
+        np.random.seed(None)
+        return inputs, outputs
+
+    def current_batch(self, batch_size: int = None, apply_preprocess_step=True):
+        raise NotImplementedError
+
+    def sample_with_anomaly_labels(self, batch_size=None, seed=None, max_shard_count=1):
+        np.random.seed(seed)
+        if batch_size is None:
+            batch_size = self.batch_size
+        shard_size = batch_size // max_shard_count
+
+        selected_shards = np.random.randint(len(self.images_filenames), size=max_shard_count)
+        images = np.empty(shape=[batch_size, *self.images_size, 1], dtype=np.float32)
+        labels = np.empty(shape=[batch_size], dtype=np.bool)
+
+        batch_index = 0
+        for i, shard_index in enumerate(selected_shards):
+            images_shard_filepath = os.path.join(self.dataset_path, self.images_filenames[shard_index])
+            labels_shard_filepath = os.path.join(self.dataset_path, self.labels_filenames[shard_index])
+
+            images_shard = np.load(images_shard_filepath, mmap_mode="r")
+            labels_shard = np.load(labels_shard_filepath, mmap_mode="r")
+
+            if i == (len(selected_shards) - 1):
+                shard_size += batch_size % max_shard_count
+
+            shard_indices = np.random.permutation(np.arange(len(images_shard)))[:shard_size]
+            images[batch_index:batch_index + shard_size] = images_shard[shard_indices]
+            labels[batch_index:batch_index + shard_size] = labels_shard[shard_indices]
+
+            batch_index += shard_size
+
+        np.random.seed(None)
+
+        return images, labels
 
     def shuffle(self):
-        random.shuffle(self.config[self.sub_config_index]["filenames"])
+        pass
 
     def resized(self, size):
         target_height, target_width = size
@@ -46,43 +100,24 @@ class PartiallyLoadableDataset(Dataset):
         other.sub_config_index = target_index
         return other
 
-    def sample(self, batch_size=None, apply_preprocess_step=True, seed=None):
-        np.random.seed(seed)
-        if batch_size is None:
-            batch_size = self.batch_size
-
-        shard_filename = self.filenames[np.random.randint(len(self.filenames))]
-        shard_filepath = os.path.join(self.dataset_path, shard_filename)
-        shard = np.load(shard_filepath, mmap_mode="r")
-        indices = np.random.permutation(np.arange(len(shard)))[:batch_size]
-        images = shard[indices]
-
-        if apply_preprocess_step and (len(self.data_preprocessors) > 0):
-            inputs, outputs = self.apply_preprocess(images, np.copy(images))
-        else:
-            inputs, outputs = images, images
-
-        np.random.seed(None)
-        return inputs, outputs
-
-    def current_batch(self, batch_size: int = None, apply_preprocess_step=True):
-        raise NotImplementedError
+    # region Properties
+    @property
+    def sub_config(self):
+        return self.config[self.sub_config_index]
 
     @property
     def samples_count(self):
-        return self.config[self.sub_config_index]["samples_count"]
+        return self.sub_config["samples_count"]
 
     @property
     def images_size(self):
-        return self.config[self.sub_config_index]["images_size"]
+        return self.sub_config["images_size"]
 
     @property
-    def filenames(self):
-        return self.config[self.sub_config_index]["filenames"]
+    def images_filenames(self):
+        return self.sub_config["images_filenames"]
 
     @property
-    def frame_level_labels(self):
-        raise NotImplementedError
-
-    def __getitem__(self, index):
-        raise NotImplementedError
+    def labels_filenames(self):
+        return self.sub_config["labels_filenames"]
+    # endregion

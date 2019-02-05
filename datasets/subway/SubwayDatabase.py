@@ -36,10 +36,11 @@ class SubwayDatabase(PartiallyLoadableDatabase):
 
         split = int(self.fps * 300)  # 5 minutes
         print("Defaulting to {0} frames for Subway Exit".format(split))
-        for shard in self.build_subset_shards_iterator(shard_size, skip, 0, split):
-            yield "train", shard
-        for shard in self.build_subset_shards_iterator(shard_size, skip, split, -1):
-            yield "test", shard
+        for images_shard, labels_shard in self.build_subset_shards_iterator(shard_size, skip, 0, split):
+            yield "train", images_shard, labels_shard
+
+        for images_shard, labels_shard in self.build_subset_shards_iterator(shard_size, skip, split, -1):
+            yield "test", images_shard, labels_shard
 
     @property
     def base_name(self):
@@ -70,18 +71,23 @@ class SubwayDatabase(PartiallyLoadableDatabase):
         shard_count = int(np.ceil(frame_count / shard_size))
         self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, start)
 
+        labels = subway_exit_anomaly_frame_labels(frame_count, skip)
+
         for i in range(shard_count):
             if i == (shard_count - 1):
                 shard_size = frame_count - shard_size * i
-            shard = np.empty(shape=[shard_size, self.frame_height, self.frame_width])
+            images_shard = np.empty(shape=[shard_size, self.frame_height, self.frame_width, 1])
             for j in range(shard_size):
                 ret, frame = self.video_capture.read()
-                shard[j] = np.mean(frame, axis=-1)
+                images_shard[j] = np.mean(frame, axis=-1, keepdims=True)
                 if skip > 0:
                     next_index = self.video_capture.get(cv2.CAP_PROP_POS_FRAMES) + skip
                     self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, int(next_index))
-            shard = shard / 255.0
-            yield shard
+            images_shard = images_shard / 255.0
+            labels_shard = labels[shard_size * i: shard_size * (i + 1)] if (i < (shard_count - 1)) \
+                else labels[-shard_size:]
+            assert len(images_shard) == len(labels_shard)
+            yield images_shard, labels_shard
 
     def save_resized_video(self, height, width):
         if self.video_capture is None:
@@ -102,13 +108,31 @@ class SubwayDatabase(PartiallyLoadableDatabase):
         print('', end=os.linesep)
 
 
-# path = os.path.normpath("../datasets/subway/exit")
-# subway_database = SubwayDatabase(path)
-# prepared_resolutions = [
-#     [192, 256],
-#     [96, 128],
-#     [48, 64],
-#     [24, 32]
-# ]
-# subway_database.prepare_resolutions(prepared_resolutions, shard_size=2000, skip=4)
-# exit()
+def subway_anomaly_frame_labels(anomaly_windows, frame_count, skip=0):
+    skip += 1
+
+    labels = np.zeros(shape=[frame_count], dtype=np.bool)
+    for start, end in anomaly_windows:
+        labels[start // skip:end // skip] = True
+    return labels
+
+
+def subway_exit_anomaly_frame_labels(frame_count, skip=0):
+    anomaly_windows = [(40880, 41160),
+                       (41400, 41700),
+                       (50410, 50710),
+                       (50980, 51250),
+                       (60160, 60940)]
+    return subway_anomaly_frame_labels(anomaly_windows, frame_count, skip)
+
+
+if __name__ == "__main__":
+    path = os.path.normpath("../datasets/subway/exit")
+    subway_database = SubwayDatabase(path)
+    prepared_resolutions = [
+        [192, 256],
+        [96, 128],
+        [48, 64],
+        [24, 32]
+    ]
+    subway_database.prepare_resolutions(prepared_resolutions, shard_size=2000, skip=3)

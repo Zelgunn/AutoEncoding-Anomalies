@@ -373,29 +373,31 @@ class AutoEncoderBaseModel(ABC):
                                 scale: int = None):
         scale_shape = self.input_shape_by_scale[scale]
         database = database.resized_to_scale(scale_shape)
+        test_dataset = database.test_dataset
 
         train_image_summary_callback = self.image_summary_from_dataset(database.train_dataset, "train",
                                                                        self.tensorboard, scale=scale)
-        eval_image_summary_callback = self.image_summary_from_dataset(database.test_dataset, "test",
+        eval_image_summary_callback = self.image_summary_from_dataset(test_dataset, "test",
                                                                       self.tensorboard, scale=scale)
 
-        auc_images = database.test_dataset.sample(batch_size=512, seed=0)
+        auc_images, frame_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0, max_shard_count=8)
         auc_inputs_placeholder = self.get_model_at_scale(scale).input
-        frame_level_auc_predictions = self.frame_level_average_error(scale)
-        frame_level_labels = database.test_dataset.frame_level_labels
-        frame_level_auc_callback = AUCCallback(self.tensorboard, frame_level_auc_predictions, auc_inputs_placeholder,
-                                               auc_images, frame_level_labels, plot_size=(256, 256), batch_size=128,
-                                               name="Frame_Level_Error_AUC")
+        frame_auc_predictions = self.frame_level_average_error(scale)
+        frame_auc_callback = AUCCallback(self.tensorboard, frame_auc_predictions, auc_inputs_placeholder,
+                                         auc_images, frame_labels, plot_size=(256, 256), batch_size=128,
+                                         name="Frame_Level_Error_AUC")
 
-        pixel_level_auc_predictions = self.pixel_level_error(scale)
-        pixel_level_labels = database.test_dataset.resized_anomaly_labels(self.pixel_level_labels_size)
-        pixel_level_auc_callback = AUCCallback(self.tensorboard, pixel_level_auc_predictions, auc_inputs_placeholder,
-                                               auc_images, pixel_level_labels, plot_size=(256, 256), batch_size=128,
-                                               num_thresholds=20,
-                                               name="Pixel_Level_Error_AUC")
+        anomaly_callbacks = [train_image_summary_callback, eval_image_summary_callback, frame_auc_callback]
 
-        return [train_image_summary_callback, eval_image_summary_callback,
-                frame_level_auc_callback, pixel_level_auc_callback]
+        if test_dataset.has_pixel_level_anomaly_labels:
+            pixel_auc_predictions = self.pixel_level_error(scale)
+            pixel_labels = test_dataset.resized_anomaly_labels(self.pixel_level_labels_size)
+            pixel_auc_callback = AUCCallback(self.tensorboard, pixel_auc_predictions, auc_inputs_placeholder,
+                                             auc_images, pixel_labels, plot_size=(256, 256), batch_size=128,
+                                             num_thresholds=20, name="Pixel_Level_Error_AUC")
+            anomaly_callbacks.append(pixel_auc_callback)
+
+        return anomaly_callbacks
 
     def setup_callbacks(self,
                         callbacks: CallbackList or List[Callback],
@@ -443,7 +445,8 @@ class AutoEncoderBaseModel(ABC):
                                    tensorboard: TensorBoard,
                                    frequency="epoch",
                                    scale: int = None) -> ImageCallback:
-        images, _ = dataset.sample(self.image_summaries_max_outputs, apply_preprocess_step=False, seed=0)
+        images, _ = dataset.sample_with_anomaly_labels(self.image_summaries_max_outputs, seed=0,
+                                                       max_shard_count=self.image_summaries_max_outputs)
         return ImageCallback.from_dataset(images, self, tensorboard, name, update_freq=frequency, scale=scale)
 
     def _get_images_summary(self,
