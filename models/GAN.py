@@ -1,16 +1,27 @@
 from keras.layers import Input, Conv2D, Dense, Reshape
 from keras.callbacks import CallbackList
-import tensorflow as tf
 import numpy as np
-from collections import namedtuple
 from typing import List
 
-from models import AutoEncoderBaseModel, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict
 from datasets import Database
 from callbacks import AUCCallback
 
-GAN_Scale = namedtuple("GAN_Scale", ["encoder", "decoder", "discriminator",
-                                     "adversarial_generator", "autoencoder"])
+
+class GANScale(AutoEncoderScale):
+    def __init__(self,
+                 encoder: KerasModel,
+                 decoder: KerasModel,
+                 autoencoder: KerasModel,
+                 discriminator: KerasModel,
+                 adversarial_generator: KerasModel,
+                 **kwargs):
+        super(GANScale, self).__init__(encoder=encoder,
+                                       decoder=decoder,
+                                       autoencoder=autoencoder,
+                                       **kwargs)
+        self.discriminator = discriminator
+        self.adversarial_generator = adversarial_generator
 
 
 class GAN(AutoEncoderBaseModel):
@@ -19,8 +30,11 @@ class GAN(AutoEncoderBaseModel):
         super(GAN, self).__init__()
         self.discriminator_layers = []
         self.discriminator_regression_layer = None
-        self._scales: List[GAN_Scale] = []
+        self._scales: List[GANScale] = []
 
+    # endregion
+
+    # region Model building
     def build_layers(self):
         super(GAN, self).build_layers()
 
@@ -30,15 +44,12 @@ class GAN(AutoEncoderBaseModel):
 
         self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
 
-    # endregion
-
-    # region Model building
-    def build_model(self, config_file: str):
+    def build(self, config_file: str):
         self.load_config(config_file)
         self._scales = [None] * self.depth
         self.build_layers()
 
-    def build_model_for_scale(self, scale: int):
+    def build_for_scale(self, scale: int):
         encoder = self.build_encoder_for_scale(scale)
         decoder = self.build_decoder_for_scale(scale)
         discriminator = self.build_discriminator_for_scale(scale)
@@ -78,9 +89,7 @@ class GAN(AutoEncoderBaseModel):
         adversarial_generator.compile(self.optimizer, loss=discriminator_loss,
                                       metrics=adversarial_generator_metrics)
 
-        self._scales[scale] = GAN_Scale(encoder, decoder, discriminator, adversarial_generator, autoencoder)
-        self._models_per_scale[scale] = autoencoder
-        return autoencoder
+        self._scales[scale] = GANScale(encoder, decoder, autoencoder, discriminator, adversarial_generator)
 
     def build_encoder_for_scale(self, scale: int):
         scale_input_shape = self.input_shape_by_scale[scale]
@@ -88,42 +97,39 @@ class GAN(AutoEncoderBaseModel):
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
         encoder_name = "Encoder_scale_{0}".format(scale)
-        with tf.name_scope(encoder_name):
-            input_layer = Input(input_shape)
-            layer = input_layer
+        input_layer = Input(input_shape)
+        layer = input_layer
 
-            if scale is not (self.depth - 1):
-                layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
+        if scale is not (self.depth - 1):
+            layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
 
-            for i in range(scale + 1):
-                layer = self.link_encoder_conv_layer(layer, scale, i)
+        for i in range(scale + 1):
+            layer = self.link_encoder_conv_layer(layer, scale, i)
 
-            with tf.name_scope("embeddings"):
-                if self.use_dense_embeddings:
-                    layer = Reshape([-1])(layer)
-                layer = self.embeddings_layer(layer)
-                layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
+        if self.use_dense_embeddings:
+            layer = Reshape([-1])(layer)
+        layer = self.embeddings_layer(layer)
+        layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
 
-            outputs = layer
+        outputs = layer
         encoder = KerasModel(inputs=input_layer, outputs=outputs, name=encoder_name)
         return encoder
 
     def build_decoder_for_scale(self, scale: int):
         decoder_name = "Decoder_scale_{0}".format(scale)
-        with tf.name_scope(decoder_name):
-            input_layer = Input(self.embeddings_shape)
-            layer = input_layer
+        input_layer = Input(self.embeddings_shape)
+        layer = input_layer
 
-            if self.use_dense_embeddings:
-                embeddings_reshape = self.config["embeddings_reshape"]
-                embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
-                layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+        if self.use_dense_embeddings:
+            embeddings_reshape = self.config["embeddings_reshape"]
+            embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
+            layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
 
-            for i in range(scale + 1):
-                layer = self.link_decoder_deconv_layer(layer, scale, i)
+        for i in range(scale + 1):
+            layer = self.link_decoder_deconv_layer(layer, scale, i)
 
-            output_layer = Conv2D(filters=self.input_channels, kernel_size=1, padding="same",
-                                  activation=self.output_activation)(layer)
+        output_layer = Conv2D(filters=self.input_channels, kernel_size=1, padding="same",
+                              activation=self.output_activation)(layer)
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 
@@ -133,28 +139,27 @@ class GAN(AutoEncoderBaseModel):
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
         discriminator_name = "Discriminator_scale_{0}".format(scale)
-        with tf.name_scope(discriminator_name):
-            input_layer = Input(input_shape)
-            layer = input_layer
+        input_layer = Input(input_shape)
+        layer = input_layer
 
-            if scale is not (self.depth - 1):
-                layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
+        if scale is not (self.depth - 1):
+            layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
 
-            for i in range(scale + 1):
-                layer = self.link_encoder_conv_layer(layer, scale, i)
+        for i in range(scale + 1):
+            layer = self.link_encoder_conv_layer(layer, scale, i)
 
-            layer = Reshape([-1])(layer)
-            layer = self.discriminator_regression_layer(layer)
+        layer = Reshape([-1])(layer)
+        layer = self.discriminator_regression_layer(layer)
 
-            outputs = layer
+        outputs = layer
         discriminator = KerasModel(inputs=input_layer, outputs=outputs, name=discriminator_name)
         return discriminator
 
-    def get_scale_models(self, scale: int = None) -> GAN_Scale:
+    def get_gan_models_at_scale(self, scale: int = None) -> GANScale:
         if scale is None:
             scale = self.depth - 1
         if self._scales[scale] is None:
-            self.build_model_for_scale(scale)
+            self.build_for_scale(scale)
         return self._scales[scale]
 
     # endregion
@@ -170,12 +175,12 @@ class GAN(AutoEncoderBaseModel):
                     callbacks: CallbackList = None):
         # region Variables initialization
         epoch_length = len(database.train_dataset)
-        scale_models = self.get_scale_models(scale)
+        scale_models = self.get_gan_models_at_scale(scale)
         autoencoder: KerasModel = scale_models.autoencoder
         decoder: KerasModel = scale_models.decoder
         adversarial_generator: KerasModel = scale_models.adversarial_generator
         discriminator: KerasModel = scale_models.discriminator
-        base_model = self.get_model_at_scale(scale)
+        base_model = self.get_autoencoder_model_at_scale(scale)
         discriminator_steps = self.config["discriminator_steps"] if "discriminator_steps" in self.config else 1
         # endregion
 
@@ -249,7 +254,7 @@ class GAN(AutoEncoderBaseModel):
         database = database.resized_to_scale(scale_shape)
         anomaly_callbacks = super(GAN, self).build_anomaly_callbacks(database, scale)
 
-        discriminator: KerasModel = self.get_scale_models(scale).discriminator
+        discriminator: KerasModel = self.get_gan_models_at_scale(scale).discriminator
         discriminator_prediction = discriminator.get_output_at(0)
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
         auc_images, frame_labels = database.test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0,

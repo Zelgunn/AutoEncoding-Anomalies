@@ -25,13 +25,9 @@ class ImageCallback(TensorBoardPlugin):
                      tensorboard: TensorBoard,
                      name: str,
                      update_freq: int or str,
-                     scale=None):
-        if scale is None:
-            image_summaries = autoencoder.get_image_summaries(name)
-            inputs_placeholder = autoencoder.input
-        else:
-            image_summaries = autoencoder.get_image_summaries_at_scale(name, scale)
-            inputs_placeholder = autoencoder.get_model_at_scale(scale).input
+                     scale: int):
+        image_summaries = autoencoder.get_image_summaries_at_scale(name, scale)
+        inputs_placeholder = autoencoder.get_autoencoder_model_at_scale(scale).input
 
         image_callback = ImageCallback(image_summaries, tensorboard, update_freq=update_freq,
                                        feed_dict={inputs_placeholder: images})

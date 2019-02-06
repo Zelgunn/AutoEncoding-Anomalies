@@ -41,7 +41,7 @@ profile = True
 # region Model
 auto_encoder_class = models_dict[model_used]
 auto_encoder = auto_encoder_class()
-auto_encoder.build_model(config_used)
+auto_encoder.build(config_used)
 # endregion
 
 # region Preprocessors
@@ -94,16 +94,20 @@ if allow_gpu_growth:
     config.gpu_options.allow_growth = True
     session = tf.Session(config=config)
     K.set_session(session)
+
+
 # endregion
+
 
 if profile:
     import cProfile
+
     print("===== Profiling activated ... =====")
     cProfile.run("auto_encoder.train(database,\
-                   min_scale=4,\
-                   max_scale=4,\
+                   min_scale=3,\
+                   max_scale=3,\
                    epoch_length=2,\
-                   epochs=[20, 20, 50, 50, 1],\
+                   epochs=[20, 20, 50, 1, 1],\
                    batch_size=[128, 128, 64, 32, 32],\
                    pre_train=False)", sort="cumulative")
 else:

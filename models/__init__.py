@@ -1,7 +1,9 @@
-from models.AutoEncoderBaseModel import AutoEncoderBaseModel, KerasModel, metrics_dict
+from models.AutoEncoderBaseModel import AutoEncoderBaseModel, AutoEncoderScale, metrics_dict
+from models.AutoEncoderBaseModel import KerasModel
+from models.VariationalBaseModel import VariationalBaseModel, VAEScale
 from models.BasicAE import BasicAE
 from models.ProgAE import ProgAE
-from models.AGE import AGE
+from models.AGE import AGE, AGEScale
 from models.VAE import VAE
-from models.GAN import GAN
+from models.GAN import GAN, GANScale
 from models.VAEGAN import VAEGAN

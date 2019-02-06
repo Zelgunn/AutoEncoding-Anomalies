@@ -19,4 +19,7 @@ class SubwayDataset(PartiallyLoadableDataset):
                                             shuffle_on_epoch_end=shuffle_on_epoch_end,
                                             **kwargs)
 
+    def current_batch(self, batch_size: int = None, apply_preprocess_step=True):
+        raise NotImplementedError
+
 

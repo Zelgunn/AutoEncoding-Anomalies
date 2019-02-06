@@ -109,6 +109,7 @@ class _ResBlock(Layer):
         return outputs
 
     def use_projection(self, input_shape):
+        assert None not in input_shape[1:], "Cannot decide if projection is needed without knowing input shape (TO FIX)"
         return input_shape != self.compute_output_shape(input_shape)
 
     def compute_output_shape(self, input_shape):

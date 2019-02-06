@@ -5,30 +5,44 @@ from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
 import copy
-from collections import namedtuple
 from typing import List
 
-from models import AutoEncoderBaseModel, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
 from datasets import Database
 
-AGE_Scale = namedtuple("AGE_Scale", ["encoder", "decoder",
-                                     "encoder_real_data_trainer", "encoder_fake_data_trainer",
-                                     "decoder_real_data_trainer", "decoder_fake_data_trainer"])
+
+class AGEScale(AutoEncoderScale):
+    def __init__(self,
+                 encoder: KerasModel,
+                 decoder: KerasModel,
+                 encoder_real_data_trainer: KerasModel,
+                 encoder_fake_data_trainer: KerasModel,
+                 decoder_real_data_trainer: KerasModel,
+                 decoder_fake_data_trainer: KerasModel,
+                 **kwargs):
+        super(AGEScale, self).__init__(encoder=encoder,
+                                       decoder=decoder,
+                                       autoencoder=encoder_real_data_trainer,
+                                       **kwargs)
+        self.encoder_real_data_trainer = encoder_real_data_trainer
+        self.encoder_fake_data_trainer = encoder_fake_data_trainer
+        self.decoder_real_data_trainer = decoder_real_data_trainer
+        self.decoder_fake_data_trainer = decoder_fake_data_trainer
 
 
 class AGE(AutoEncoderBaseModel):
     def __init__(self):
         super(AGE, self).__init__()
-        self._scales: List[AGE_Scale] = []
+        self._scales: List[AGEScale] = []
 
     # region Model building
-    def build_model(self, config_file: str):
+    def build(self, config_file: str):
         self.load_config(config_file)
         self._scales = [None] * self.depth
         self.build_layers()
 
-    def build_model_for_scale(self, scale: int):
+    def build_for_scale(self, scale: int):
         encoder = self.build_encoder_for_scale(scale)
         decoder = self.build_decoder_for_scale(scale)
 
@@ -71,20 +85,10 @@ class AGE(AutoEncoderBaseModel):
         decoder_fake_data_trainer.compile(self.optimizer, loss=fake_data_decoder_loss)
         # endregion
 
-        scale_models = AGE_Scale(encoder, decoder,
-                                 encoder_real_data_trainer, encoder_fake_data_trainer,
-                                 decoder_real_data_trainer, decoder_fake_data_trainer)
+        scale_models = AGEScale(encoder, decoder,
+                                encoder_real_data_trainer, encoder_fake_data_trainer,
+                                decoder_real_data_trainer, decoder_fake_data_trainer)
         self._scales[scale] = scale_models
-
-        # Base model
-        encoder.trainable = True
-        decoder.trainable = True
-
-        base_model = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output,
-                                name="AGE_scale_{0}".format(scale))
-        base_model.compile(optimizer=Adam(lr=1e-4), loss="mse", metrics=["mae"])
-        self._models_per_scale[scale] = base_model
-        return base_model
 
     def build_encoder_for_scale(self, scale: int):
         scale_input_shape = self.input_shape_by_scale[scale]
@@ -92,40 +96,37 @@ class AGE(AutoEncoderBaseModel):
         input_shape = scale_input_shape[:-1] + [self.input_channels]
 
         encoder_name = "Encoder_scale_{0}".format(scale)
-        with tf.name_scope(encoder_name):
-            input_layer = Input(input_shape)
-            layer = input_layer
+        input_layer = Input(input_shape)
+        layer = input_layer
 
-            if scale is not (self.depth - 1):
-                layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
+        if scale is not (self.depth - 1):
+            layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
 
-            for i in range(scale + 1):
-                layer = self.link_encoder_conv_layer(layer, scale, i)
+        for i in range(scale + 1):
+            layer = self.link_encoder_conv_layer(layer, scale, i)
 
-            with tf.name_scope("embeddings"):
-                latent = Reshape([-1])(layer)
-                latent = Dense(units=self.embeddings_size, name="Latent_Value")(latent)
-                latent = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(latent)
+        latent = Reshape([-1])(layer)
+        latent = Dense(units=self.embeddings_size, name="Latent_Value")(latent)
+        latent = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(latent)
 
-            outputs = latent
+        outputs = latent
         encoder = KerasModel(inputs=input_layer, outputs=outputs, name=encoder_name)
         return encoder
 
     def build_decoder_for_scale(self, scale: int):
         decoder_name = "Decoder_scale_{0}".format(scale)
-        with tf.name_scope(decoder_name):
-            input_layer = Input([self.embeddings_size])
-            layer = input_layer
+        input_layer = Input([self.embeddings_size])
+        layer = input_layer
 
-            embeddings_reshape = self.config["embeddings_reshape"]
-            embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
-            layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+        embeddings_reshape = self.config["embeddings_reshape"]
+        embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
+        layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
 
-            for i in range(scale + 1):
-                layer = self.link_decoder_deconv_layer(layer, scale, i)
+        for i in range(scale + 1):
+            layer = self.link_decoder_deconv_layer(layer, scale, i)
 
-            output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
-                                  activation=self.output_activation)(layer)
+        output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
+                              activation=self.output_activation)(layer)
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 
@@ -165,11 +166,11 @@ class AGE(AutoEncoderBaseModel):
 
         return loss_function
 
-    def get_scale_models(self, scale: int = None) -> AGE_Scale:
+    def get_scale_models(self, scale: int = None) -> AGEScale:
         if scale is None:
             scale = self.depth - 1
         if self._scales[scale] is None:
-            self.build_model_for_scale(scale)
+            self.build_for_scale(scale)
         return self._scales[scale]
 
     # endregion
@@ -185,7 +186,7 @@ class AGE(AutoEncoderBaseModel):
                     callbacks: CallbackList = None):
         epoch_length = len(database.train_dataset)
         scale_models = self.get_scale_models(scale)
-        base_model = self.get_model_at_scale(scale)
+        base_model = self.get_autoencoder_model_at_scale(scale)
 
         callbacks.on_epoch_begin(self.epochs_seen)
 

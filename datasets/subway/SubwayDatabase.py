@@ -94,7 +94,7 @@ class SubwayDatabase(PartiallyLoadableDatabase):
             self.open_video(self.base_video_filepath)
 
         video_filepath = os.path.join(self.database_path, "Subway_Exit_{0}x{1}.avi".format(height, width))
-        frame_size = (height, width)
+        frame_size = (width, height)
         video_writer = cv2.VideoWriter(video_filepath, self.fourcc, self.fps, frame_size)
 
         self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)

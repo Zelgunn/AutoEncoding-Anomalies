@@ -19,12 +19,21 @@ from utils.train_utils import get_log_dir
 from callbacks import ImageCallback, AUCCallback
 
 
+class AutoEncoderScale(object):
+    def __init__(self,
+                 encoder: KerasModel,
+                 decoder: KerasModel,
+                 autoencoder: KerasModel,
+                 **kwargs):
+        self.encoder = encoder
+        self.decoder = decoder
+        self.autoencoder = autoencoder
+
+
 class AutoEncoderBaseModel(ABC):
     # region Initialization
     def __init__(self):
         self.image_summaries_max_outputs = 3
-
-        self.keras_model: KerasModel = None
 
         self._io_delta = None
         self._error_rate = None
@@ -34,20 +43,24 @@ class AutoEncoderBaseModel(ABC):
         self.decoder_layers = []
 
         self.config: dict = None
+
         self.input_shape = None
         self.input_channels = None
         self.embeddings_size = None
         self.use_dense_embeddings = None
         self.embeddings_shape = None
+
         self.depth = 0
-        self._models_per_scale = None
+        self._scales: List[AutoEncoderScale] = []
         self._scales_input_shapes = None
+
         self.default_activation = None
         self.embeddings_activation = None
         self.output_activation = None
         self.output_range = None
         self.use_spectral_norm = False
         self.weight_decay_regularizer = None
+
         self.optimizer = None
 
         self.log_dir = None
@@ -68,7 +81,7 @@ class AutoEncoderBaseModel(ABC):
             self.embeddings_shape = self.config["embeddings_reshape"] + self.embeddings_shape
 
         self.depth = len(self.config["encoder"])
-        self._models_per_scale = [None] * self.depth
+        self._scales: List[AutoEncoderScale] = [None] * self.depth
 
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
@@ -86,21 +99,9 @@ class AutoEncoderBaseModel(ABC):
 
     # endregion
 
-    # region Model building
-    def build_optimizer(self):
-        optimizer_name = self.config["optimizer"]["name"].lower()
-        if optimizer_name == "adam":
-            self.optimizer = Adam(lr=self.config["optimizer"]["lr"],
-                                  beta_1=self.config["optimizer"]["beta_1"],
-                                  beta_2=self.config["optimizer"]["beta_2"],
-                                  decay=self.config["optimizer"]["decay"])
-        elif optimizer_name == "rmsprop":
-            self.optimizer = RMSprop(lr=self.config["optimizer"]["lr"],
-                                     rho=self.config["optimizer"]["rho"],
-                                     decay=self.config["optimizer"]["decay"])
-        else:
-            raise ValueError
+    # region Model(s) (Builders)
 
+    # region Layers
     def build_layers(self):
         for layer_info in self.config["encoder"]:
             layer = self.build_conv_layer(layer_info)
@@ -138,51 +139,58 @@ class AutoEncoderBaseModel(ABC):
     def build_deconv_layer(self, layer_info):
         return self.build_conv_layer(layer_info, transpose=True)
 
+    # endregion
+
+    # region Autoencoder models
     @abstractmethod
-    def build_model(self, config_file: str):
+    def build(self, config_file: str):
         raise NotImplementedError
 
     @abstractmethod
-    def build_model_for_scale(self, scale: int):
+    def build_for_scale(self, scale: int):
         raise NotImplementedError
+    # endregion
 
-    def get_model_at_scale(self, scale: int) -> KerasModel:
-        if scale is None:
-            model = self.keras_model
-        else:
-            if self._models_per_scale[scale] is None:
-                self.build_model_for_scale(scale)
-            model = self._models_per_scale[scale]
-        return model
+    # region Encoder models
+    @abstractmethod
+    def build_encoder_for_scale(self, scale: int):
+        raise NotImplementedError
 
     def link_encoder_conv_layer(self, layer, scale: int, index: int):
-        with tf.name_scope("encoder_scale_{0}".format(index)):
-            # Layer
-            layer_index = index + self.depth - (scale + 1)
-            layer = self.encoder_layers[layer_index](layer)
+        # Layer
+        layer_index = index + self.depth - (scale + 1)
+        layer = self.encoder_layers[layer_index](layer)
 
-            # Activation
-            layer = AutoEncoderBaseModel.get_activation(self.default_activation)(layer)
+        # Activation
+        layer = AutoEncoderBaseModel.get_activation(self.default_activation)(layer)
 
-            # Dropout
-            if (index > self.depth - 1 - scale) and ("dropout" in self.config["encoder"][index]):
-                layer = Dropout(rate=self.config["encoder"][layer_index]["dropout"],
-                                name="encoder_dropout_{0}".format(index + 1))(layer)
+        # Dropout
+        if (index > self.depth - 1 - scale) and ("dropout" in self.config["encoder"][index]):
+            layer = Dropout(rate=self.config["encoder"][layer_index]["dropout"],
+                            name="encoder_dropout_{0}".format(index + 1))(layer)
         return layer
+
+    # endregion
+
+    # region Decoder models
+    @abstractmethod
+    def build_decoder_for_scale(self, scale: int):
+        raise NotImplementedError
 
     def link_decoder_deconv_layer(self, layer, scale: int, index: int):
-        with tf.name_scope("decoder_scale_{0}".format(index)):
-            # Layer
-            layer = self.decoder_layers[index](layer)
+        # Layer
+        layer = self.decoder_layers[index](layer)
 
-            # Activation
-            layer = AutoEncoderBaseModel.get_activation(self.default_activation)(layer)
+        # Activation
+        layer = AutoEncoderBaseModel.get_activation(self.default_activation)(layer)
 
-            # Dropout
-            if (index != scale) and ("dropout" in self.config["decoder"][index]):
-                dropout_layer_name = "decoder_dropout_{0}".format(index + 1)
-                layer = Dropout(rate=self.config["decoder"][index]["dropout"], name=dropout_layer_name)(layer)
+        # Dropout
+        if (index != scale) and ("dropout" in self.config["decoder"][index]):
+            dropout_layer_name = "decoder_dropout_{0}".format(index + 1)
+            layer = Dropout(rate=self.config["decoder"][index]["dropout"], name=dropout_layer_name)(layer)
         return layer
+
+    # endregion
 
     @staticmethod
     def get_activation(activation_config: dict):
@@ -190,6 +198,38 @@ class AutoEncoderBaseModel(ABC):
             return LeakyReLU(alpha=activation_config["alpha"])
         else:
             return Activation(activation_config["name"])
+
+    def build_optimizer(self):
+        optimizer_name = self.config["optimizer"]["name"].lower()
+        if optimizer_name == "adam":
+            self.optimizer = Adam(lr=self.config["optimizer"]["lr"],
+                                  beta_1=self.config["optimizer"]["beta_1"],
+                                  beta_2=self.config["optimizer"]["beta_2"],
+                                  decay=self.config["optimizer"]["decay"])
+        elif optimizer_name == "rmsprop":
+            self.optimizer = RMSprop(lr=self.config["optimizer"]["lr"],
+                                     rho=self.config["optimizer"]["rho"],
+                                     decay=self.config["optimizer"]["decay"])
+        else:
+            raise ValueError
+
+    # endregion
+
+    # region Model(s) (Getters)
+
+    def get_scale(self, scale: int) -> AutoEncoderScale:
+        if self._scales[scale] is None:
+            self.build_for_scale(scale)
+        return self._scales[scale]
+
+    def get_autoencoder_model_at_scale(self, scale: int) -> KerasModel:
+        return self.get_scale(scale).autoencoder
+
+    def get_encoder_model_at_scale(self, scale: int) -> KerasModel:
+        return self.get_scale(scale).encoder
+
+    def get_decoder_model_at_scale(self, scale: int) -> KerasModel:
+        return self.get_scale(scale).decoder
 
     # endregion
 
@@ -210,7 +250,7 @@ class AutoEncoderBaseModel(ABC):
         min_scale = kwargs.pop("min_scale") if "min_scale" in kwargs else 0
         max_scale = kwargs.pop("max_scale") if "max_scale" in kwargs else self.depth - 1
 
-        model = self.get_model_at_scale(max_scale)
+        model = self.get_autoencoder_model_at_scale(max_scale)
         self.save_model_info(self.log_dir, model)
 
         if isinstance(batch_size, int):
@@ -296,7 +336,7 @@ class AutoEncoderBaseModel(ABC):
                     scale: int = None,
                     callbacks: CallbackList = None):
         epoch_length = len(database.train_dataset)
-        model = self.get_model_at_scale(scale)
+        model = self.get_autoencoder_model_at_scale(scale)
 
         callbacks.on_epoch_begin(self.epochs_seen)
 
@@ -381,7 +421,7 @@ class AutoEncoderBaseModel(ABC):
                                                                       self.tensorboard, scale=scale)
 
         auc_images, frame_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0, max_shard_count=8)
-        auc_inputs_placeholder = self.get_model_at_scale(scale).input
+        auc_inputs_placeholder = self.get_autoencoder_model_at_scale(scale).input
         frame_auc_predictions = self.frame_level_average_error(scale)
         frame_auc_callback = AUCCallback(self.tensorboard, frame_auc_predictions, auc_inputs_placeholder,
                                          auc_images, frame_labels, plot_size=(256, 256), batch_size=128,
@@ -425,19 +465,14 @@ class AutoEncoderBaseModel(ABC):
         callback_metrics = copy.copy(metrics_names) + validation_callbacks
         return callback_metrics
 
-    def get_image_summaries(self, name: str):
-        assert (self.keras_model is not None) and isinstance(self.keras_model, KerasModel)
-        return self._get_images_summary(name, self.input, self.output, self.io_delta)
-
     def get_image_summaries_at_scale(self,
                                      name: str,
                                      scale: int):
-        inputs = self._models_per_scale[scale].input
-        outputs = self._models_per_scale[scale].output
-        delta = inputs - outputs
+        autoencoder = self.get_autoencoder_model_at_scale(scale)
+        delta = autoencoder.input - autoencoder.output
         delta *= tf.abs(delta)
 
-        return self._get_images_summary(name, inputs, outputs, delta)
+        return self._get_images_summary(name, autoencoder.input, autoencoder.output, delta)
 
     def image_summary_from_dataset(self,
                                    dataset: Dataset,
@@ -464,12 +499,12 @@ class AutoEncoderBaseModel(ABC):
         return tf.summary.merge(summaries)
 
     def pixel_level_error(self, scale: int = None):
-        model = self.get_model_at_scale(scale)
+        model = self.get_autoencoder_model_at_scale(scale)
         delta = tf.abs(model.input - model.output)
         return delta
 
     def frame_level_average_error(self, scale: int = None):
-        model = self.get_model_at_scale(scale)
+        model = self.get_autoencoder_model_at_scale(scale)
 
         squared_delta = tf.abs(model.input - model.output)
         average_error = tf.reduce_max(squared_delta, axis=[1, 2, 3])
@@ -538,12 +573,9 @@ class AutoEncoderBaseModel(ABC):
 
     def save_model_info(self,
                         log_dir: str,
-                        model: KerasModel = None):
+                        model: KerasModel):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-
-        if model is None:
-            model = self.keras_model
 
         keras_config_filename = os.path.join(log_dir, "{0}_keras_config.json".format(model.name))
         with open(keras_config_filename, "w") as file:
@@ -556,29 +588,6 @@ class AutoEncoderBaseModel(ABC):
         config_filename = os.path.join(log_dir, "{0}_config.json".format(model.name))
         with open(config_filename, "w") as file:
             json.dump(self.config, file)
-
-    # endregion
-
-    # region Legacy properties
-    @property
-    def input(self):
-        return self.keras_model.input
-
-    @property
-    def output(self):
-        return self.keras_model.output
-
-    @property
-    def io_delta(self):
-        if self._io_delta is None:
-            self._io_delta = self.input - self.output
-        return self._io_delta
-
-    @property
-    def error_rate(self):
-        if self._error_rate is None:
-            self._error_rate = tf.reduce_mean(tf.abs(self.io_delta))
-        return self._error_rate
 
     # endregion
 

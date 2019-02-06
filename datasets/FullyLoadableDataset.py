@@ -85,6 +85,19 @@ class FullyLoadableDataset(Dataset, ABC):
 
         return inputs, outputs
 
+    def sample_with_anomaly_labels(self, batch_size=None, seed=None, max_shard_count=1):
+        np.random.seed(seed)
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        indices = np.random.permutation(np.arange(self.images.shape[0]))[:batch_size]
+        images: np.ndarray = self.images[indices]
+        labels = self.anomaly_labels[indices]
+
+        np.random.seed(None)
+
+        return images, labels
+
     def shuffle(self):
         if self.anomaly_labels is None:
             np.random.shuffle(self.images)
