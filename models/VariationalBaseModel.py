@@ -5,6 +5,7 @@ from keras.layers import Dense, Lambda, Input, Conv2D, Reshape
 from typing import List
 
 from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel
+from callbacks import SummaryModel
 
 
 class VAEScale(AutoEncoderScale):
@@ -81,13 +82,13 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             if self.use_dense_embeddings:
                 embeddings_filters = embeddings_filters // np.prod(embeddings_reshape)
             encoded = Reshape(embeddings_reshape + [embeddings_filters])(layer)
-
             autoencoded = decoder(encoded)
-            autoencoded = tf.reshape(autoencoded, [-1, n, *input_shape])
-            predictions = tf.abs(tf.expand_dims(encoder_input, axis=1) - autoencoded)
-            predictions = tf.reduce_mean(predictions, axis=[1, 2, 3, 4])
 
-        return predictions
+            autoencoded = tf.reshape(autoencoded, [-1, n, *input_shape])
+            error = tf.abs(tf.expand_dims(encoder_input, axis=1) - autoencoded)
+            predictions = tf.reduce_mean(error, axis=[1, 2, 3, 4])
+
+        return SummaryModel(inputs=encoder_input, outputs=predictions)
 
 
 # region Utils
@@ -110,11 +111,11 @@ def sampling_n(n):
         batch_size = shape[0]
         latent_dim = shape[1]
 
-        epsilon = tf.random_normal(shape=[n, batch_size, latent_dim], mean=0., stddev=1.0)
-        latent_mean = tf.expand_dims(latent_mean, axis=0)
-        latent_log_var = tf.expand_dims(latent_log_var, axis=0)
+        epsilon = tf.random_normal(shape=[batch_size, n, latent_dim], mean=0., stddev=1.0)
+        latent_mean = tf.expand_dims(latent_mean, axis=1)
+        latent_log_var = tf.expand_dims(latent_log_var, axis=1)
         sample = latent_mean + tf.exp(0.5 * latent_log_var) * epsilon
-        sample = tf.reshape(sample, shape=[n * batch_size, latent_dim])
+        sample = tf.reshape(sample, shape=[batch_size * n, latent_dim])
         return sample
 
     return sampling_function

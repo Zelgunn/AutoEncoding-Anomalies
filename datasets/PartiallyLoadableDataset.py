@@ -53,6 +53,8 @@ class PartiallyLoadableDataset(Dataset):
         np.random.seed(seed)
         if batch_size is None:
             batch_size = self.batch_size
+
+        max_shard_count = min(max_shard_count, len(self.images_filenames))
         shard_size = batch_size // max_shard_count
 
         selected_shards = np.random.randint(len(self.images_filenames), size=max_shard_count)

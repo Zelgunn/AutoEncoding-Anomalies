@@ -1,5 +1,5 @@
+from keras.models import Model as KerasModel
 from models.AutoEncoderBaseModel import AutoEncoderBaseModel, AutoEncoderScale, metrics_dict
-from models.AutoEncoderBaseModel import KerasModel
 from models.VariationalBaseModel import VariationalBaseModel, VAEScale
 from models.BasicAE import BasicAE
 from models.ProgAE import ProgAE

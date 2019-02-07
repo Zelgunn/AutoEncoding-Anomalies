@@ -1,5 +1,5 @@
 from keras.models import Model as KerasModel
-from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout
+from keras.layers import Activation, LeakyReLU, Conv2D, Deconv2D, Dense, Dropout, Lambda
 from keras.regularizers import l1
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
@@ -16,7 +16,7 @@ from typing import List, Any
 from layers import ResBlock2D, ResBlock2DTranspose, SpectralNormalization
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
-from callbacks import ImageCallback, AUCCallback
+from callbacks import ImageCallback, AUCCallback, SummaryModel
 
 
 class AutoEncoderScale(object):
@@ -149,6 +149,7 @@ class AutoEncoderBaseModel(ABC):
     @abstractmethod
     def build_for_scale(self, scale: int):
         raise NotImplementedError
+
     # endregion
 
     # region Encoder models
@@ -415,10 +416,10 @@ class AutoEncoderBaseModel(ABC):
         database = database.resized_to_scale(scale_shape)
         test_dataset = database.test_dataset
 
-        train_image_summary_callback = self.image_summary_from_dataset(database.train_dataset, "train",
-                                                                       self.tensorboard, scale=scale)
-        eval_image_summary_callback = self.image_summary_from_dataset(test_dataset, "test",
-                                                                      self.tensorboard, scale=scale)
+        train_image_callback = self.image_callback_from_dataset(database.train_dataset, "train",
+                                                                self.tensorboard, scale=scale)
+        eval_image_callback = self.image_callback_from_dataset(test_dataset, "test",
+                                                               self.tensorboard, scale=scale)
 
         auc_images, frame_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0, max_shard_count=8)
         auc_inputs_placeholder = self.get_autoencoder_model_at_scale(scale).input
@@ -427,7 +428,7 @@ class AutoEncoderBaseModel(ABC):
                                          auc_images, frame_labels, plot_size=(256, 256), batch_size=128,
                                          name="Frame_Level_Error_AUC")
 
-        anomaly_callbacks = [train_image_summary_callback, eval_image_summary_callback, frame_auc_callback]
+        anomaly_callbacks = [train_image_callback, eval_image_callback, frame_auc_callback]
 
         if test_dataset.has_pixel_level_anomaly_labels:
             pixel_auc_predictions = self.pixel_level_error(scale)
@@ -465,24 +466,33 @@ class AutoEncoderBaseModel(ABC):
         callback_metrics = copy.copy(metrics_names) + validation_callbacks
         return callback_metrics
 
-    def get_image_summaries_at_scale(self,
-                                     name: str,
-                                     scale: int):
+    def get_image_summary_at_scale(self,
+                                   name: str,
+                                   scale: int):
         autoencoder = self.get_autoencoder_model_at_scale(scale)
         delta = autoencoder.input - autoencoder.output
         delta *= tf.abs(delta)
 
         return self._get_images_summary(name, autoencoder.input, autoencoder.output, delta)
 
-    def image_summary_from_dataset(self,
-                                   dataset: Dataset,
-                                   name: str,
-                                   tensorboard: TensorBoard,
-                                   frequency="epoch",
-                                   scale: int = None) -> ImageCallback:
+    def image_callback_from_dataset(self,
+                                    dataset: Dataset,
+                                    name: str,
+                                    tensorboard: TensorBoard,
+                                    frequency="epoch",
+                                    scale: int = None) -> ImageCallback:
+
         images, _ = dataset.sample_with_anomaly_labels(self.image_summaries_max_outputs, seed=0,
                                                        max_shard_count=self.image_summaries_max_outputs)
-        return ImageCallback.from_dataset(images, self, tensorboard, name, update_freq=frequency, scale=scale)
+
+        autoencoder = self.get_autoencoder_model_at_scale(scale)
+
+        delta = tf.abs(autoencoder.input - autoencoder.output)
+        summary_op = self._get_images_summary(name, autoencoder.input, autoencoder.output, delta)
+
+        summary_model = SummaryModel(inputs=autoencoder.input, outputs=summary_op)
+
+        return ImageCallback(summary_model, images, tensorboard, frequency)
 
     def _get_images_summary(self,
                             name: str,

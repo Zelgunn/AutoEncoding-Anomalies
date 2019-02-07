@@ -98,7 +98,6 @@ if allow_gpu_growth:
 
 # endregion
 
-
 if profile:
     import cProfile
 
@@ -107,7 +106,7 @@ if profile:
                    min_scale=3,\
                    max_scale=3,\
                    epoch_length=2,\
-                   epochs=[20, 20, 50, 1, 1],\
+                   epochs=[20, 20, 50, 2, 2],\
                    batch_size=[128, 128, 64, 32, 32],\
                    pre_train=False)", sort="cumulative")
 else:
