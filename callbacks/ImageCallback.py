@@ -1,12 +1,12 @@
 from keras.callbacks import TensorBoard
 import numpy as np
 
-from callbacks import TensorBoardPlugin, SummaryModel
+from callbacks import TensorBoardPlugin, CallbackModel
 
 
 class ImageCallback(TensorBoardPlugin):
     def __init__(self,
-                 summary_model: SummaryModel,
+                 summary_model: CallbackModel,
                  model_inputs: np.ndarray,
                  tensorboard: TensorBoard,
                  update_freq: int or str):
@@ -15,5 +15,5 @@ class ImageCallback(TensorBoardPlugin):
         self.model_inputs = model_inputs
 
     def _write_logs(self, index):
-        images_summaries = self.summary_model.predict(self.model_inputs)
+        images_summaries = self.summary_model.run(self.model_inputs)
         self.writer.add_summary(images_summaries, index)

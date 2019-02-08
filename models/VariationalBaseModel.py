@@ -5,7 +5,8 @@ from keras.layers import Dense, Lambda, Input, Conv2D, Reshape
 from typing import List
 
 from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel
-from callbacks import SummaryModel
+from callbacks import CallbackModel, AUCCallback
+from datasets import Database
 
 
 class VAEScale(AutoEncoderScale):
@@ -62,6 +63,24 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
     # endregion
 
+    def build_anomaly_callbacks(self,
+                                database: Database,
+                                scale: int = None):
+        scale_shape = self.input_shape_by_scale[scale]
+        database = database.resized_to_scale(scale_shape)
+        anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database, scale)
+
+        auc_images, frame_labels = database.test_dataset.sample_with_anomaly_labels(batch_size=64, seed=0,
+                                                                                    max_shard_count=8)
+        n_predictions_model = self.n_predictions(n=100, scale=scale)
+
+        vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
+                                       auc_images, frame_labels, plot_size=(256, 256), batch_size=8,
+                                       name="Variational_AUC")
+
+        anomaly_callbacks.append(vae_auc_callback)
+        return anomaly_callbacks
+
     def n_predictions(self, n, scale=None):
         encoder = self.get_encoder_model_at_scale(scale)
         decoder = self.get_decoder_model_at_scale(scale)
@@ -88,7 +107,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             error = tf.abs(tf.expand_dims(encoder_input, axis=1) - autoencoded)
             predictions = tf.reduce_mean(error, axis=[1, 2, 3, 4])
 
-        return SummaryModel(inputs=encoder_input, outputs=predictions)
+        return CallbackModel(inputs=encoder_input, outputs=predictions)
 
 
 # region Utils

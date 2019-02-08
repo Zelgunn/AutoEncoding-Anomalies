@@ -16,7 +16,7 @@ from typing import List, Any
 from layers import ResBlock2D, ResBlock2DTranspose, SpectralNormalization
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
-from callbacks import ImageCallback, AUCCallback, SummaryModel
+from callbacks import ImageCallback, AUCCallback, CallbackModel
 
 
 class AutoEncoderScale(object):
@@ -424,8 +424,10 @@ class AutoEncoderBaseModel(ABC):
         auc_images, frame_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0, max_shard_count=8)
         auc_inputs_placeholder = self.get_autoencoder_model_at_scale(scale).input
         frame_auc_predictions = self.frame_level_average_error(scale)
-        frame_auc_callback = AUCCallback(self.tensorboard, frame_auc_predictions, auc_inputs_placeholder,
-                                         auc_images, frame_labels, plot_size=(256, 256), batch_size=128,
+        frame_predictions_model = CallbackModel(auc_inputs_placeholder, frame_auc_predictions)
+        frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
+                                         auc_images, frame_labels,
+                                         plot_size=(256, 256), batch_size=128,
                                          name="Frame_Level_Error_AUC")
 
         anomaly_callbacks = [train_image_callback, eval_image_callback, frame_auc_callback]
@@ -433,8 +435,10 @@ class AutoEncoderBaseModel(ABC):
         if test_dataset.has_pixel_level_anomaly_labels:
             pixel_auc_predictions = self.pixel_level_error(scale)
             pixel_labels = test_dataset.resized_anomaly_labels(self.pixel_level_labels_size)
-            pixel_auc_callback = AUCCallback(self.tensorboard, pixel_auc_predictions, auc_inputs_placeholder,
-                                             auc_images, pixel_labels, plot_size=(256, 256), batch_size=128,
+            pixel_predictions_model = CallbackModel(auc_inputs_placeholder, pixel_auc_predictions)
+            pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
+                                             auc_images, pixel_labels,
+                                             plot_size=(256, 256), batch_size=128,
                                              num_thresholds=20, name="Pixel_Level_Error_AUC")
             anomaly_callbacks.append(pixel_auc_callback)
 
@@ -490,7 +494,7 @@ class AutoEncoderBaseModel(ABC):
         delta = tf.abs(autoencoder.input - autoencoder.output)
         summary_op = self._get_images_summary(name, autoencoder.input, autoencoder.output, delta)
 
-        summary_model = SummaryModel(inputs=autoencoder.input, outputs=summary_op)
+        summary_model = CallbackModel(inputs=autoencoder.input, outputs=summary_op, output_is_summary=True)
 
         return ImageCallback(summary_model, images, tensorboard, frequency)
 

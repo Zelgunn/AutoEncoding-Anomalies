@@ -5,15 +5,14 @@ from tensorboard.plugins.pr_curve import summary as pr_summary
 import cv2
 from typing import Tuple
 
-from callbacks import TensorBoardPlugin
+from callbacks import TensorBoardPlugin, CallbackModel
 from utils.plot_utils import plot_line2d_to_array
 
 
 class AUCCallback(TensorBoardPlugin):
     def __init__(self,
+                 predictions_model: CallbackModel,
                  tensorboard: TensorBoard,
-                 predictions: tf.Tensor,
-                 inputs_placeholder: tf.Tensor,
                  images: np.ndarray,
                  labels: np.ndarray,
                  update_freq: int or str = "epoch",
@@ -23,8 +22,7 @@ class AUCCallback(TensorBoardPlugin):
                  name="AUC_Callback"):
         super(AUCCallback, self).__init__(tensorboard, update_freq)
 
-        self.predictions = predictions
-        self.inputs_placeholder = inputs_placeholder
+        self.predictions_model = predictions_model
         self.images = images
         self.labels = np.squeeze(labels)
         self.plot_size = plot_size
@@ -53,12 +51,6 @@ class AUCCallback(TensorBoardPlugin):
                                                num_thresholds=num_thresholds)
         # endregion
 
-        self.batch_count = int(np.ceil(self.images.shape[0] / self.batch_size))
-        self.auc_feed_dicts = []
-        for i in range(self.batch_count):
-            batch = {self.inputs_placeholder: self.images[i * batch_size: (i + 1) * batch_size]}
-            self.auc_feed_dicts.append(batch)
-
         self.auc_image_input = None
         self.auc_image_summary = None
         self.auc_value_input = None
@@ -68,36 +60,11 @@ class AUCCallback(TensorBoardPlugin):
     def _write_logs(self, index):
         self.session.run(tf.variables_initializer(self.auc_variables))
 
-        # region Generate predictions
-        predictions = []
-        for i in range(self.batch_count):
-            batch_predictions = self.session.run(self.predictions, feed_dict=self.auc_feed_dicts[i])
-            predictions.append(batch_predictions)
-        predictions = np.concatenate(predictions, axis=0)
-        # region Predictions reformatting
-        if predictions.shape != self.labels.shape:
-            if len(self.labels.shape) > 2:
-                pred_dim = np.prod(predictions.shape)
-                labels_dim = np.prod(self.labels.shape)
-                if pred_dim != labels_dim:
-                    resized_predictions = np.empty(shape=self.labels.shape, dtype=predictions.dtype)
-                    dsize = tuple(reversed(resized_predictions.shape[1:3]))
-                    for j in range(len(predictions)):
-                        resized_predictions[j] = cv2.resize(predictions[j], dsize, interpolation=cv2.INTER_AREA)
-                        # cv2.imshow("base", predictions[j])
-                        # cv2.imshow("resized", resized_predictions[j])
-                        # cv2.imshow("labels", self.labels[j].astype(np.float32))
-                        # cv2.waitKey(1000)
-                    predictions = resized_predictions
-                else:
-                    predictions = np.reshape(predictions, self.labels.shape)
-            else:
-                predictions = np.reshape(predictions, self.labels.shape)
-        # endregion
+        predictions = self.predictions_model.predict(self.images, self.batch_size)
+        predictions = self.reformat_predictions(predictions)
 
         pred_min = predictions.min()
         predictions = (predictions - pred_min) / (predictions.max() - pred_min)
-        # endregion
 
         # region Generate AUC values and PR summary
         results = self.session.run([*self.auc_op, self.pr_summary_op],
@@ -134,3 +101,20 @@ class AUCCallback(TensorBoardPlugin):
 
         self.tensorboard.writer.add_summary(auc_summary_result, index)
         self.tensorboard.writer.add_summary(pr_summary_result, index)
+
+    def reformat_predictions(self, predictions):
+        if predictions.shape != self.labels.shape:
+            if len(self.labels.shape) > 2:
+                pred_dim = np.prod(predictions.shape)
+                labels_dim = np.prod(self.labels.shape)
+                if pred_dim != labels_dim:
+                    resized_predictions = np.empty(shape=self.labels.shape, dtype=predictions.dtype)
+                    dsize = tuple(reversed(resized_predictions.shape[1:3]))
+                    for j in range(len(predictions)):
+                        resized_predictions[j] = cv2.resize(predictions[j], dsize, interpolation=cv2.INTER_AREA)
+                    predictions = resized_predictions
+                else:
+                    predictions = np.reshape(predictions, self.labels.shape)
+            else:
+                predictions = np.reshape(predictions, self.labels.shape)
+        return predictions

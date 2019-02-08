@@ -5,7 +5,7 @@ from typing import List
 
 from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict
 from datasets import Database
-from callbacks import AUCCallback
+from callbacks import AUCCallback, CallbackModel
 
 
 class GANScale(AutoEncoderScale):
@@ -259,7 +259,8 @@ class GAN(AutoEncoderBaseModel):
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
         auc_images, frame_labels = database.test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0,
                                                                                     max_shard_count=8)
-        disc_auc_callback = AUCCallback(self.tensorboard, discriminator_prediction, discriminator_inputs_placeholder,
+        disc_auc_predictions_model = CallbackModel(discriminator_inputs_placeholder, discriminator_prediction)
+        disc_auc_callback = AUCCallback(disc_auc_predictions_model, self.tensorboard,
                                         auc_images, frame_labels, plot_size=(256, 256), batch_size=128,
                                         name="Discriminator_AUC")
 

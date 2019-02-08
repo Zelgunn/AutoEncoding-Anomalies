@@ -95,7 +95,6 @@ if allow_gpu_growth:
     session = tf.Session(config=config)
     K.set_session(session)
 
-
 # endregion
 
 if profile:
