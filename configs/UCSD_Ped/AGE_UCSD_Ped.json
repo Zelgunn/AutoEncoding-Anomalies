@@ -2,6 +2,7 @@
     "input_shape": [128, 192, 1],
     "embeddings_size": 240,
     "embeddings_reshape": [2, 3],
+    "use_dense_embeddings": "False",
     "use_resblock": "True",
     "use_spectral_norm": "True",
     "encoder": [
@@ -22,7 +23,7 @@
     ],
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
-    "output_activation": {"name": "sigmoid"},
+    "output_activation": {"name": "tanh"},
     "optimizer": {"name": "Adam", "lr": 1e-5, "beta_1": 0.0, "beta_2": 0.99, "decay": 1e-8},
     "decoder_steps": 2,
     "loss_weights": {
@@ -35,5 +36,10 @@
             "fake_data": {"reconstruction": 1000.0, "divergence": 1.0}
         }
     },
-    "reconstruction_metrics": {"real": "L1", "fake": "cos"}
+    "reconstruction_metrics": {"real": "L1", "fake": "cos"},
+    "pixel_level_labels_size": [16, 24],
+    "data_generators": {
+        "train": {"dropout_rate": 0.2},
+        "test": {"dropout_rate": 0.0}
+    }
 }

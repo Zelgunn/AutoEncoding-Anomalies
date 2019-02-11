@@ -63,6 +63,10 @@ class Dataset(Sequence, ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def sample_unprocessed_images(self, batch_size=None, seed=None, max_shard_count=1):
+        raise NotImplementedError
+
+    @abstractmethod
     def sample_with_anomaly_labels(self, batch_size=None, seed=None, max_shard_count=1):
         raise NotImplementedError
 

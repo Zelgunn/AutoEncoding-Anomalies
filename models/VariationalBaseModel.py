@@ -70,9 +70,9 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         database = database.resized_to_scale(scale_shape)
         anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database, scale)
 
-        auc_images, frame_labels = database.test_dataset.sample_with_anomaly_labels(batch_size=64, seed=0,
-                                                                                    max_shard_count=8)
-        n_predictions_model = self.n_predictions(n=100, scale=scale)
+        auc_images, frame_labels, _ = database.test_dataset.sample_with_anomaly_labels(batch_size=64, seed=0,
+                                                                                       max_shard_count=8)
+        n_predictions_model = self.n_predictions(n=10, scale=scale)
 
         vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
                                        auc_images, frame_labels, plot_size=(256, 256), batch_size=8,
@@ -90,6 +90,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
         with tf.name_scope("n_pred"):
             encoder_input = Input(input_shape)
+            # TODO encoder.input instead of Input(...)
             _, latent_mean, latent_log_var = encoder(encoder_input)
 
             sampling_function = sampling_n(n)

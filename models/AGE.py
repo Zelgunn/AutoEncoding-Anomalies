@@ -1,7 +1,5 @@
 from keras.layers import Input, Conv2D, Dense, Reshape
-from keras.optimizers import Adam
 from keras.callbacks import CallbackList
-from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
 import copy
@@ -176,10 +174,6 @@ class AGE(AutoEncoderBaseModel):
     # endregion
 
     # region Training
-    @property
-    def can_be_pre_trained(self):
-        return True
-
     def train_epoch(self,
                     database: Database,
                     scale: int = None,
@@ -216,29 +210,6 @@ class AGE(AutoEncoderBaseModel):
             callbacks.on_batch_end(batch_index, batch_logs)
 
         self.on_epoch_end(base_model, database, callbacks)
-
-    def on_epoch_end(self,
-                     base_model: KerasModel,
-                     train_generator,
-                     test_generator=None,
-                     callbacks: CallbackList = None,
-                     epoch_logs: dict = None):
-        if epoch_logs is None:
-            epoch_logs = {}
-
-        if test_generator:
-            out_labels = base_model.metrics_names
-            val_outs = base_model.evaluate_generator(test_generator)
-            val_outs = to_list(val_outs)
-            for label, val_out in zip(out_labels, val_outs):
-                epoch_logs["val_{0}".format(label)] = val_out
-            test_generator.on_epoch_end()
-
-        train_generator.on_epoch_end()
-        if callbacks:
-            callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
-        self.epochs_seen += 1
-
     # endregion
 
     # region Callbacks (building)

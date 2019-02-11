@@ -85,6 +85,18 @@ class FullyLoadableDataset(Dataset, ABC):
 
         return inputs, outputs
 
+    def sample_unprocessed_images(self, batch_size=None, seed=None, max_shard_count=1):
+        np.random.seed(seed)
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        indices = np.random.permutation(np.arange(self.images.shape[0]))[:batch_size]
+        images: np.ndarray = self.images[indices]
+
+        np.random.seed(None)
+
+        return images
+
     def sample_with_anomaly_labels(self, batch_size=None, seed=None, max_shard_count=1):
         np.random.seed(seed)
         if batch_size is None:
@@ -92,11 +104,16 @@ class FullyLoadableDataset(Dataset, ABC):
 
         indices = np.random.permutation(np.arange(self.images.shape[0]))[:batch_size]
         images: np.ndarray = self.images[indices]
-        labels = self.anomaly_labels[indices]
+        if self.has_pixel_level_anomaly_labels:
+            frame_level_labels = self.frame_level_labels[indices]
+            pixel_level_labels = self.anomaly_labels[indices]
+        else:
+            frame_level_labels = self.anomaly_labels[indices]
+            pixel_level_labels = None
 
         np.random.seed(None)
 
-        return images, labels
+        return images, frame_level_labels, pixel_level_labels
 
     def shuffle(self):
         if self.anomaly_labels is None:
@@ -143,6 +160,9 @@ class FullyLoadableDataset(Dataset, ABC):
     @property
     def frame_level_labels(self):
         assert self.anomaly_labels is not None
+        if not self.has_pixel_level_anomaly_labels:
+            return self.anomaly_labels
+
         if self._frame_level_labels is None:
             self._frame_level_labels = np.any(self.anomaly_labels, axis=(1, 2, 3))
         return self._frame_level_labels

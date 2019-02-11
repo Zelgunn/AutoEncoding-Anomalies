@@ -270,7 +270,7 @@ class AutoEncoderBaseModel(ABC):
                                                 epoch_length, samples_count)
 
         common_callbacks.on_train_begin()
-        if self.can_be_pre_trained and ("pre_train" not in kwargs or kwargs["pre_train"]):
+        if ("pre_train" not in kwargs) or kwargs["pre_train"]:
             self.pre_train_loop(database, common_callbacks, batch_size, epoch_length, epochs, min_scale, max_scale)
         # endregion
 
@@ -288,10 +288,6 @@ class AutoEncoderBaseModel(ABC):
                         epochs[max_scale], max_scale)
         callbacks.on_train_end()
         # endregion
-
-    @property
-    def can_be_pre_trained(self):
-        return False
 
     def pre_train_loop(self,
                        database: Database,
@@ -421,7 +417,8 @@ class AutoEncoderBaseModel(ABC):
         eval_image_callback = self.image_callback_from_dataset(test_dataset, "test",
                                                                self.tensorboard, scale=scale)
 
-        auc_images, frame_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0, max_shard_count=8)
+        auc_images, frame_labels, pixel_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0,
+                                                                                         max_shard_count=8)
         auc_inputs_placeholder = self.get_autoencoder_model_at_scale(scale).input
         frame_auc_predictions = self.frame_level_average_error(scale)
         frame_predictions_model = CallbackModel(auc_inputs_placeholder, frame_auc_predictions)
@@ -432,9 +429,8 @@ class AutoEncoderBaseModel(ABC):
 
         anomaly_callbacks = [train_image_callback, eval_image_callback, frame_auc_callback]
 
-        if test_dataset.has_pixel_level_anomaly_labels:
+        if pixel_labels is not None:
             pixel_auc_predictions = self.pixel_level_error(scale)
-            pixel_labels = test_dataset.resized_anomaly_labels(self.pixel_level_labels_size)
             pixel_predictions_model = CallbackModel(auc_inputs_placeholder, pixel_auc_predictions)
             pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
                                              auc_images, pixel_labels,
@@ -486,8 +482,8 @@ class AutoEncoderBaseModel(ABC):
                                     frequency="epoch",
                                     scale: int = None) -> ImageCallback:
 
-        images, _ = dataset.sample_with_anomaly_labels(self.image_summaries_max_outputs, seed=0,
-                                                       max_shard_count=self.image_summaries_max_outputs)
+        images = dataset.sample_unprocessed_images(self.image_summaries_max_outputs, seed=0,
+                                                   max_shard_count=self.image_summaries_max_outputs)
 
         autoencoder = self.get_autoencoder_model_at_scale(scale)
 

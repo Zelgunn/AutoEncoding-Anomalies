@@ -165,10 +165,6 @@ class GAN(AutoEncoderBaseModel):
     # endregion
 
     # region Training
-    @property
-    def can_be_pre_trained(self):
-        return True
-
     def train_epoch(self,
                     database: Database,
                     scale: int = None,
@@ -257,8 +253,8 @@ class GAN(AutoEncoderBaseModel):
         discriminator: KerasModel = self.get_gan_models_at_scale(scale).discriminator
         discriminator_prediction = discriminator.get_output_at(0)
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
-        auc_images, frame_labels = database.test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0,
-                                                                                    max_shard_count=8)
+        auc_images, frame_labels, _ = database.test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0,
+                                                                                       max_shard_count=8)
         disc_auc_predictions_model = CallbackModel(discriminator_inputs_placeholder, discriminator_prediction)
         disc_auc_callback = AUCCallback(disc_auc_predictions_model, self.tensorboard,
                                         auc_images, frame_labels, plot_size=(256, 256), batch_size=128,

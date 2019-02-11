@@ -102,3 +102,7 @@ class UCSDDataset(FullyLoadableDataset):
         return UCSDDataset._load_images_from_dictionary_of_paths(tiff_images_dictionary)
     # endregion
     # endregion
+
+    @property
+    def has_pixel_level_anomaly_labels(self):
+        return True

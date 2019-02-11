@@ -49,6 +49,35 @@ class PartiallyLoadableDataset(Dataset):
     def current_batch(self, batch_size: int = None, apply_preprocess_step=True):
         raise NotImplementedError
 
+    def sample_unprocessed_images(self, batch_size=None, seed=None, max_shard_count=1):
+        np.random.seed(seed)
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        max_shard_count = min(max_shard_count, len(self.images_filenames))
+        shard_size = batch_size // max_shard_count
+
+        selected_shards = np.random.randint(len(self.images_filenames), size=max_shard_count)
+
+        images = np.empty(shape=[batch_size, *self.images_size, 1], dtype=np.float32)
+
+        batch_index = 0
+        for i, shard_index in enumerate(selected_shards):
+            images_shard_filepath = os.path.join(self.dataset_path, self.images_filenames[shard_index])
+            images_shard = np.load(images_shard_filepath, mmap_mode="r")
+
+            if i == (len(selected_shards) - 1):
+                shard_size += batch_size % max_shard_count
+
+            shard_indices = np.random.permutation(np.arange(len(images_shard)))[:shard_size]
+            images[batch_index:batch_index + shard_size] = images_shard[shard_indices]
+
+            batch_index += shard_size
+
+        np.random.seed(None)
+
+        return images
+
     def sample_with_anomaly_labels(self, batch_size=None, seed=None, max_shard_count=1):
         np.random.seed(seed)
         if batch_size is None:
@@ -80,7 +109,10 @@ class PartiallyLoadableDataset(Dataset):
 
         np.random.seed(None)
 
-        return images, labels
+        # np.any(self.anomaly_labels, axis=(1, 2, 3))
+        # TODO : Load pixel_level labels
+
+        return images, labels, None
 
     def shuffle(self):
         pass
