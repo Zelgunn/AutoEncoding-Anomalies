@@ -30,6 +30,9 @@ class AutoEncoderScale(object):
         self.autoencoder = autoencoder
 
 
+uint8_max_constant = tf.constant(255.0, dtype=tf.float32)
+
+
 class AutoEncoderBaseModel(ABC):
     # region Initialization
     def __init__(self):
@@ -58,6 +61,8 @@ class AutoEncoderBaseModel(ABC):
         self.embeddings_activation = None
         self.output_activation = None
         self.output_range = None
+        self._min_output_constant: tf.Tensor = None
+        self._inv_output_range_constant: tf.Tensor = None
         self.use_spectral_norm = False
         self.weight_decay_regularizer = None
 
@@ -87,6 +92,9 @@ class AutoEncoderBaseModel(ABC):
         self.embeddings_activation = self.config["embeddings_activation"]
         self.output_activation = self.config["output_activation"]["name"]
         self.output_range = output_activation_ranges[self.output_activation]
+        self._min_output_constant = tf.constant(self.output_range[0], name="min_output")
+        inv_range = 1.0 / (self.output_range[1] - self.output_range[0])
+        self._inv_output_range_constant = tf.constant(inv_range, name="inv_output_range")
 
         self.weight_decay_regularizer = l1(self.config["weight_decay"]) if "weight_decay" in self.config else None
 
@@ -417,7 +425,7 @@ class AutoEncoderBaseModel(ABC):
         eval_image_callback = self.image_callback_from_dataset(test_dataset, "test",
                                                                self.tensorboard, scale=scale)
 
-        auc_images, frame_labels, pixel_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=0,
+        auc_images, frame_labels, pixel_labels = test_dataset.sample_with_anomaly_labels(batch_size=512, seed=16,
                                                                                          max_shard_count=8)
         auc_inputs_placeholder = self.get_autoencoder_model_at_scale(scale).input
         frame_auc_predictions = self.frame_level_average_error(scale)
@@ -466,15 +474,6 @@ class AutoEncoderBaseModel(ABC):
         callback_metrics = copy.copy(metrics_names) + validation_callbacks
         return callback_metrics
 
-    def get_image_summary_at_scale(self,
-                                   name: str,
-                                   scale: int):
-        autoencoder = self.get_autoencoder_model_at_scale(scale)
-        delta = autoencoder.input - autoencoder.output
-        delta *= tf.abs(delta)
-
-        return self._get_images_summary(name, autoencoder.input, autoencoder.output, delta)
-
     def image_callback_from_dataset(self,
                                     dataset: Dataset,
                                     name: str,
@@ -487,18 +486,20 @@ class AutoEncoderBaseModel(ABC):
 
         autoencoder = self.get_autoencoder_model_at_scale(scale)
 
-        delta = tf.abs(autoencoder.input - autoencoder.output)
-        summary_op = self._get_images_summary(name, autoencoder.input, autoencoder.output, delta)
+        summary_op = self.make_images_summary(name, autoencoder.input, autoencoder.output)
 
         summary_model = CallbackModel(inputs=autoencoder.input, outputs=summary_op, output_is_summary=True)
 
         return ImageCallback(summary_model, images, tensorboard, frequency)
 
-    def _get_images_summary(self,
+    def make_images_summary(self,
                             name: str,
                             inputs: tf.Tensor,
-                            outputs: tf.Tensor,
-                            io_delta: tf.Tensor):
+                            outputs: tf.Tensor):
+        inputs = self.normalize_image_tensor(inputs)
+        outputs = self.normalize_image_tensor(outputs)
+        io_delta = (inputs - outputs) * (tf.cast(inputs < outputs, dtype=tf.uint8) * 254 + 1)
+
         summaries = [tf.summary.image(name + "_inputs", inputs,
                                       max_outputs=self.image_summaries_max_outputs),
                      tf.summary.image(name + "_outputs", outputs,
@@ -507,6 +508,12 @@ class AutoEncoderBaseModel(ABC):
                                       max_outputs=self.image_summaries_max_outputs)
                      ]
         return tf.summary.merge(summaries)
+
+    def normalize_image_tensor(self, tensor: tf.Tensor) -> tf.Tensor:
+        with tf.name_scope("normalize_image_tensor"):
+            normalized = (tensor - self._min_output_constant) * self._inv_output_range_constant
+            normalized = tf.cast(normalized * uint8_max_constant, tf.uint8)
+        return normalized
 
     def pixel_level_error(self, scale: int = None):
         model = self.get_autoencoder_model_at_scale(scale)
