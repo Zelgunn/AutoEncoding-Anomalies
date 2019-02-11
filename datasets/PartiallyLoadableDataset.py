@@ -26,6 +26,7 @@ class PartiallyLoadableDataset(Dataset):
         self.config = copy.deepcopy(config)
         self.sub_config_index = 0
         self._shard_indices_offset = None
+        self.normalization_range = None
 
     def sample(self, batch_size=None, apply_preprocess_step=True, seed=None):
         np.random.seed(seed)
@@ -37,6 +38,7 @@ class PartiallyLoadableDataset(Dataset):
         shard = np.load(shard_filepath, mmap_mode="r")
         indices = np.random.permutation(np.arange(len(shard)))[:batch_size]
         images = shard[indices]
+        images = (images - self.normalization_range[0]) * self.normalization_range[1]
 
         if apply_preprocess_step and (len(self.data_preprocessors) > 0):
             inputs, outputs = self.apply_preprocess(images, np.copy(images))
@@ -74,6 +76,8 @@ class PartiallyLoadableDataset(Dataset):
 
             batch_index += shard_size
 
+        images = (images - self.normalization_range[0]) * self.normalization_range[1]
+
         np.random.seed(None)
 
         return images
@@ -107,10 +111,12 @@ class PartiallyLoadableDataset(Dataset):
 
             batch_index += shard_size
 
-        np.random.seed(None)
-
         # np.any(self.anomaly_labels, axis=(1, 2, 3))
         # TODO : Load pixel_level labels
+
+        images = (images - self.normalization_range[0]) * self.normalization_range[1]
+
+        np.random.seed(None)
 
         return images, labels, None
 

@@ -30,7 +30,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
                  }
 # endregion
 
-model_used = "BasicAE"
+model_used = "VAEGAN"
 dataset_used = "Subway_Exit"
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
@@ -109,17 +109,23 @@ if profile:
                    batch_size=[32, 32, 32, 32, 32],\
                    pre_train=True)", sort="cumulative")
 else:
-    auto_encoder.train(database,
-                       min_scale=2,
-                       max_scale=3,
-                       epoch_length=2,
-                       epochs=[2, 2, 2, 2, 2],
-                       batch_size=[32, 32, 32, 32, 32],
-                       pre_train=True)
     # auto_encoder.train(database,
-    #                    min_scale=3,
-    #                    max_scale=4,
-    #                    epoch_length=5,
-    #                    epochs=[20, 20, 50, 50, 2000],
-    #                    batch_size=[128, 128, 64, 32, 32],
+    #                    min_scale=2,
+    #                    max_scale=3,
+    #                    epoch_length=2,
+    #                    epochs=[2, 2, 2, 2, 2],
+    #                    batch_size=[32, 32, 32, 32, 32],
     #                    pre_train=True)
+    auto_encoder.train(database,
+                       min_scale=4,
+                       max_scale=4,
+                       epoch_length=250,
+                       epochs=[20, 20, 50, 50, 2000],
+                       batch_size=[128, 128, 64, 32, 32],
+                       pre_train=False)
+
+# TODO : Check min/max of inputs/outputs
+# TODO : Make patches from images
+# TODO : Flow version
+# TODO : Video version (Normal + Flow)
+# TODO : Save complete model
