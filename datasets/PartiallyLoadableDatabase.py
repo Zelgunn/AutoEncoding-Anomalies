@@ -113,6 +113,6 @@ class PartiallyLoadableDatabase(Database, ABC):
         return os.path.join(self.database_path, self.header_filename)
 
     def normalize(self, target_min=0.0, target_max=1.0):
-        normalization_range = [target_min, 1.0 / (target_max - target_min)]
+        normalization_range = [target_min, target_max - target_min]
         self.train_dataset.normalization_range = normalization_range
         self.test_dataset.normalization_range = normalization_range

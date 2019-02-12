@@ -119,12 +119,11 @@ else:
     auto_encoder.train(database,
                        min_scale=4,
                        max_scale=4,
-                       epoch_length=250,
+                       epoch_length=200,
                        epochs=[20, 20, 50, 50, 2000],
-                       batch_size=[128, 128, 64, 32, 32],
+                       batch_size=[32, 32, 32, 32, 32],
                        pre_train=False)
 
-# TODO : Check min/max of inputs/outputs
 # TODO : Make patches from images
 # TODO : Flow version
 # TODO : Video version (Normal + Flow)
