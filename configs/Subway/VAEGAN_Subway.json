@@ -1,8 +1,8 @@
 {
     "input_shape": [192, 256, 1],
-    "embeddings_size": 120,
+    "embeddings_size": 240,
     "embeddings_reshape": [3, 4],
-    "use_dense_embeddings": "False",
+    "use_dense_embeddings": "True",
     "use_resblock": "True",
     "use_spectral_norm": "True",
     "encoder": [
