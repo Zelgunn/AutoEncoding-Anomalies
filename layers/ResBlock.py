@@ -334,8 +334,7 @@ class _ResBlockTranspose(_ResBlock):
                 deconv_output_shape,
                 strides=strides,
                 padding="same",
-                data_format=self.data_format,
-                dilation_rate=self.dilation_rate)
+                data_format=self.data_format)
 
             if self.use_bias:
                 outputs = K.bias_add(
@@ -384,8 +383,7 @@ class _ResBlockTranspose(_ResBlock):
                     self.strides[i],
                     self.kernel_size[i],
                     padding="same",
-                    output_padding=None,
-                    dilation=self.dilation_rate[i])
+                    output_padding=None)
                 new_space.append(new_dim)
             return tuple(new_space)
 
@@ -400,7 +398,6 @@ class ResBlock2DTranspose(_ResBlockTranspose):
                  kernel_size,
                  strides=(1, 1),
                  data_format=None,
-                 dilation_rate=1,
                  activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
@@ -415,7 +412,7 @@ class ResBlock2DTranspose(_ResBlockTranspose):
         super(ResBlock2DTranspose, self).__init__(rank=2,
                                                   filters=filters, kernel_size=kernel_size,
                                                   strides=strides, data_format=data_format,
-                                                  dilation_rate=dilation_rate, activation=activation, use_bias=use_bias,
+                                                  activation=activation, use_bias=use_bias,
                                                   kernel_initializer=kernel_initializer,
                                                   bias_initializer=bias_initializer,
                                                   kernel_regularizer=kernel_regularizer,
@@ -436,7 +433,6 @@ class ResBlock3DTranspose(_ResBlockTranspose):
                  kernel_size,
                  strides=(1, 1),
                  data_format=None,
-                 dilation_rate=1,
                  activation="relu",
                  use_bias=True,
                  kernel_initializer="glorot_uniform",
@@ -451,7 +447,7 @@ class ResBlock3DTranspose(_ResBlockTranspose):
         super(ResBlock3DTranspose, self).__init__(rank=3,
                                                   filters=filters, kernel_size=kernel_size,
                                                   strides=strides, data_format=data_format,
-                                                  dilation_rate=dilation_rate, activation=activation, use_bias=use_bias,
+                                                  activation=activation, use_bias=use_bias,
                                                   kernel_initializer=kernel_initializer,
                                                   bias_initializer=bias_initializer,
                                                   kernel_regularizer=kernel_regularizer,

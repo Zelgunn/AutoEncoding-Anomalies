@@ -1,0 +1,5 @@
+{
+    "input_shape": [16, 128, 192, 1],
+    "embeddings_size": 120,
+    "embeddings_reshape": [1, 2, 3]
+}

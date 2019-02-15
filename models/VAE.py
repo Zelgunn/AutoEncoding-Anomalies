@@ -1,15 +1,11 @@
 from keras.layers import Input, Conv2D, Reshape
 import numpy as np
 
-from models import AutoEncoderBaseModel, VariationalBaseModel, VAEScale, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, VariationalBaseModel, VAEScale, KerasModel, metrics_dict, build_adaptor_layer
 from models.VariationalBaseModel import kullback_leibler_divergence_mean0_var1
 
 
 class VAE(VariationalBaseModel):
-    def build(self, config_file: str):
-        self.load_config(config_file)
-        self.build_layers()
-
     def build_for_scale(self, scale: int):
         encoder = self.build_encoder_for_scale(scale)
         decoder = self.build_decoder_for_scale(scale)
@@ -32,7 +28,7 @@ class VAE(VariationalBaseModel):
     def build_encoder_for_scale(self, scale: int):
         scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        input_shape = scale_input_shape[:-1] + [self.channels_count]
 
         encoder_name = "Encoder_scale_{0}".format(scale)
         input_layer = Input(input_shape)
@@ -40,7 +36,7 @@ class VAE(VariationalBaseModel):
 
         # region Encoder
         if scale is not (self.depth - 1):
-            layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
+            layer = build_adaptor_layer(scale_channels, self.encoder_rank)(layer)
 
         for i in range(scale + 1):
             layer = self.link_encoder_conv_layer(layer, scale, i)
@@ -58,14 +54,8 @@ class VAE(VariationalBaseModel):
             latent_log_var = Reshape([-1])(latent_log_var)
 
         layer = self.embeddings_layer([latent_mean, latent_log_var])
-
         layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
-
-        embeddings_reshape = self.config["embeddings_reshape"]
-        embeddings_filters = self.embeddings_size
-        if self.use_dense_embeddings:
-            embeddings_filters = embeddings_filters // np.prod(embeddings_reshape)
-        layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+        layer = Reshape(self.embeddings_shape)(layer)
         # endregion
 
         outputs = [layer, latent_mean, latent_log_var]
@@ -80,8 +70,8 @@ class VAE(VariationalBaseModel):
         for i in range(scale + 1):
             layer = self.link_decoder_deconv_layer(layer, scale, i)
 
-        output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
-                              activation=self.output_activation)(layer)
+        layer = build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
+        output_layer = self.get_activation(self.output_activation)(layer)
 
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder

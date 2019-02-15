@@ -2,6 +2,7 @@
   <dictionary name="zelgunn">
     <words>
       <w>autoencoded</w>
+      <w>colorspace</w>
       <w>conv</w>
       <w>convolutional</w>
       <w>crossentropy</w>
@@ -12,21 +13,27 @@
       <w>dped</w>
       <w>dsize</w>
       <w>dtype</w>
+      <w>ffmpeg</w>
       <w>figsize</w>
       <w>filepath</w>
       <w>fourcc</w>
+      <w>gifs</w>
       <w>glorot</w>
       <w>infos</w>
       <w>keras</w>
       <w>kullback</w>
       <w>leibler</w>
       <w>noiser</w>
+      <w>palettegen</w>
+      <w>paletteuse</w>
       <w>pred</w>
       <w>preprocess</w>
       <w>preprocessing</w>
       <w>prog</w>
       <w>progbar</w>
+      <w>rawvideo</w>
       <w>regularizer</w>
+      <w>regularizers</w>
       <w>relu</w>
       <w>resblock</w>
       <w>resized</w>
@@ -36,6 +43,7 @@
       <w>ucsd</w>
       <w>uint</w>
       <w>vaegan</w>
+      <w>vcodec</w>
       <w>zelgunn</w>
     </words>
   </dictionary>

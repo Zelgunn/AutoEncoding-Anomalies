@@ -1,4 +1,3 @@
-import tensorflow as tf
 import numpy as np
 from abc import ABC, abstractmethod
 import os
@@ -12,9 +11,15 @@ from data_preprocessors import DataPreprocessor
 class PartiallyLoadableDatabase(Database, ABC):
     def __init__(self,
                  database_path: str,
+                 input_sequence_length: int or None,
+                 output_sequence_length: int or None,
+                 targets_are_predictions: bool,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
         super(PartiallyLoadableDatabase, self).__init__(database_path=database_path,
+                                                        input_sequence_length=input_sequence_length,
+                                                        output_sequence_length=output_sequence_length,
+                                                        targets_are_predictions=targets_are_predictions,
                                                         train_preprocessors=train_preprocessors,
                                                         test_preprocessors=test_preprocessors)
         self.header = None
@@ -26,11 +31,17 @@ class PartiallyLoadableDatabase(Database, ABC):
             self.header = json.load(header_file)
         self.train_dataset = PartiallyLoadableDataset(dataset_path=self.database_path,
                                                       config=self.header["train"],
-                                                      data_preprocessors=self.train_preprocessors)
+                                                      data_preprocessors=self.train_preprocessors,
+                                                      input_sequence_length=self.input_sequence_length,
+                                                      output_sequence_length=self.output_sequence_length,
+                                                      targets_are_predictions=self.targets_are_predictions)
 
         self.test_dataset = PartiallyLoadableDataset(dataset_path=self.database_path,
                                                      config=self.header["test"],
-                                                     data_preprocessors=self.test_preprocessors)
+                                                     data_preprocessors=self.test_preprocessors,
+                                                     input_sequence_length=self.input_sequence_length,
+                                                     output_sequence_length=self.output_sequence_length,
+                                                     targets_are_predictions=self.targets_are_predictions)
 
     def prepare_resolutions(self, resolutions: List, shard_size=5000, skip=0):
         header = {"train": [None] * len(resolutions), "test": [None] * len(resolutions)}

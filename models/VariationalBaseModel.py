@@ -1,10 +1,9 @@
 from abc import ABC
 import tensorflow as tf
-import numpy as np
-from keras.layers import Dense, Lambda, Input, Conv2D, Reshape
+from keras.layers import Dense, Lambda, Input, Reshape
 from typing import List
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, conv_nd
 from callbacks import CallbackModel, AUCCallback
 from datasets import Database
 
@@ -33,9 +32,6 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         self.latent_log_var_layer = None
         self._scales: List[VAEScale] = None
 
-    def load_config(self, config_file: str):
-        super(VariationalBaseModel, self).load_config(config_file)
-
     # endregion
 
     def build_layers(self):
@@ -46,9 +42,10 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
                                               kernel_regularizer=self.weight_decay_regularizer,
                                               bias_regularizer=self.weight_decay_regularizer)
         else:
-            self.latent_log_var_layer = Conv2D(filters=self.embeddings_size, kernel_size=3, padding="same",
-                                               kernel_regularizer=self.weight_decay_regularizer,
-                                               bias_regularizer=self.weight_decay_regularizer)
+            conv = conv_nd[False][False][self.encoder_rank]
+            self.latent_log_var_layer = conv(filters=self.embeddings_filters, kernel_size=3, padding="same",
+                                             kernel_regularizer=self.weight_decay_regularizer,
+                                             bias_regularizer=self.weight_decay_regularizer)
 
         self.embeddings_layer = Lambda(function=sampling)
 
@@ -66,12 +63,13 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     def build_anomaly_callbacks(self,
                                 database: Database,
                                 scale: int = None):
-        scale_shape = self.input_shape_by_scale[scale]
-        database = database.resized_to_scale(scale_shape)
+        database = self.resize_database(database, scale)
+        test_dataset = database.test_dataset
         anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database, scale)
 
-        auc_images, frame_labels, _ = database.test_dataset.sample_with_anomaly_labels(batch_size=512, seed=16,
-                                                                                       max_shard_count=16)
+        samples = test_dataset.sample(batch_size=512, seed=16, max_shard_count=16, return_labels=True)
+        auc_images, frame_labels, _ = samples
+        auc_images = test_dataset.divide_batch_io(auc_images)
 
         n_predictions_model = self.n_predictions(n=32, scale=scale)
 
@@ -82,15 +80,16 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         anomaly_callbacks.append(vae_auc_callback)
         return anomaly_callbacks
 
-    def n_predictions(self, n, scale=None):
+    def n_predictions(self, n, scale):
         encoder = self.get_encoder_model_at_scale(scale)
         decoder = self.get_decoder_model_at_scale(scale)
 
         scale_input_shape = self.input_shape_by_scale[scale]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        input_shape = scale_input_shape[:-1] + [self.channels_count]
 
         with tf.name_scope("n_pred"):
-            encoder_input = Input(input_shape)
+            encoder_input = encoder.input
+            true_outputs = self.get_true_outputs_placeholder(scale)
             # TODO encoder.input instead of Input(...)
             _, latent_mean, latent_log_var = encoder(encoder_input)
 
@@ -98,18 +97,15 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             layer = Lambda(function=sampling_function)([latent_mean, latent_log_var])
 
             layer = VariationalBaseModel.get_activation(self.embeddings_activation)(layer)
-            embeddings_reshape = self.config["embeddings_reshape"]
-            embeddings_filters = self.embeddings_size
-            if self.use_dense_embeddings:
-                embeddings_filters = embeddings_filters // np.prod(embeddings_reshape)
-            encoded = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+            encoded = Reshape(self.embeddings_shape)(layer)
+
             autoencoded = decoder(encoded)
 
             autoencoded = tf.reshape(autoencoded, [-1, n, *input_shape])
-            error = tf.abs(tf.expand_dims(encoder_input, axis=1) - autoencoded)
-            predictions = tf.reduce_mean(error, axis=[1, 2, 3, 4])
+            error = tf.abs(tf.expand_dims(true_outputs, axis=1) - autoencoded)
+            predictions = tf.reduce_mean(error, axis=[-4, -3, -2, -1])
 
-        return CallbackModel(inputs=encoder_input, outputs=predictions)
+        return CallbackModel(inputs=[encoder_input, true_outputs], outputs=predictions)
 
 
 # region Utils

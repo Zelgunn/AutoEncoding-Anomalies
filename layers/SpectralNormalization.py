@@ -1,5 +1,5 @@
-from keras.layers import Wrapper, InputSpec
-from keras.layers import Dense, Conv2D, Deconv2D
+from keras.layers import Wrapper
+from keras.layers import Dense, Conv2D, Deconv2D, Conv3D, Deconv3D
 from keras.initializers import RandomNormal
 from typing import List
 import keras.backend as K
@@ -18,7 +18,9 @@ class WeightsInfo(object):
 
 KNOWN_WEIGHTS_NAMES = {Dense: "kernel",
                        Conv2D: "kernel",
+                       Conv3D: "kernel",
                        Deconv2D: "kernel",
+                       Deconv3D: "kernel",
                        ResBlock1D: "kernels",
                        ResBlock2D: "kernels",
                        ResBlock3D: "kernels",

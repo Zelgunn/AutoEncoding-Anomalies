@@ -10,9 +10,15 @@ from data_preprocessors import DataPreprocessor
 class SubwayDatabase(PartiallyLoadableDatabase):
     def __init__(self,
                  database_path: str,
+                 input_sequence_length: int or None,
+                 output_sequence_length: int or None,
+                 targets_are_predictions: bool,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
         super(SubwayDatabase, self).__init__(database_path=database_path,
+                                             input_sequence_length=input_sequence_length,
+                                             output_sequence_length=output_sequence_length,
+                                             targets_are_predictions=targets_are_predictions,
                                              train_preprocessors=train_preprocessors,
                                              test_preprocessors=test_preprocessors)
         self._base_name = "Subway_Exit" if "exit" in database_path.lower() else "Subway_Entrance"
@@ -128,7 +134,10 @@ def subway_exit_anomaly_frame_labels(frame_count, skip=0):
 
 if __name__ == "__main__":
     path = os.path.normpath("../datasets/subway/exit")
-    subway_database = SubwayDatabase(path)
+    subway_database = SubwayDatabase(path,
+                                     input_sequence_length=None,
+                                     output_sequence_length=None,
+                                     targets_are_predictions=False)
     prepared_resolutions = [
         [192, 256],
         [96, 128],

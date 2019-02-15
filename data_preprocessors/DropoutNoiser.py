@@ -24,9 +24,9 @@ def add_dropout_noise_to(images, dropout_rate=None):
     if dropout_rate > 0.0:
         noisy_images = np.copy(noisy_images)
         noisy_images = np.reshape(noisy_images, [images.shape[0], -1])
-        dropout_count = int(np.ceil(dropout_rate * noisy_images.shape[1]))
+        dropout_count = int(np.ceil(dropout_rate * noisy_images.shape[-1]))
         for i in range(images.shape[0]):
-            dropout_indices = np.random.permutation(np.arange(noisy_images.shape[1]))[:dropout_count]
+            dropout_indices = np.random.permutation(np.arange(noisy_images.shape[-1]))[:dropout_count]
             noisy_images[i][dropout_indices] = 0.0
         noisy_images = np.reshape(noisy_images, images.shape)
     return noisy_images

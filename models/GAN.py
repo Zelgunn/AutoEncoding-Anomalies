@@ -3,7 +3,7 @@ from keras.callbacks import CallbackList
 import numpy as np
 from typing import List
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict, build_adaptor_layer
 from datasets import Database
 from callbacks import AUCCallback, CallbackModel
 
@@ -25,29 +25,21 @@ class GANScale(AutoEncoderScale):
 
 
 class GAN(AutoEncoderBaseModel):
-    # region Initialization
     def __init__(self):
         super(GAN, self).__init__()
         self.discriminator_layers = []
         self.discriminator_regression_layer = None
         self._scales: List[GANScale] = []
 
-    # endregion
-
     # region Model building
     def build_layers(self):
         super(GAN, self).build_layers()
 
         for layer_info in self.config["discriminator"]:
-            layer = self.build_conv_layer(layer_info)
+            layer = self.build_conv_layer(layer_info, rank=self.decoder_rank)
             self.discriminator_layers.append(layer)
 
         self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
-
-    def build(self, config_file: str):
-        self.load_config(config_file)
-        self._scales = [None] * self.depth
-        self.build_layers()
 
     def build_for_scale(self, scale: int):
         encoder = self.build_encoder_for_scale(scale)
@@ -55,7 +47,7 @@ class GAN(AutoEncoderBaseModel):
         discriminator = self.build_discriminator_for_scale(scale)
 
         scale_input_shape = self.input_shape_by_scale[scale]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        input_shape = scale_input_shape[:-1] + [self.channels_count]
 
         encoder_input = Input(input_shape)
         autoencoded = decoder(encoder(encoder_input))
@@ -94,7 +86,7 @@ class GAN(AutoEncoderBaseModel):
     def build_encoder_for_scale(self, scale: int):
         scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        input_shape = scale_input_shape[:-1] + [self.channels_count]
 
         encoder_name = "Encoder_scale_{0}".format(scale)
         input_layer = Input(input_shape)
@@ -128,25 +120,26 @@ class GAN(AutoEncoderBaseModel):
         for i in range(scale + 1):
             layer = self.link_decoder_deconv_layer(layer, scale, i)
 
-        output_layer = Conv2D(filters=self.input_channels, kernel_size=1, padding="same",
-                              activation=self.output_activation)(layer)
+        layer = build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
+        output_layer = self.get_activation(self.output_activation)(layer)
+
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 
     def build_discriminator_for_scale(self, scale: int):
-        scale_input_shape = self.input_shape_by_scale[scale]
-        scale_channels = scale_input_shape[-1]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        scale_output_shape = self.output_shape_by_scale[scale]
+        scale_channels = scale_output_shape[-1]
+        input_shape = scale_output_shape[:-1] + [self.channels_count]
 
         discriminator_name = "Discriminator_scale_{0}".format(scale)
         input_layer = Input(input_shape)
         layer = input_layer
 
         if scale is not (self.depth - 1):
-            layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
+            layer = build_adaptor_layer(scale_channels, rank=self.decoder_rank)(layer)
 
         for i in range(scale + 1):
-            layer = self.link_encoder_conv_layer(layer, scale, i)
+            layer = self.link_discriminator_conv_layer(layer, scale, i)
 
         layer = Reshape([-1])(layer)
         layer = self.discriminator_regression_layer(layer)
@@ -154,6 +147,12 @@ class GAN(AutoEncoderBaseModel):
         outputs = layer
         discriminator = KerasModel(inputs=input_layer, outputs=outputs, name=discriminator_name)
         return discriminator
+
+    def link_discriminator_conv_layer(self, layer, scale: int, layer_index: int):
+        use_dropout = scale > layer_index > 0
+        layer_index = layer_index + self.depth - scale - 1
+        sub_config = self.config["discriminator"]
+        return self.link_conv_layer(layer, self.discriminator_layers, layer_index, use_dropout, sub_config)
 
     def get_gan_models_at_scale(self, scale: int = None) -> GANScale:
         if scale is None:
@@ -246,15 +245,14 @@ class GAN(AutoEncoderBaseModel):
     def build_anomaly_callbacks(self,
                                 database: Database,
                                 scale: int = None):
-        scale_shape = self.input_shape_by_scale[scale]
-        database = database.resized_to_scale(scale_shape)
+        database = self.resize_database(database, scale)
+        test_dataset = database.test_dataset
         anomaly_callbacks = super(GAN, self).build_anomaly_callbacks(database, scale)
 
         discriminator: KerasModel = self.get_gan_models_at_scale(scale).discriminator
         discriminator_prediction = discriminator.get_output_at(0)
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
-        auc_images, frame_labels, _ = database.test_dataset.sample_with_anomaly_labels(batch_size=512, seed=16,
-                                                                                       max_shard_count=8)
+        auc_images, frame_labels, _ = test_dataset.sample_input_images(batch_size=512, seed=16, max_shard_count=8)
         disc_auc_predictions_model = CallbackModel(discriminator_inputs_placeholder, discriminator_prediction)
         disc_auc_callback = AUCCallback(disc_auc_predictions_model, self.tensorboard,
                                         auc_images, frame_labels, plot_size=(256, 256), batch_size=128,

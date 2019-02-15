@@ -7,7 +7,6 @@ def show_optical_flow(video_filepath: str):
 
     frame_height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     frame_width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_count = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
     hsv = np.zeros(shape=[frame_height, frame_width], dtype=np.float32)
     hsv = np.repeat(hsv[:, :, np.newaxis], 3, axis=2)
@@ -19,10 +18,10 @@ def show_optical_flow(video_filepath: str):
 
     while ret:
         prev_frame = current_frame
-        ret, current_frame = get_next_frame(video_capture, skip=4, output_mean=True)
+        ret, current_frame = get_next_frame(video_capture, skip=0, output_mean=True)
 
         flow = cv2.calcOpticalFlowFarneback(prev=prev_frame, next=current_frame, flow=None,
-                                            pyr_scale=0.5, levels=25, winsize=15,
+                                            pyr_scale=0.5, levels=25, winsize=8,
                                             iterations=4, poly_n=5, poly_sigma=1.2,
                                             flags=0)
 
@@ -33,11 +32,11 @@ def show_optical_flow(video_filepath: str):
         # TODO : Normalize at the end, not during
         hsv[..., 2] = mag
         hsv = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-        _, hsv = cv2.threshold(hsv, thresh=1.0, maxval=255.0, type=cv2.THRESH_TOZERO)
+        _, hsv = cv2.threshold(hsv, thresh=0.5, maxval=255.0, type=cv2.THRESH_TOZERO)
 
         cv2.imshow("Frame", current_frame)
         cv2.imshow("Flow", hsv)
-        cv2.waitKey(10)
+        cv2.waitKey(30)
 
 
 def get_next_frame(video_capture, skip=0, output_mean=True):

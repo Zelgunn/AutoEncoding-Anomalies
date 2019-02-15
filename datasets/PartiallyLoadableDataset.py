@@ -1,15 +1,18 @@
 import numpy as np
 import copy
-import random
 import os
 from typing import List
 
 from datasets import Dataset
 from data_preprocessors import DataPreprocessor
+from utils.numpy_utils import NumpySeedContext, fast_concatenate_0
 
 
 class PartiallyLoadableDataset(Dataset):
     def __init__(self,
+                 input_sequence_length: int or None,
+                 output_sequence_length: int or None,
+                 targets_are_predictions: bool,
                  dataset_path: str,
                  config: dict,
                  data_preprocessors: List[DataPreprocessor] = None,
@@ -17,7 +20,10 @@ class PartiallyLoadableDataset(Dataset):
                  epoch_length: int = None,
                  shuffle_on_epoch_end=True,
                  **kwargs):
-        super(PartiallyLoadableDataset, self).__init__(data_preprocessors=data_preprocessors,
+        super(PartiallyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
+                                                       output_sequence_length=output_sequence_length,
+                                                       targets_are_predictions=targets_are_predictions,
+                                                       data_preprocessors=data_preprocessors,
                                                        batch_size=batch_size,
                                                        epoch_length=epoch_length,
                                                        shuffle_on_epoch_end=shuffle_on_epoch_end,
@@ -28,102 +34,67 @@ class PartiallyLoadableDataset(Dataset):
         self._shard_indices_offset = None
         self.normalization_range = None
 
-    def sample(self, batch_size=None, apply_preprocess_step=True, seed=None):
-        np.random.seed(seed)
+    def sample(self, batch_size=None, seed=None, sequence_length=None, max_shard_count=1, return_labels=False):
         if batch_size is None:
             batch_size = self.batch_size
 
-        shard_index = np.random.randint(len(self.images_filenames))
-        shard_filepath = os.path.join(self.dataset_path, self.images_filenames[shard_index])
-        shard = np.load(shard_filepath, mmap_mode="r")
-        indices = np.random.permutation(np.arange(len(shard)))[:batch_size]
-        images = shard[indices]
-        images = images * self.normalization_range[1] + self.normalization_range[0]
-
-        if apply_preprocess_step and (len(self.data_preprocessors) > 0):
-            inputs, outputs = self.apply_preprocess(images, np.copy(images))
+        if max_shard_count is None:
+            max_shard_count = self.shards_count
         else:
-            inputs, outputs = images, images
+            max_shard_count = min(max_shard_count, self.shards_count)
 
-        np.random.seed(None)
-        return inputs, outputs
+        with NumpySeedContext(seed):
+            shards = self.get_random_shards(max_shard_count, return_labels)
+            images, labels, labels_shard = [], [], None
+            shard_size = batch_size // max_shard_count
 
-    def current_batch(self, batch_size: int = None, apply_preprocess_step=True):
-        raise NotImplementedError
+            for i, shard in enumerate(shards):
+                if return_labels:
+                    images_shard, labels_shard = shard
+                else:
+                    images_shard = shard
 
-    def sample_unprocessed_images(self, batch_size=None, seed=None, max_shard_count=1):
-        np.random.seed(seed)
-        if batch_size is None:
-            batch_size = self.batch_size
+                if i == (max_shard_count - 1):
+                    shard_size += batch_size % max_shard_count
 
-        max_shard_count = min(max_shard_count, len(self.images_filenames))
-        shard_size = batch_size // max_shard_count
+                indices = self.sample_indices(shard_size, len(images_shard), sequence_length)
+                images.append(images_shard[indices])
 
-        selected_shards = np.random.randint(len(self.images_filenames), size=max_shard_count)
+                if return_labels:
+                    labels.append(labels_shard[indices])
 
-        images = np.empty(shape=[batch_size, *self.images_size, 1], dtype=np.float32)
+        images = fast_concatenate_0(images)
+        images = self.normalize_samples(images)
 
-        batch_index = 0
-        for i, shard_index in enumerate(selected_shards):
-            images_shard_filepath = os.path.join(self.dataset_path, self.images_filenames[shard_index])
+        if return_labels:
+            # np.any(self.anomaly_labels, axis=(1, 2, 3))
+            # TODO : Load pixel_level labels
+            labels = fast_concatenate_0(labels)
+            return images, labels, None
+        else:
+            return images
+
+    def get_random_shards(self, max_shard_count, return_labels=False):
+        indices = np.random.permutation(np.arange(self.shards_count))[:max_shard_count]
+        shards = []
+        for index in indices:
+            images_shard_filepath = os.path.join(self.dataset_path, self.images_filenames[index])
             images_shard = np.load(images_shard_filepath, mmap_mode="r")
+            if return_labels:
+                labels_shard_filepath = os.path.join(self.dataset_path, self.labels_filenames[index])
+                labels_shard = np.load(labels_shard_filepath, mmap_mode="r")
+                shards.append((images_shard, labels_shard))
+            else:
+                shards.append(images_shard)
+        return shards
 
-            if i == (len(selected_shards) - 1):
-                shard_size += batch_size % max_shard_count
-
-            shard_indices = np.random.permutation(np.arange(len(images_shard)))[:shard_size]
-            images[batch_index:batch_index + shard_size] = images_shard[shard_indices]
-
-            batch_index += shard_size
-
-        images = images * self.normalization_range[1] + self.normalization_range[0]
-
-        np.random.seed(None)
-
-        return images
-
-    def sample_with_anomaly_labels(self, batch_size=None, seed=None, max_shard_count=1):
-        np.random.seed(seed)
-        if batch_size is None:
-            batch_size = self.batch_size
-
-        max_shard_count = min(max_shard_count, len(self.images_filenames))
-        shard_size = batch_size // max_shard_count
-
-        selected_shards = np.random.randint(len(self.images_filenames), size=max_shard_count)
-        images = np.empty(shape=[batch_size, *self.images_size, 1], dtype=np.float32)
-        labels = np.empty(shape=[batch_size], dtype=np.bool)
-
-        batch_index = 0
-        for i, shard_index in enumerate(selected_shards):
-            images_shard_filepath = os.path.join(self.dataset_path, self.images_filenames[shard_index])
-            labels_shard_filepath = os.path.join(self.dataset_path, self.labels_filenames[shard_index])
-
-            images_shard = np.load(images_shard_filepath, mmap_mode="r")
-            labels_shard = np.load(labels_shard_filepath, mmap_mode="r")
-
-            if i == (len(selected_shards) - 1):
-                shard_size += batch_size % max_shard_count
-
-            shard_indices = np.random.permutation(np.arange(len(images_shard)))[:shard_size]
-            images[batch_index:batch_index + shard_size] = images_shard[shard_indices]
-            labels[batch_index:batch_index + shard_size] = labels_shard[shard_indices]
-
-            batch_index += shard_size
-
-        # np.any(self.anomaly_labels, axis=(1, 2, 3))
-        # TODO : Load pixel_level labels
-
-        images = images * self.normalization_range[1] + self.normalization_range[0]
-
-        np.random.seed(None)
-
-        return images, labels, None
+    def normalize_samples(self, samples: np.ndarray):
+        return samples * self.normalization_range[1] + self.normalization_range[0]
 
     def shuffle(self):
         pass
 
-    def resized(self, size):
+    def resized(self, size, input_sequence_length, output_sequence_length):
         target_height, target_width = size
         target_index = None
         for i in range(len(self.config)):
@@ -135,6 +106,9 @@ class PartiallyLoadableDataset(Dataset):
 
         dataset_type = type(self)
         other = dataset_type(dataset_path=self.dataset_path, config=self.config,
+                             input_sequence_length=input_sequence_length,
+                             output_sequence_length=output_sequence_length,
+                             targets_are_predictions=self.targets_are_predictions,
                              data_preprocessors=self.data_preprocessors, batch_size=self.batch_size,
                              epoch_length=self.epoch_length, shuffle_on_epoch_end=self.shuffle_on_epoch_end)
         other.sub_config_index = target_index
@@ -161,4 +135,8 @@ class PartiallyLoadableDataset(Dataset):
     @property
     def labels_filenames(self):
         return self.sub_config["labels_filenames"]
+
+    @property
+    def shards_count(self):
+        return len(self.images_filenames)
     # endregion

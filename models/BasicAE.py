@@ -1,14 +1,10 @@
 from keras.layers import Input, Conv2D, Reshape
 import numpy as np
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict, build_adaptor_layer
 
 
 class BasicAE(AutoEncoderBaseModel):
-    def build(self, config_file):
-        self.load_config(config_file)
-        self.build_layers()
-
     def build_for_scale(self, scale):
         encoder = self.build_encoder_for_scale(scale)
         decoder = self.build_decoder_for_scale(scale)
@@ -22,7 +18,7 @@ class BasicAE(AutoEncoderBaseModel):
     def build_encoder_for_scale(self, scale: int):
         scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        input_shape = scale_input_shape[:-1] + [self.channels_count]
         input_layer = Input(input_shape)
         layer = input_layer
 
@@ -55,8 +51,8 @@ class BasicAE(AutoEncoderBaseModel):
         for i in range(scale + 1):
             layer = self.link_decoder_deconv_layer(layer, scale, i)
 
-        output_layer = Conv2D(filters=self.input_channels, kernel_size=1, strides=1, padding="same",
-                              activation=self.output_activation)(layer)
+        layer = build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
+        output_layer = self.get_activation(self.output_activation)(layer)
 
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name="Decoder-sc{0}".format(scale))
         return decoder

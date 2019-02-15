@@ -1,7 +1,6 @@
-from keras.layers import Input, Conv2D, Reshape
-import numpy as np
+from keras.layers import Input, Reshape
 
-from models import GAN, VariationalBaseModel, GANScale, VAEScale, KerasModel, metrics_dict
+from models import GAN, VariationalBaseModel, GANScale, VAEScale, KerasModel, metrics_dict, build_adaptor_layer
 from models.VAE import kullback_leibler_divergence_mean0_var1
 
 
@@ -30,14 +29,14 @@ class VAEGAN(GAN, VariationalBaseModel):
     def build_encoder_for_scale(self, scale: int):
         scale_input_shape = self.input_shape_by_scale[scale]
         scale_channels = scale_input_shape[-1]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        input_shape = scale_input_shape[:-1] + [self.channels_count]
 
         encoder_name = "Encoder_scale_{0}".format(scale)
         input_layer = Input(input_shape)
         layer = input_layer
 
         if scale is not (self.depth - 1):
-            layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
+            layer = build_adaptor_layer(scale_channels, self.encoder_rank)(layer)
 
         for i in range(scale + 1):
             layer = self.link_encoder_conv_layer(layer, scale, i)
@@ -53,13 +52,8 @@ class VAEGAN(GAN, VariationalBaseModel):
             latent_log_var = Reshape([-1])(latent_log_var)
 
         layer = self.embeddings_layer([latent_mean, latent_log_var])
-
         layer = GAN.get_activation(self.embeddings_activation)(layer)
-        embeddings_reshape = self.config["embeddings_reshape"]
-        embeddings_filters = self.embeddings_size
-        if self.use_dense_embeddings:
-            embeddings_filters = embeddings_filters // np.prod(embeddings_reshape)
-        layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+        layer = Reshape(self.embeddings_shape)(layer)
 
         outputs = [layer, latent_mean, latent_log_var]
         encoder = KerasModel(inputs=input_layer, outputs=outputs, name=encoder_name)
@@ -71,7 +65,7 @@ class VAEGAN(GAN, VariationalBaseModel):
         discriminator = self.build_discriminator_for_scale(scale)
 
         scale_input_shape = self.input_shape_by_scale[scale]
-        input_shape = scale_input_shape[:-1] + [self.input_channels]
+        input_shape = scale_input_shape[:-1] + [self.channels_count]
 
         encoder_input = Input(input_shape)
         encoded, latent_mean, latent_log_var = encoder(encoder_input)
