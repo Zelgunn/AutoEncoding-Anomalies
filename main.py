@@ -160,11 +160,11 @@ else:
     #                    batch_size=[32, 32, 32, 32, 32],
     #                    pre_train=True)
     auto_encoder.train(database,
-                       min_scale=3,
-                       max_scale=3,
-                       epoch_length=1,
+                       min_scale=4,
+                       max_scale=4,
+                       epoch_length=50,
                        epochs=[20, 20, 50, 50, 2000],
-                       batch_size=[32, 32, 32, 8, 32],
+                       batch_size=[32, 32, 32, 32, 32],
                        pre_train=False)
 
 # TODO : config - auto layers from 1 line

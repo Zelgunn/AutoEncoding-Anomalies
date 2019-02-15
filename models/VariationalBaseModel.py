@@ -74,7 +74,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         n_predictions_model = self.n_predictions(n=32, scale=scale)
 
         vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
-                                       auc_images, frame_labels, plot_size=(256, 256), batch_size=8,
+                                       auc_images, frame_labels, plot_size=(256, 256), batch_size=4,
                                        name="Variational_AUC")
 
         anomaly_callbacks.append(vae_auc_callback)
@@ -84,11 +84,11 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         encoder = self.get_encoder_model_at_scale(scale)
         decoder = self.get_decoder_model_at_scale(scale)
 
-        scale_input_shape = self.input_shape_by_scale[scale]
-        input_shape = scale_input_shape[:-1] + [self.channels_count]
+        scale_output_shape = self.output_shape_by_scale[scale]
+        output_shape = scale_output_shape[:-1] + [self.channels_count]
 
         with tf.name_scope("n_pred"):
-            encoder_input = encoder.input
+            encoder_input = encoder.get_input_at(0)
             true_outputs = self.get_true_outputs_placeholder(scale)
             # TODO encoder.input instead of Input(...)
             _, latent_mean, latent_log_var = encoder(encoder_input)
@@ -101,9 +101,10 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
             autoencoded = decoder(encoded)
 
-            autoencoded = tf.reshape(autoencoded, [-1, n, *input_shape])
-            error = tf.abs(tf.expand_dims(true_outputs, axis=1) - autoencoded)
-            predictions = tf.reduce_mean(error, axis=[-4, -3, -2, -1])
+            autoencoded = tf.reshape(autoencoded, [-1, n, *output_shape])
+            true_outputs_expanded = tf.expand_dims(true_outputs, axis=1)
+            error = tf.abs(true_outputs_expanded - autoencoded)
+            predictions = tf.reduce_mean(error, axis=[1, -3, -2, -1])
 
         return CallbackModel(inputs=[encoder_input, true_outputs], outputs=predictions)
 

@@ -28,7 +28,9 @@ class CallbackModel(object):
         if session is None:
             session = get_session()
 
-        batch_count = int(np.ceil(len(x[0]) / batch_size))
+        total_size = len(x[0])
+        batch_count = int(np.ceil(total_size / batch_size))
+
         results = [None] * batch_count
 
         for i in range(batch_count):
@@ -36,7 +38,10 @@ class CallbackModel(object):
             values = [array[start:end] for array in x]
             feed_dict = dict(zip(self.inputs, values))
             results[i] = session.run(self.outputs, feed_dict)
-        results = np.concatenate(results)
+
+        transpose_axes = [1, 0] + list(range(2, len(np.shape(results))))
+        results = np.transpose(results, axes=transpose_axes)
+        results = np.reshape(results, newshape=[len(self.outputs), total_size, *results.shape[3:]])
 
         return results
 

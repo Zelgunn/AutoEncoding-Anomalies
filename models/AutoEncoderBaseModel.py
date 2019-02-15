@@ -487,7 +487,7 @@ class AutoEncoderBaseModel(ABC):
         frame_predictions_model = self.build_frame_level_error_callback_model(scale)
         frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
                                          auc_images, frame_labels,
-                                         plot_size=(256, 256), batch_size=128,
+                                         plot_size=(256, 256), batch_size=32,
                                          name="Frame_Level_Error_AUC")
 
         anomaly_callbacks = [train_image_callback, eval_image_callback, frame_auc_callback]
@@ -496,7 +496,7 @@ class AutoEncoderBaseModel(ABC):
             pixel_predictions_model = self.build_pixel_level_error_callback_model(scale)
             pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
                                              auc_images, pixel_labels,
-                                             plot_size=(256, 256), batch_size=128,
+                                             plot_size=(256, 256), batch_size=32,
                                              num_thresholds=20, name="Pixel_Level_Error_AUC")
             anomaly_callbacks.append(pixel_auc_callback)
 
@@ -562,7 +562,7 @@ class AutoEncoderBaseModel(ABC):
         max_outputs = self.image_summaries_max_outputs
         summaries = [image_summary(name + "_inputs", inputs, max_outputs, fps=5),
                      image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=5),
-                     image_summary(name + "_pred_outputs", true_outputs, max_outputs, fps=5),
+                     image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=5),
                      image_summary(name + "_delta", io_delta, max_outputs, fps=5)]
         return tf.summary.merge(summaries)
 
