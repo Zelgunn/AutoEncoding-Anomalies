@@ -1,7 +1,8 @@
 from keras.models import Model as KerasModel
-from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer
+from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input
 from keras.layers import Conv2D, Deconv2D, Conv3D, Deconv3D
 from keras.layers import MaxPooling2D, MaxPooling3D, AveragePooling2D, AveragePooling3D
+from keras.initializers import VarianceScaling
 from keras.regularizers import l1
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
@@ -48,23 +49,24 @@ class LayerBlock(object):
         self.is_transpose = type(self.conv) in [Deconv2D, Deconv3D, ResBlock2DTranspose, ResBlock3DTranspose]
 
     def __call__(self, input_layer, use_dropout):
-        use_dropout &= self.dropout is not None
-        layer = input_layer
+        with tf.name_scope("block"):
+            use_dropout &= self.dropout is not None
+            layer = input_layer
 
-        if use_dropout and self.is_transpose:
-            layer = self.dropout(layer)
+            if use_dropout and self.is_transpose:
+                layer = self.dropout(layer)
 
-        layer = self.conv(layer)
+            layer = self.conv(layer)
 
-        if self.activation is not None:
-            layer = self.activation(layer)
+            if self.activation is not None:
+                layer = self.activation(layer)
 
-        if self.pooling is not None:
-            assert not self.is_transpose
-            layer = self.pooling(layer)
+            if self.pooling is not None:
+                assert not self.is_transpose
+                layer = self.pooling(layer)
 
-        if use_dropout and not self.is_transpose:
-            layer = self.dropout(layer)
+            if use_dropout and not self.is_transpose:
+                layer = self.dropout(layer)
 
         return layer
 
@@ -102,6 +104,10 @@ class AutoEncoderBaseModel(ABC):
         self.default_activation = None
         self.embeddings_activation = None
         self.output_activation = None
+
+        self.weights_initializer = None
+
+        self.use_batch_normalization_in_res_blocks = None
 
         self.optimizer = None
 
@@ -166,6 +172,18 @@ class AutoEncoderBaseModel(ABC):
         self.output_activation = self.config["output_activation"]
         # endregion
 
+        # region Weights initialization
+        weights_initializer_config = self.config["weights_initializer"]
+        weights_initializer_seed = weights_initializer_config["seed"] if "seed" in weights_initializer_config else None
+        self.weights_initializer = VarianceScaling(scale=weights_initializer_config["scale"],
+                                                   mode=weights_initializer_config["mode"],
+                                                   distribution=weights_initializer_config["distribution"],
+                                                   seed=weights_initializer_seed)
+
+        # endregion
+
+        self.use_batch_normalization_in_res_blocks = (self.config["use_batch_normalization_in_res_blocks"] == "True")
+
         # region Regularizers
         self.weight_decay_regularizer = l1(self.config["weight_decay"]) if "weight_decay" in self.config else None
         self.use_spectral_norm = ("use_spectral_norm" in self.config["use_spectral_norm"])
@@ -201,6 +219,7 @@ class AutoEncoderBaseModel(ABC):
         else:
             conv = conv_nd[False][False][self.encoder_rank]
             self.embeddings_layer = conv(filters=self.embeddings_filters, kernel_size=3, padding="same",
+                                         kernel_initializer=self.weights_initializer,
                                          kernel_regularizer=self.weight_decay_regularizer,
                                          bias_regularizer=self.weight_decay_regularizer)
 
@@ -221,11 +240,15 @@ class AutoEncoderBaseModel(ABC):
 
         # region Convolutional layer
         conv_layer_kwargs = {"filters": layer_info["filters"], "kernel_size": layer_info["kernel_size"],
-                             "strides": conv_layer_strides, "kernel_regularizer": self.weight_decay_regularizer,
+                             "strides": conv_layer_strides,
+                             "kernel_initializer": self.weights_initializer,
+                             "kernel_regularizer": self.weight_decay_regularizer,
                              "bias_regularizer": self.weight_decay_regularizer}
         # region Residual Block
         use_resblock = ("resblock" in layer_info) and (layer_info["resblock"] == "True")
-        if not use_resblock:
+        if use_resblock:
+            conv_layer_kwargs["use_batch_normalization"] = self.use_batch_normalization_in_res_blocks
+        else:
             conv_layer_kwargs["padding"] = layer_info["padding"] if "padding" in layer_info else "same"
         # endregion
 
@@ -247,6 +270,10 @@ class AutoEncoderBaseModel(ABC):
     def build_deconv_layer_block(self, layer_info: dict, rank: int) -> LayerBlock:
         return self.build_conv_layer_block(layer_info, rank, transpose=True)
 
+    def build_adaptor_layer(self, channels: int, rank: int):
+        layer_class = conv_nd[False][False][rank]
+        return layer_class(filters=channels, kernel_size=1, strides=1, padding="same",
+                           kernel_initializer=self.weights_initializer)
     # endregion
 
     @abstractmethod
@@ -266,9 +293,19 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     # region Decoder models
-    @abstractmethod
     def build_decoder_for_scale(self, scale: int):
-        raise NotImplementedError
+        decoder_name = "Decoder_scale_{0}".format(scale)
+        input_layer = Input(self.embeddings_shape)
+        layer = input_layer
+
+        for i in range(scale + 1):
+            layer = self.link_decoder_deconv_layer(layer, scale, i)
+
+        layer = self.build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
+        output_layer = self.get_activation(self.output_activation)(layer)
+
+        decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
+        return decoder
 
     def link_decoder_deconv_layer(self, layer, scale: int, layer_index: int):
         use_dropout = layer_index < scale
@@ -513,33 +550,40 @@ class AutoEncoderBaseModel(ABC):
     def build_anomaly_callbacks(self,
                                 database: Database,
                                 scale: int = None):
+        # region Getting database/datasets
         database = self.resize_database(database, scale)
         test_dataset = database.test_dataset
+        train_dataset = database.train_dataset
+        # endregion
 
-        train_image_callback = self.image_callback_from_dataset(database.train_dataset, "train",
-                                                                self.tensorboard, scale=scale)
-        eval_image_callback = self.image_callback_from_dataset(test_dataset, "test",
-                                                               self.tensorboard, scale=scale)
+        train_image_callback = self.build_auto_encoding_callback(train_dataset, "train", self.tensorboard, scale=scale)
+        test_image_callback = self.build_auto_encoding_callback(test_dataset, "test", self.tensorboard, scale=scale)
 
+        # region Getting samples used for AUC callbacks
         samples = test_dataset.sample(batch_size=512, seed=16, max_shard_count=8, return_labels=True)
         auc_images, frame_labels, pixel_labels = samples
         auc_images = test_dataset.divide_batch_io(auc_images)
+        # endregion
 
+        # region Frame level error AUC (ROC)
         frame_predictions_model = self.build_frame_level_error_callback_model(scale)
         frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
                                          auc_images, frame_labels,
-                                         plot_size=(256, 256), batch_size=32,
-                                         name="Frame_Level_Error_AUC")
+                                         plot_size=(128, 128), batch_size=32,
+                                         name="Frame_Level_Error_AUC", epoch_freq=5)
+        # endregion
 
-        anomaly_callbacks = [train_image_callback, eval_image_callback, frame_auc_callback]
+        anomaly_callbacks = [train_image_callback, test_image_callback, frame_auc_callback]
 
+        # region Pixel level error AUC (ROC)
         if pixel_labels is not None:
             pixel_predictions_model = self.build_pixel_level_error_callback_model(scale)
             pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
                                              auc_images, pixel_labels,
-                                             plot_size=(256, 256), batch_size=32,
-                                             num_thresholds=20, name="Pixel_Level_Error_AUC")
+                                             plot_size=(128, 128), batch_size=32,
+                                             num_thresholds=20, name="Pixel_Level_Error_AUC", epoch_freq=5)
             anomaly_callbacks.append(pixel_auc_callback)
+        # endregion
 
         return anomaly_callbacks
 
@@ -569,43 +613,43 @@ class AutoEncoderBaseModel(ABC):
         callback_metrics = copy.copy(metrics_names) + validation_callbacks
         return callback_metrics
 
-    def image_callback_from_dataset(self,
-                                    dataset: Dataset,
-                                    name: str,
-                                    tensorboard: TensorBoard,
-                                    frequency="epoch",
-                                    scale: int = None) -> ImageCallback:
+    def build_auto_encoding_callback(self,
+                                     dataset: Dataset,
+                                     name: str,
+                                     tensorboard: TensorBoard,
+                                     frequency="epoch",
+                                     scale: int = None) -> ImageCallback:
 
         images = dataset.get_batch(self.image_summaries_max_outputs, seed=0, apply_preprocess_step=False,
                                    max_shard_count=self.image_summaries_max_outputs)
 
         autoencoder = self.get_autoencoder_model_at_scale(scale)
-        pred_outputs = autoencoder.output
-        true_outputs = self.get_true_outputs_placeholder(scale)
 
-        summary_op = self.make_images_summary(name, autoencoder.input, true_outputs, pred_outputs)
+        # region Placeholders
+        true_outputs_placeholder = self.get_true_outputs_placeholder(scale)
+        summary_inputs = [autoencoder.input, true_outputs_placeholder]
+        # endregion
 
-        summary_model_inputs = [autoencoder.input, true_outputs]
-        summary_model = CallbackModel(inputs=summary_model_inputs, outputs=summary_op, output_is_summary=True)
+        # region Image/Video normalization (uint8)
+        inputs = self.normalize_image_tensor(autoencoder.input)
+        true_outputs = self.normalize_image_tensor(true_outputs_placeholder)
+        pred_outputs = self.normalize_image_tensor(autoencoder.output)
+        # endregion
 
-        return ImageCallback(summary_model, images, tensorboard, frequency)
-
-    def make_images_summary(self,
-                            name: str,
-                            inputs: tf.Tensor,
-                            true_outputs: tf.Tensor,
-                            pred_outputs: tf.Tensor):
-        inputs = self.normalize_image_tensor(inputs)
-        true_outputs = self.normalize_image_tensor(true_outputs)
-        pred_outputs = self.normalize_image_tensor(pred_outputs)
         io_delta = (pred_outputs - true_outputs) * (tf.cast(pred_outputs < true_outputs, dtype=tf.uint8) * 254 + 1)
 
+        # region Summary operations
         max_outputs = self.image_summaries_max_outputs
-        summaries = [image_summary(name + "_inputs", inputs, max_outputs, fps=5),
-                     image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=5),
-                     image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=5),
-                     image_summary(name + "_delta", io_delta, max_outputs, fps=5)]
-        return tf.summary.merge(summaries)
+        one_shot_summaries = [image_summary(name + "_inputs", inputs, max_outputs, fps=5),
+                              image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=5)]
+        repeated_summaries = [image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=5),
+                              image_summary(name + "_delta", io_delta, max_outputs, fps=5)]
+        # endregion
+
+        one_shot_summary_model = CallbackModel(summary_inputs, one_shot_summaries, output_is_summary=True)
+        repeated_summary_model = CallbackModel(summary_inputs, repeated_summaries, output_is_summary=True)
+
+        return ImageCallback(one_shot_summary_model, repeated_summary_model, images, tensorboard, frequency)
 
     def normalize_image_tensor(self, tensor: tf.Tensor) -> tf.Tensor:
         with tf.name_scope("normalize_image_tensor"):
@@ -833,9 +877,4 @@ conv_nd = {False: {False: {2: Conv2D, 3: Conv3D},
 
 pool_nd = {"max": {2: MaxPooling2D, 3: MaxPooling3D},
            "average": {2: AveragePooling2D, 3: AveragePooling3D}}
-
-
-def build_adaptor_layer(channels: int, rank: int):
-    layer_class = conv_nd[False][False][rank]
-    return layer_class(filters=channels, kernel_size=1, strides=1, padding="same")
 # endregion

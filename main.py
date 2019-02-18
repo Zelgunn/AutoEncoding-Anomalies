@@ -35,11 +35,8 @@ model_used = "VAEGAN"
 dataset_used = "Subway_Exit"
 alt_config_suffix_used = None
 predict_next = True
-# TODO : predict_next random next image among N next possible
 use_flow = False
-# TODO : Use use_flow
 use_patches = False
-# TODO : Use use_patches
 
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
@@ -51,7 +48,7 @@ else:
 
 preview_tensorboard_test_images = False
 allow_gpu_growth = False
-profile = True
+profile = False
 
 # region Model/Dataset initialization
 # region Model
@@ -155,17 +152,20 @@ if profile:
 else:
     auto_encoder.train(database,
                        min_scale=3,
-                       max_scale=4,
+                       max_scale=3,
                        epoch_length=500,
                        epochs=[20, 20, 50, 50, 2000],
                        batch_size=[32, 32, 32, 32, 32],
                        pre_train=False)
 
-# TODO : config - pooling method (stride/max/mean/...)
+# TODO : Residual Scaling
+# TODO : He-al/MSRA initialization (+ scaled option)
+
 # TODO : config - for callbacks (batch_size, samples count, ...)
-# TODO : config - Tensorboard plugin (frequency in epochs)
-# TODO : config - Tensorboard images/videos inputs/true_outputs => Only 1, not @ every epoch (split)
+
 # TODO : Make patches from images
 # TODO : Flow version
 # TODO : Video version (Normal + Flow)
+
 # TODO : Save complete model
+# TODO : Encode/Decode the complete video !

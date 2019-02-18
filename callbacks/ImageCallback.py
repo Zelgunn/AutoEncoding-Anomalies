@@ -7,15 +7,27 @@ from callbacks import TensorBoardPlugin, CallbackModel
 
 class ImageCallback(TensorBoardPlugin):
     def __init__(self,
-                 summary_model: CallbackModel,
+                 one_shot_summary_model: CallbackModel,
+                 repeated_summary_model: CallbackModel,
                  model_inputs: np.ndarray or List,
                  tensorboard: TensorBoard,
                  update_freq: int or str):
         super(ImageCallback, self).__init__(tensorboard, update_freq)
-        self.summary_model = summary_model
+        self.one_shot_summary_model = one_shot_summary_model
+        self.repeated_summary_model = repeated_summary_model
         self.model_inputs = model_inputs
 
+        self.one_shot_ran = False
+
     def _write_logs(self, index):
-        images_summaries = self.summary_model.run(self.model_inputs)
-        for summaries in images_summaries:
-            self.writer.add_summary(summaries, index)
+        if not self.one_shot_ran and self.one_shot_summary_model is not None:
+            images_summaries = self.one_shot_summary_model.run(self.model_inputs)
+            for summaries in images_summaries:
+                self.writer.add_summary(summaries, index)
+
+            self.one_shot_ran = True
+
+        if self.repeated_summary_model is not None:
+            images_summaries = self.repeated_summary_model.run(self.model_inputs)
+            for summaries in images_summaries:
+                self.writer.add_summary(summaries, index)

@@ -1,6 +1,7 @@
 from keras.layers import Input, Reshape
+import tensorflow as tf
 
-from models import GAN, VariationalBaseModel, GANScale, VAEScale, KerasModel, metrics_dict, build_adaptor_layer
+from models import GAN, VariationalBaseModel, GANScale, VAEScale, KerasModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
 
 
@@ -36,70 +37,85 @@ class VAEGAN(GAN, VariationalBaseModel):
         layer = input_layer
 
         if scale is not (self.depth - 1):
-            layer = build_adaptor_layer(scale_channels, self.encoder_rank)(layer)
+            layer = self.build_adaptor_layer(scale_channels, self.encoder_rank)(layer)
 
         for i in range(scale + 1):
             layer = self.link_encoder_conv_layer(layer, scale, i)
 
-        if self.use_dense_embeddings:
-            layer = Reshape([-1])(layer)
+        # region Embeddings
+        with tf.name_scope("embeddings"):
+            if self.use_dense_embeddings:
+                layer = Reshape([-1])(layer)
 
-        latent_mean = self.latent_mean_layer(layer)
-        latent_log_var = self.latent_log_var_layer(layer)
+            latent_mean = self.latent_mean_layer(layer)
+            latent_log_var = self.latent_log_var_layer(layer)
 
-        if not self.use_dense_embeddings:
-            latent_mean = Reshape([-1])(latent_mean)
-            latent_log_var = Reshape([-1])(latent_log_var)
+            if not self.use_dense_embeddings:
+                latent_mean = Reshape([-1])(latent_mean)
+                latent_log_var = Reshape([-1])(latent_log_var)
 
-        layer = self.embeddings_layer([latent_mean, latent_log_var])
-        layer = GAN.get_activation(self.embeddings_activation)(layer)
-        layer = Reshape(self.embeddings_shape)(layer)
+            layer = self.embeddings_layer([latent_mean, latent_log_var])
+            layer = GAN.get_activation(self.embeddings_activation)(layer)
+            layer = Reshape(self.embeddings_shape)(layer)
+        # endregion
 
         outputs = [layer, latent_mean, latent_log_var]
         encoder = KerasModel(inputs=input_layer, outputs=outputs, name=encoder_name)
         return encoder
 
     def build_for_scale(self, scale: int):
-        encoder = self.build_encoder_for_scale(scale)
-        decoder = self.build_decoder_for_scale(scale)
-        discriminator = self.build_discriminator_for_scale(scale)
+        with tf.name_scope("Encoder"):
+            encoder = self.build_encoder_for_scale(scale)
+        with tf.name_scope("Decoder"):
+            decoder = self.build_decoder_for_scale(scale)
+        with tf.name_scope("Discriminator"):
+            discriminator = self.build_discriminator_for_scale(scale)
 
         scale_input_shape = self.input_shape_by_scale[scale]
         input_shape = scale_input_shape[:-1] + [self.channels_count]
 
-        encoder_input = Input(input_shape)
-        encoded, latent_mean, latent_log_var = encoder(encoder_input)
-        autoencoded = decoder(encoded)
-        autoencoder = KerasModel(inputs=encoder_input, outputs=autoencoded,
-                                 name="AutoEncoder_scale_{0}".format(scale))
+        with tf.name_scope("Autoencoder"):
+            encoder_input = Input(input_shape)
+            encoded, latent_mean, latent_log_var = encoder(encoder_input)
+            autoencoded = decoder(encoded)
+            autoencoder = KerasModel(inputs=encoder_input, outputs=autoencoded,
+                                     name="AutoEncoder_scale_{0}".format(scale))
 
-        decoder_input = Input(self.embeddings_shape)
-        generator_discriminated = discriminator(decoder(decoder_input))
-        adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
-                                           name="AdversarialGenerator_scale_{0}".format(scale))
+        with tf.name_scope("Adversarial_Generator"):
+            decoder_input = Input(self.embeddings_shape)
+            generator_discriminated = discriminator(decoder(decoder_input))
+            adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
+                                               name="AdversarialGenerator_scale_{0}".format(scale))
 
-        discriminator_loss_metric = metrics_dict[self.config["losses"]["discriminator"]]
+        with tf.name_scope("Training"):
+            with tf.name_scope("Discriminator"):
+                discriminator_loss_metric = metrics_dict[self.config["losses"]["discriminator"]]
 
-        def discriminator_loss(y_true, y_pred):
-            return discriminator_loss_metric(y_true, y_pred) * self.config["loss_weights"]["adversarial"]
+                def discriminator_loss(y_true, y_pred):
+                    return discriminator_loss_metric(y_true, y_pred) * self.config["loss_weights"]["adversarial"]
 
-        discriminator_metrics = self.config["metrics"]["discriminator"]
-        discriminator.compile(self.optimizer, loss=discriminator_loss, metrics=discriminator_metrics)
+                discriminator_metrics = self.config["metrics"]["discriminator"]
+                discriminator.compile(self.optimizer, loss=discriminator_loss, metrics=discriminator_metrics)
 
-        reconstruction_metric = metrics_dict[self.config["losses"]["autoencoder"]]
-        divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_log_var)
-        divergence *= self.config["loss_weights"]["divergence"]
+            with tf.name_scope("Autoencoder"):
+                with tf.name_scope("autoencoder_loss"):
+                    reconstruction_metric = metrics_dict[self.config["losses"]["autoencoder"]]
+                    divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_log_var)
+                    divergence *= self.config["loss_weights"]["divergence"]
 
-        def autoencoder_loss(y_true, y_pred):
-            reconstruction_loss = reconstruction_metric(y_true, y_pred) * self.config["loss_weights"]["reconstruction"]
-            return reconstruction_loss + divergence
+                    def autoencoder_loss(y_true, y_pred):
+                        reconstruction_loss = reconstruction_metric(y_true, y_pred)
+                        reconstruction_loss *= self.config["loss_weights"]["reconstruction"]
+                        return reconstruction_loss + divergence
 
-        autoencoder_metrics = self.config["metrics"]["autoencoder"]
-        autoencoder.compile(self.optimizer, loss=autoencoder_loss, metrics=autoencoder_metrics)
+                autoencoder_metrics = self.config["metrics"]["autoencoder"]
+                autoencoder.compile(self.optimizer, loss=autoencoder_loss, metrics=autoencoder_metrics)
 
-        discriminator.trainable = False
-        adversarial_generator_metrics = self.config["metrics"]["generator"]
-        adversarial_generator.compile(self.optimizer, loss=discriminator_loss, metrics=adversarial_generator_metrics)
+            with tf.name_scope("Adversarial_Generator"):
+                discriminator.trainable = False
+                adversarial_generator_metrics = self.config["metrics"]["generator"]
+                adversarial_generator.compile(self.optimizer, loss=discriminator_loss,
+                                              metrics=adversarial_generator_metrics)
 
         self._scales[scale] = VAEGANScale(encoder, decoder, autoencoder, discriminator, adversarial_generator,
                                           latent_mean, latent_log_var)

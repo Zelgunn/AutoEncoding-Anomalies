@@ -1,7 +1,7 @@
-from keras.layers import Input, Conv2D, Reshape
-import numpy as np
+from keras.layers import Input, Reshape
+import tensorflow as tf
 
-from models import AutoEncoderBaseModel, VariationalBaseModel, VAEScale, KerasModel, metrics_dict, build_adaptor_layer
+from models import AutoEncoderBaseModel, VariationalBaseModel, VAEScale, KerasModel, metrics_dict
 from models.VariationalBaseModel import kullback_leibler_divergence_mean0_var1
 
 
@@ -36,42 +36,29 @@ class VAE(VariationalBaseModel):
 
         # region Encoder
         if scale is not (self.depth - 1):
-            layer = build_adaptor_layer(scale_channels, self.encoder_rank)(layer)
+            layer = self.build_adaptor_layer(scale_channels, self.encoder_rank)(layer)
 
         for i in range(scale + 1):
             layer = self.link_encoder_conv_layer(layer, scale, i)
         # endregion
 
         # region Embeddings
-        if self.use_dense_embeddings:
-            layer = Reshape([-1])(layer)
+        with tf.name_scope("embeddings"):
+            if self.use_dense_embeddings:
+                layer = Reshape([-1])(layer)
 
-        latent_mean = self.latent_mean_layer(layer)
-        latent_log_var = self.latent_log_var_layer(layer)
+            latent_mean = self.latent_mean_layer(layer)
+            latent_log_var = self.latent_log_var_layer(layer)
 
-        if not self.use_dense_embeddings:
-            latent_mean = Reshape([-1])(latent_mean)
-            latent_log_var = Reshape([-1])(latent_log_var)
+            if not self.use_dense_embeddings:
+                latent_mean = Reshape([-1])(latent_mean)
+                latent_log_var = Reshape([-1])(latent_log_var)
 
-        layer = self.embeddings_layer([latent_mean, latent_log_var])
-        layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
-        layer = Reshape(self.embeddings_shape)(layer)
+            layer = self.embeddings_layer([latent_mean, latent_log_var])
+            layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
+            layer = Reshape(self.embeddings_shape)(layer)
         # endregion
 
         outputs = [layer, latent_mean, latent_log_var]
         encoder = KerasModel(inputs=input_layer, outputs=outputs, name=encoder_name)
         return encoder
-
-    def build_decoder_for_scale(self, scale: int):
-        decoder_name = "Decoder_scale_{0}".format(scale)
-        input_layer = Input(self.embeddings_shape)
-        layer = input_layer
-
-        for i in range(scale + 1):
-            layer = self.link_decoder_deconv_layer(layer, scale, i)
-
-        layer = build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
-        output_layer = self.get_activation(self.output_activation)(layer)
-
-        decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
-        return decoder

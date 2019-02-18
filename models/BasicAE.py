@@ -1,7 +1,8 @@
 from keras.layers import Input, Conv2D, Reshape
+import tensorflow as tf
 import numpy as np
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict, build_adaptor_layer
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict
 
 
 class BasicAE(AutoEncoderBaseModel):
@@ -29,30 +30,18 @@ class BasicAE(AutoEncoderBaseModel):
             layer = self.link_encoder_conv_layer(layer, scale, i)
 
         # region Embeddings
-        if self.use_dense_embeddings:
-            layer = Reshape([-1])(layer)
-        layer = self.embeddings_layer(layer)
-        layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
-        if self.use_dense_embeddings:
-            embeddings_reshape = self.config["embeddings_reshape"]
-            embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
-            layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
+        with tf.name_scope("embeddings"):
+            if self.use_dense_embeddings:
+                layer = Reshape([-1])(layer)
+            layer = self.embeddings_layer(layer)
+            layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
+            if self.use_dense_embeddings:
+                embeddings_reshape = self.config["embeddings_reshape"]
+                embeddings_filters = self.embeddings_size // np.prod(embeddings_reshape)
+                layer = Reshape(embeddings_reshape + [embeddings_filters])(layer)
         # endregion
 
         output_layer = layer
 
         encoder = KerasModel(inputs=input_layer, outputs=output_layer, name="Encoder-sc{0}".format(scale))
         return encoder
-
-    def build_decoder_for_scale(self, scale: int):
-        input_layer = Input(self.embeddings_shape)
-        layer = input_layer
-
-        for i in range(scale + 1):
-            layer = self.link_decoder_deconv_layer(layer, scale, i)
-
-        layer = build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
-        output_layer = self.get_activation(self.output_activation)(layer)
-
-        decoder = KerasModel(inputs=input_layer, outputs=output_layer, name="Decoder-sc{0}".format(scale))
-        return decoder

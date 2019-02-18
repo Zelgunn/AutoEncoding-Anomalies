@@ -16,11 +16,12 @@ class AUCCallback(TensorBoardPlugin):
                  images: np.ndarray,
                  labels: np.ndarray,
                  update_freq: int or str = "epoch",
+                 epoch_freq: int = None,
                  plot_size: Tuple = None,
                  batch_size=32,
                  num_thresholds=100,
                  name="AUC_Callback"):
-        super(AUCCallback, self).__init__(tensorboard, update_freq)
+        super(AUCCallback, self).__init__(tensorboard, update_freq, epoch_freq)
 
         self.predictions_model = predictions_model
         self.images = images

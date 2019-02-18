@@ -22,7 +22,7 @@ class _ResBlock(Layer):
                  activity_regularizer=None,
                  kernel_constraint=None,
                  bias_constraint=None,
-                 use_batch_normalization=False,
+                 use_batch_normalization=True,
                  **kwargs):
 
         super(_ResBlock, self).__init__(**kwargs)

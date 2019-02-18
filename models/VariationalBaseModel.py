@@ -44,6 +44,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         else:
             conv = conv_nd[False][False][self.encoder_rank]
             self.latent_log_var_layer = conv(filters=self.embeddings_filters, kernel_size=3, padding="same",
+                                             kernel_initializer=self.weights_initializer,
                                              kernel_regularizer=self.weight_decay_regularizer,
                                              bias_regularizer=self.weight_decay_regularizer)
 
@@ -74,8 +75,8 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         n_predictions_model = self.n_predictions(n=32, scale=scale)
 
         vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
-                                       auc_images, frame_labels, plot_size=(256, 256), batch_size=4,
-                                       name="Variational_AUC")
+                                       auc_images, frame_labels, plot_size=(128, 128), batch_size=4,
+                                       name="Variational_AUC", epoch_freq=5)
 
         anomaly_callbacks.append(vae_auc_callback)
         return anomaly_callbacks
@@ -90,7 +91,6 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         with tf.name_scope("n_pred"):
             encoder_input = encoder.get_input_at(0)
             true_outputs = self.get_true_outputs_placeholder(scale)
-            # TODO encoder.input instead of Input(...)
             _, latent_mean, latent_log_var = encoder(encoder_input)
 
             sampling_function = sampling_n(n)

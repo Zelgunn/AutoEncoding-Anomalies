@@ -7,7 +7,8 @@ from keras.callbacks import Callback, TensorBoard
 class TensorBoardPlugin(Callback, ABC):
     def __init__(self,
                  tensorboard: TensorBoard,
-                 update_freq: str or int):
+                 update_freq: str or int,
+                 epoch_freq: int = None):
         super(TensorBoardPlugin, self).__init__()
         self.tensorboard = tensorboard
 
@@ -16,6 +17,11 @@ class TensorBoardPlugin(Callback, ABC):
             self.update_freq = 1
         else:
             self.update_freq = update_freq
+
+        if update_freq == "epoch":
+            self.epoch_freq = epoch_freq
+        else:
+            self.epoch_freq = None
 
         self.samples_seen = 0
         self.samples_seen_at_last_write = 0
@@ -27,14 +33,15 @@ class TensorBoardPlugin(Callback, ABC):
             if samples_seen_since >= self.update_freq:
                 self._write_logs(self.samples_seen)
                 self.samples_seen_at_last_write = self.samples_seen
-        self.samples_seen += 1
 
     def on_epoch_end(self, epoch, logs=None):
-        if self.update_freq == 'epoch':
+        if self.update_freq == "epoch":
             index = epoch
         else:
             index = self.samples_seen
-        self._write_logs(index)
+
+        if (self.epoch_freq is None) or (((epoch + 1) % self.epoch_freq) == 0):
+            self._write_logs(index)
 
     @property
     def session(self) -> tf.Session:
