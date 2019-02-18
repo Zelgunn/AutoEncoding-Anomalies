@@ -3,7 +3,7 @@ from keras.callbacks import CallbackList
 import numpy as np
 from typing import List
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict, build_adaptor_layer
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict, build_adaptor_layer, LayerBlock
 from datasets import Database
 from callbacks import AUCCallback, CallbackModel
 
@@ -27,7 +27,7 @@ class GANScale(AutoEncoderScale):
 class GAN(AutoEncoderBaseModel):
     def __init__(self):
         super(GAN, self).__init__()
-        self.discriminator_layers = []
+        self.discriminator_layers: List[LayerBlock] = []
         self.discriminator_regression_layer = None
         self._scales: List[GANScale] = []
 
@@ -36,7 +36,7 @@ class GAN(AutoEncoderBaseModel):
         super(GAN, self).build_layers()
 
         for layer_info in self.config["discriminator"]:
-            layer = self.build_conv_layer(layer_info, rank=self.decoder_rank)
+            layer = self.build_conv_layer_block(layer_info, rank=self.decoder_rank)
             self.discriminator_layers.append(layer)
 
         self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
@@ -149,10 +149,9 @@ class GAN(AutoEncoderBaseModel):
         return discriminator
 
     def link_discriminator_conv_layer(self, layer, scale: int, layer_index: int):
-        use_dropout = scale > layer_index > 0
+        use_dropout = layer_index > 0
         layer_index = layer_index + self.depth - scale - 1
-        sub_config = self.config["discriminator"]
-        return self.link_conv_layer(layer, self.discriminator_layers, layer_index, use_dropout, sub_config)
+        return self.discriminator_layers[layer_index](layer, use_dropout)
 
     def get_gan_models_at_scale(self, scale: int = None) -> GANScale:
         if scale is None:
@@ -197,7 +196,7 @@ class GAN(AutoEncoderBaseModel):
             x_generated = []
             for i in range(discriminator_steps):
                 if i > 0:
-                    x_real += [database.train_dataset.sample()[1]]
+                    x_real += [database.train_dataset.sample(sequence_length=database.output_sequence_length)]
                 x_generated += [decoder.predict(x=z[i])]
 
             x_real = np.array(x_real)
@@ -252,8 +251,12 @@ class GAN(AutoEncoderBaseModel):
         discriminator: KerasModel = self.get_gan_models_at_scale(scale).discriminator
         discriminator_prediction = discriminator.get_output_at(0)
         discriminator_inputs_placeholder = discriminator.get_input_at(0)
-        auc_images, frame_labels, _ = test_dataset.sample_input_images(batch_size=512, seed=16, max_shard_count=8)
+
+        samples = test_dataset.sample(batch_size=512, seed=16, max_shard_count=8, return_labels=True)
+        auc_images, frame_labels, _ = samples
+
         disc_auc_predictions_model = CallbackModel(discriminator_inputs_placeholder, discriminator_prediction)
+
         disc_auc_callback = AUCCallback(disc_auc_predictions_model, self.tensorboard,
                                         auc_images, frame_labels, plot_size=(256, 256), batch_size=128,
                                         name="Discriminator_AUC")

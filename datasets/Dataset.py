@@ -18,6 +18,7 @@ class Dataset(Sequence, ABC):
                  shuffle_on_epoch_end=True,
                  **kwargs):
         self.input_sequence_length = input_sequence_length
+
         self.output_sequence_length = output_sequence_length
         self.targets_are_predictions = targets_are_predictions
         self.data_preprocessors = data_preprocessors or []

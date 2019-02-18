@@ -1,6 +1,7 @@
 from keras.models import Model as KerasModel
-from keras.layers import Activation, LeakyReLU, Dense, Dropout
+from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer
 from keras.layers import Conv2D, Deconv2D, Conv3D, Deconv3D
+from keras.layers import MaxPooling2D, MaxPooling3D, AveragePooling2D, AveragePooling3D
 from keras.regularizers import l1
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
@@ -33,6 +34,41 @@ class AutoEncoderScale(object):
         self.autoencoder = autoencoder
 
 
+class LayerBlock(object):
+    def __init__(self,
+                 conv_layer: Layer,
+                 pool_layer: Layer,
+                 activation_layer: Layer,
+                 dropout_layer: Dropout):
+        self.conv = conv_layer
+        self.pooling = pool_layer
+        self.activation = activation_layer
+        self.dropout = dropout_layer
+
+        self.is_transpose = type(self.conv) in [Deconv2D, Deconv3D, ResBlock2DTranspose, ResBlock3DTranspose]
+
+    def __call__(self, input_layer, use_dropout):
+        use_dropout &= self.dropout is not None
+        layer = input_layer
+
+        if use_dropout and self.is_transpose:
+            layer = self.dropout(layer)
+
+        layer = self.conv(layer)
+
+        if self.activation is not None:
+            layer = self.activation(layer)
+
+        if self.pooling is not None:
+            assert not self.is_transpose
+            layer = self.pooling(layer)
+
+        if use_dropout and not self.is_transpose:
+            layer = self.dropout(layer)
+
+        return layer
+
+
 uint8_max_constant = tf.constant(255.0, dtype=tf.float32)
 
 
@@ -43,8 +79,8 @@ class AutoEncoderBaseModel(ABC):
 
         self.layers_built = False
         self.embeddings_layer = None
-        self.encoder_layers = []
-        self.decoder_layers = []
+        self.encoder_layers: List[LayerBlock] = []
+        self.decoder_layers: List[LayerBlock] = []
 
         self.config: dict = None
 
@@ -155,7 +191,7 @@ class AutoEncoderBaseModel(ABC):
     # region Layers
     def build_layers(self):
         for layer_info in self.config["encoder"]:
-            layer = self.build_conv_layer(layer_info, self.encoder_rank)
+            layer = self.build_conv_layer_block(layer_info, self.encoder_rank)
             self.encoder_layers.append(layer)
 
         if self.use_dense_embeddings:
@@ -169,46 +205,53 @@ class AutoEncoderBaseModel(ABC):
                                          bias_regularizer=self.weight_decay_regularizer)
 
         for layer_info in self.config["decoder"]:
-            layer = self.build_deconv_layer(layer_info, self.decoder_rank)
+            layer = self.build_deconv_layer_block(layer_info, self.decoder_rank)
             self.decoder_layers.append(layer)
         self.layers_built = True
 
-    def build_conv_layer(self, layer_info: dict, rank: int, transpose=False):
-        layer_kwargs = {"filters": layer_info["filters"], "kernel_size": layer_info["kernel_size"],
-                        "strides": layer_info["strides"], "kernel_regularizer": self.weight_decay_regularizer,
-                        "bias_regularizer": self.weight_decay_regularizer}
+    def build_conv_layer_block(self, layer_info: dict, rank: int, transpose=False) -> LayerBlock:
+        # region Pooling layer
+        if (self.config["pooling"] == "strides") or transpose:
+            conv_layer_strides = layer_info["strides"]
+            pool_layer = None
+        else:
+            conv_layer_strides = 1
+            pool_layer = pool_nd[self.config["pooling"]][rank](pool_size=layer_info["strides"])
+        # endregion
+
+        # region Convolutional layer
+        conv_layer_kwargs = {"filters": layer_info["filters"], "kernel_size": layer_info["kernel_size"],
+                             "strides": conv_layer_strides, "kernel_regularizer": self.weight_decay_regularizer,
+                             "bias_regularizer": self.weight_decay_regularizer}
+        # region Residual Block
         use_resblock = ("resblock" in layer_info) and (layer_info["resblock"] == "True")
         if not use_resblock:
-            layer_kwargs["padding"] = layer_info["padding"]
+            conv_layer_kwargs["padding"] = layer_info["padding"] if "padding" in layer_info else "same"
+        # endregion
 
-        layer = conv_nd[use_resblock][transpose][rank](**layer_kwargs)
+        conv_layer = conv_nd[use_resblock][transpose][rank](**conv_layer_kwargs)
+        # endregion
 
+        # region Spectral normalization
         if self.use_spectral_norm:
-            layer = SpectralNormalization(layer)
-        return layer
+            conv_layer = SpectralNormalization(conv_layer)
+        # endregion
 
-    def build_deconv_layer(self, layer_info: dict, rank: int, ):
-        return self.build_conv_layer(layer_info, rank, transpose=True)
+        activation = AutoEncoderBaseModel.get_activation(self.default_activation)
+        dropout = Dropout(rate=layer_info["dropout"]) if "dropout" in layer_info else None
+
+        layer_block = LayerBlock(conv_layer, pool_layer, activation, dropout)
+
+        return layer_block
+
+    def build_deconv_layer_block(self, layer_info: dict, rank: int) -> LayerBlock:
+        return self.build_conv_layer_block(layer_info, rank, transpose=True)
 
     # endregion
 
     @abstractmethod
     def build_for_scale(self, scale: int):
         raise NotImplementedError
-
-    def link_conv_layer(self, input_layer, layers_by_scale, layer_index, use_dropout, sub_config: dict):
-        # Layer
-        layer = layers_by_scale[layer_index](input_layer)
-
-        # Activation
-        layer = AutoEncoderBaseModel.get_activation(self.default_activation)(layer)
-
-        # Dropout
-        if use_dropout:
-            if "dropout" in sub_config[layer_index]:
-                layer = Dropout(rate=sub_config[layer_index]["dropout"])(layer)
-
-        return layer
 
     # region Encoder models
     @abstractmethod
@@ -218,8 +261,7 @@ class AutoEncoderBaseModel(ABC):
     def link_encoder_conv_layer(self, layer, scale: int, layer_index: int):
         use_dropout = layer_index > 0
         layer_index = layer_index + self.depth - scale - 1
-        sub_config = self.config["encoder"]
-        return self.link_conv_layer(layer, self.encoder_layers, layer_index, use_dropout, sub_config)
+        return self.encoder_layers[layer_index](layer, use_dropout)
 
     # endregion
 
@@ -230,8 +272,7 @@ class AutoEncoderBaseModel(ABC):
 
     def link_decoder_deconv_layer(self, layer, scale: int, layer_index: int):
         use_dropout = layer_index < scale
-        sub_config = self.config["decoder"]
-        return self.link_conv_layer(layer, self.decoder_layers, layer_index, use_dropout, sub_config)
+        return self.decoder_layers[layer_index](layer, use_dropout)
 
     # endregion
 
@@ -631,9 +672,10 @@ class AutoEncoderBaseModel(ABC):
 
                 new_space = []
                 for i in range(len(space)):
+                    padding = layer_info["padding"] if "padding" in layer_info else "same"
                     dim = conv_utils.conv_output_length(space[i],
                                                         kernel_size[i],
-                                                        padding=layer_info["padding"],
+                                                        padding=padding,
                                                         stride=strides[i])
                     new_space.append(dim)
                 input_shape = [*new_space, layer_info["filters"]]
@@ -664,10 +706,11 @@ class AutoEncoderBaseModel(ABC):
 
                 new_space = []
                 for i in range(len(space)):
+                    padding = layer_info["padding"] if "padding" in layer_info else "same"
                     dim = conv_utils.deconv_length(space[i],
                                                    strides[i],
                                                    kernel_size[i],
-                                                   padding=layer_info["padding"],
+                                                   padding=padding,
                                                    output_padding=None)
                     new_space.append(dim)
                 filters = self.config["decoder"][j + 1]["filters"] if j < (self.depth - 1) else self.channels_count
@@ -787,6 +830,9 @@ conv_nd = {False: {False: {2: Conv2D, 3: Conv3D},
            True: {False: {2: ResBlock2D, 3: ResBlock3D},
                   True: {2: ResBlock2DTranspose, 3: ResBlock3DTranspose}}
            }
+
+pool_nd = {"max": {2: MaxPooling2D, 3: MaxPooling3D},
+           "average": {2: AveragePooling2D, 3: AveragePooling3D}}
 
 
 def build_adaptor_layer(channels: int, rank: int):

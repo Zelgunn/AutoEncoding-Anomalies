@@ -1,13 +1,29 @@
 {
-    "input_shape": [16, 192, 256, 1],
-    "embeddings_size": 120,
+    "input_shape": [8, 192, 256, 1],
+    "embeddings_size": 240,
     "embeddings_reshape": [1, 3, 4],
+    "encoder": [
+        {"filters": 32, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 48, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 64, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 64, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 96, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 128, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"}
+    ],
     "decoder": [
         {"filters": 128, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
-        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same", "resblock": "True"},
+        {"filters": 96, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
         {"filters": 64, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same", "resblock": "True"},
+        {"filters": 64, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
         {"filters": 48, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "resblock": "True"}
+        {"filters": 32, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"}
+    ],
+    "discriminator": [
+        {"filters": 32, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 48, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 64, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 64, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 96, "kernel_size": 3, "strides": [2, 2, 2], "padding": "same", "resblock": "True"},
+        {"filters": 128, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"}
     ]
 }

@@ -67,7 +67,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         test_dataset = database.test_dataset
         anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database, scale)
 
-        samples = test_dataset.sample(batch_size=512, seed=16, max_shard_count=16, return_labels=True)
+        samples = test_dataset.sample(batch_size=8, seed=16, max_shard_count=16, return_labels=True)
         auc_images, frame_labels, _ = samples
         auc_images = test_dataset.divide_batch_io(auc_images)
 

@@ -23,6 +23,7 @@ class AUCCallback(TensorBoardPlugin):
         super(AUCCallback, self).__init__(tensorboard, update_freq)
 
         self.predictions_model = predictions_model
+        print(name, predictions_model.outputs)
         self.images = images
         self.labels = np.squeeze(labels)
         self.plot_size = plot_size
@@ -104,6 +105,7 @@ class AUCCallback(TensorBoardPlugin):
 
     def reformat_predictions(self, predictions):
         if predictions.shape != self.labels.shape:
+            print(self.name, predictions.shape, self.labels.shape)
             if len(self.labels.shape) > 2:
                 pred_dim = np.prod(predictions.shape)
                 labels_dim = np.prod(self.labels.shape)

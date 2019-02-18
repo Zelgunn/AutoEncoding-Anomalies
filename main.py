@@ -31,10 +31,10 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 
 # endregion
 
-model_used = "VAE"
+model_used = "VAEGAN"
 dataset_used = "Subway_Exit"
-alt_config_suffix_used = "alt"
-predict_next = False
+alt_config_suffix_used = None
+predict_next = True
 # TODO : predict_next random next image among N next possible
 use_flow = False
 # TODO : Use use_flow
@@ -57,6 +57,7 @@ profile = False
 # region Model
 auto_encoder_class = models_dict[model_used]
 auto_encoder = auto_encoder_class()
+auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
 print("===============================================")
@@ -160,16 +161,17 @@ else:
     #                    batch_size=[32, 32, 32, 32, 32],
     #                    pre_train=True)
     auto_encoder.train(database,
-                       min_scale=4,
-                       max_scale=4,
-                       epoch_length=50,
+                       min_scale=3,
+                       max_scale=3,
+                       epoch_length=1,
                        epochs=[20, 20, 50, 50, 2000],
                        batch_size=[32, 32, 32, 32, 32],
                        pre_train=False)
 
-# TODO : config - auto layers from 1 line
 # TODO : config - pooling method (stride/max/mean/...)
-
+# TODO : config - for callbacks (batch_size, samples count, ...)
+# TODO : config - Tensorboard plugin (frequency in epochs)
+# TODO : config - Tensorboard images/videos inputs/true_outputs => Only 1, not @ every epoch (split)
 # TODO : Make patches from images
 # TODO : Flow version
 # TODO : Video version (Normal + Flow)
