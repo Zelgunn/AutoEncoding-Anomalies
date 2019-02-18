@@ -51,7 +51,7 @@ else:
 
 preview_tensorboard_test_images = False
 allow_gpu_growth = False
-profile = False
+profile = True
 
 # region Model/Dataset initialization
 # region Model
@@ -146,24 +146,17 @@ if profile:
 
     print("===== Profiling activated ... =====")
     cProfile.run("auto_encoder.train(database,\
-                   min_scale=2,\
-                   max_scale=3,\
-                   epoch_length=2,\
+                   min_scale=3,\
+                   max_scale=4,\
+                   epoch_length=50,\
                    epochs=[2, 2, 2, 2, 2],\
                    batch_size=[32, 32, 32, 32, 32],\
-                   pre_train=True)", sort="cumulative")
+                   pre_train=False)", sort="cumulative")
 else:
-    # auto_encoder.train(database,
-    #                    min_scale=2,
-    #                    max_scale=3,
-    #                    epoch_length=2,
-    #                    epochs=[2, 2, 2, 2, 2],
-    #                    batch_size=[32, 32, 32, 32, 32],
-    #                    pre_train=True)
     auto_encoder.train(database,
                        min_scale=3,
-                       max_scale=3,
-                       epoch_length=1,
+                       max_scale=4,
+                       epoch_length=500,
                        epochs=[20, 20, 50, 50, 2000],
                        batch_size=[32, 32, 32, 32, 32],
                        pre_train=False)

@@ -77,11 +77,16 @@ class FullyLoadableDataset(Dataset, ABC):
         images: np.ndarray = self.images[indices]
 
         if return_labels:
-            if self.has_pixel_level_anomaly_labels:
-                frame_level_labels = self.frame_level_labels[indices]
-                pixel_level_labels = self.anomaly_labels[indices]
+            if self.output_sequence_length is None:
+                labels_indices = indices[:, -1]
             else:
-                frame_level_labels = self.anomaly_labels[indices]
+                labels_indices = indices[:, -self.output_sequence_length:]
+
+            if self.has_pixel_level_anomaly_labels:
+                frame_level_labels = self.frame_level_labels[labels_indices]
+                pixel_level_labels = self.anomaly_labels[labels_indices]
+            else:
+                frame_level_labels = self.anomaly_labels[labels_indices]
                 pixel_level_labels = None
 
             return images, frame_level_labels, pixel_level_labels

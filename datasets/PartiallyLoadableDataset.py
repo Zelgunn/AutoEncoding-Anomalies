@@ -61,7 +61,11 @@ class PartiallyLoadableDataset(Dataset):
                 images.append(images_shard[indices])
 
                 if return_labels:
-                    labels.append(labels_shard[indices])
+                    if self.output_sequence_length is None:
+                        labels_indices = indices[:, -1]
+                    else:
+                        labels_indices = indices[:, -self.output_sequence_length:]
+                    labels.append(labels_shard[labels_indices])
 
         images = fast_concatenate_0(images)
         images = self.normalize_samples(images)

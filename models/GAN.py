@@ -241,29 +241,6 @@ class GAN(AutoEncoderBaseModel):
     # endregion
 
     # region Callbacks
-    def build_anomaly_callbacks(self,
-                                database: Database,
-                                scale: int = None):
-        database = self.resize_database(database, scale)
-        test_dataset = database.test_dataset
-        anomaly_callbacks = super(GAN, self).build_anomaly_callbacks(database, scale)
-
-        discriminator: KerasModel = self.get_gan_models_at_scale(scale).discriminator
-        discriminator_prediction = discriminator.get_output_at(0)
-        discriminator_inputs_placeholder = discriminator.get_input_at(0)
-
-        samples = test_dataset.sample(batch_size=512, seed=16, max_shard_count=8, return_labels=True)
-        auc_images, frame_labels, _ = samples
-
-        disc_auc_predictions_model = CallbackModel(discriminator_inputs_placeholder, discriminator_prediction)
-
-        disc_auc_callback = AUCCallback(disc_auc_predictions_model, self.tensorboard,
-                                        auc_images, frame_labels, plot_size=(256, 256), batch_size=128,
-                                        name="Discriminator_AUC")
-
-        anomaly_callbacks.append(disc_auc_callback)
-        return anomaly_callbacks
-
     def callback_metrics(self, model: KerasModel):
         def model_metric_names(model_name):
             metric_names = ["loss", *self.config["metrics"][model_name]]

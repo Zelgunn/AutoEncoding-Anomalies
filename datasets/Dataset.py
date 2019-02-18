@@ -119,9 +119,9 @@ class Dataset(Sequence, ABC):
                 outputs = np.copy(outputs)
         return inputs, outputs
 
-    def sample_input_images(self, batch_size=None, seed=None, max_shard_count=1, return_labels=False):
+    def sample_input_images(self, batch_size=None, seed=None, max_shard_count=1):
         return self.sample(batch_size, seed, sequence_length=self.input_sequence_length,
-                           max_shard_count=max_shard_count, return_labels=return_labels)
+                           max_shard_count=max_shard_count, return_labels=False)
 
     @property
     @abstractmethod
