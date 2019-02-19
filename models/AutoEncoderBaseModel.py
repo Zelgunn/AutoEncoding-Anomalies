@@ -274,6 +274,7 @@ class AutoEncoderBaseModel(ABC):
         layer_class = conv_nd[False][False][rank]
         return layer_class(filters=channels, kernel_size=1, strides=1, padding="same",
                            kernel_initializer=self.weights_initializer)
+
     # endregion
 
     @abstractmethod
@@ -299,7 +300,7 @@ class AutoEncoderBaseModel(ABC):
         layer = input_layer
 
         for i in range(scale + 1):
-            layer = self.link_decoder_deconv_layer(layer, scale, i)
+            layer = self.link_decoder_deconv_layer(layer, i)
 
         layer = self.build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
         output_layer = self.get_activation(self.output_activation)(layer)
@@ -307,8 +308,8 @@ class AutoEncoderBaseModel(ABC):
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 
-    def link_decoder_deconv_layer(self, layer, scale: int, layer_index: int):
-        use_dropout = layer_index < scale
+    def link_decoder_deconv_layer(self, layer, layer_index: int):
+        use_dropout = layer_index > 0
         return self.decoder_layers[layer_index](layer, use_dropout)
 
     # endregion
@@ -419,8 +420,13 @@ class AutoEncoderBaseModel(ABC):
         self.print_training_model_at_scale_header(max_scale, max_scale)
 
         anomaly_callbacks.on_train_begin()
-        self.train_loop(database, callbacks, batch_size[max_scale], epoch_length,
-                        epochs[max_scale], max_scale)
+        try:
+            self.train_loop(database, callbacks, batch_size[max_scale], epoch_length, epochs[max_scale], max_scale)
+        except KeyboardInterrupt:
+            print("==== Training was stopped by a Keyboard Interrupt ====")
+        print("============== Saving models weights... ==============")
+        self.save_weights("weights_{}".format(self.epochs_seen), max_scale)
+        print("======================= Done ! =======================")
         callbacks.on_train_end()
         # endregion
 
@@ -517,6 +523,29 @@ class AutoEncoderBaseModel(ABC):
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
         self.epochs_seen += 1
+
+    def save_weights(self, base_filename, scale):
+        encoder = self.get_encoder_model_at_scale(scale)
+        decoder = self.get_decoder_model_at_scale(scale)
+
+        self._save_model_weights(encoder, base_filename, scale, "encoder")
+        self._save_model_weights(decoder, base_filename, scale, "decoder")
+
+    def _save_model_weights(self, model: KerasModel, base_filename, scale, name):
+        filepath = "{}{sep}{}_{}_{}.h5".format(self.log_dir, base_filename, name, scale, sep=os.path.sep)
+        model.save_weights(filepath)
+
+    def load_weights(self, base_filepath, scale):
+        encoder = self.get_encoder_model_at_scale(scale)
+        decoder = self.get_decoder_model_at_scale(scale)
+
+        AutoEncoderBaseModel._load_model_weights(encoder, base_filepath, scale, "encoder")
+        AutoEncoderBaseModel._load_model_weights(decoder, base_filepath, scale, "decoder")
+
+    @staticmethod
+    def _load_model_weights(model: KerasModel, base_filepath, scale, name):
+        filepath = "{}_{}_{}.h5".format(base_filepath, name, scale)
+        model.load_weights(filepath)
 
     def print_training_model_at_scale_header(self,
                                              scale: int,

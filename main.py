@@ -37,6 +37,7 @@ alt_config_suffix_used = None
 predict_next = True
 use_flow = False
 use_patches = False
+previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAEGAN/log_1550570400/weights_9"
 
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
@@ -138,6 +139,9 @@ if allow_gpu_growth:
 
 # endregion
 
+if previous_weights_to_load is not None:
+    auto_encoder.load_weights(previous_weights_to_load, scale=3)
+
 if profile:
     import cProfile
 
@@ -167,5 +171,5 @@ else:
 # TODO : Flow version
 # TODO : Video version (Normal + Flow)
 
-# TODO : Save complete model
+# TODO : Load complete model
 # TODO : Encode/Decode the complete video !

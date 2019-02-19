@@ -135,12 +135,12 @@ class GAN(AutoEncoderBaseModel):
         layer_index = layer_index + self.depth - scale - 1
         return self.discriminator_layers[layer_index](layer, use_dropout)
 
-    def get_gan_models_at_scale(self, scale: int = None) -> GANScale:
-        if scale is None:
-            scale = self.depth - 1
-        if self._scales[scale] is None:
-            self.build_for_scale(scale)
-        return self._scales[scale]
+    def get_scale(self, scale: int) -> GANScale:
+        result: GANScale = super(GAN, self).get_scale(scale)
+        return result
+
+    def get_discriminator_model_at_scale(self, scale: int) -> KerasModel:
+        return self.get_scale(scale).discriminator
 
     # endregion
 
@@ -151,7 +151,7 @@ class GAN(AutoEncoderBaseModel):
                     callbacks: CallbackList = None):
         # region Variables initialization
         epoch_length = len(database.train_dataset)
-        scale_models = self.get_gan_models_at_scale(scale)
+        scale_models = self.get_scale(scale)
         autoencoder: KerasModel = scale_models.autoencoder
         decoder: KerasModel = scale_models.decoder
         adversarial_generator: KerasModel = scale_models.adversarial_generator
@@ -219,6 +219,18 @@ class GAN(AutoEncoderBaseModel):
             # endregion
 
         self.on_epoch_end(base_model, database, callbacks)
+
+    def save_weights(self, base_filename, scale):
+        super(GAN, self).save_weights(base_filename, scale)
+
+        discriminator = self.get_discriminator_model_at_scale(scale)
+        self._save_model_weights(discriminator, base_filename, scale, "discriminator")
+
+    def load_weights(self, base_filepath, scale):
+        super(GAN, self).load_weights(base_filepath, scale)
+
+        discriminator = self.get_discriminator_model_at_scale(scale)
+        AutoEncoderBaseModel._load_model_weights(discriminator, base_filepath, scale, "discriminator")
 
     # endregion
 
