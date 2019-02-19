@@ -52,17 +52,20 @@ class _ResBlock(Layer):
 
     def build(self, input_shape):
         input_dim = self.get_input_dim(input_shape)
-        for i in range(RES_DEPTH):
-            self.add_kernel(input_dim if (i == 0) else self.filters)
-            if self.use_bias:
-                self.add_bias()
+        with K.name_scope("residual_block_weights"):
+            for i in range(RES_DEPTH):
+                with K.name_scope("residual_layer_weights_{}".format(i)):
+                    self.add_kernel(input_dim if (i == 0) else self.filters)
+                    if self.use_bias:
+                        self.add_bias()
 
-        if self.use_projection(input_shape):
-            self.projection_kernel = self.add_weight(shape=self.get_kernel_shape(input_dim, True),
-                                                     initializer=self.kernel_initializer,
-                                                     name="projection_kernel",
-                                                     regularizer=self.kernel_regularizer,
-                                                     constraint=self.kernel_constraint)
+        with K.name_scope("projection_kernel_weights"):
+            if self.use_projection(input_shape):
+                self.projection_kernel = self.add_weight(shape=self.get_kernel_shape(input_dim, True),
+                                                         initializer=self.kernel_initializer,
+                                                         name="projection_kernel",
+                                                         regularizer=self.kernel_regularizer,
+                                                         constraint=self.kernel_constraint)
 
         self.input_spec = InputSpec(ndim=self.rank + 2,
                                     axes={self.channel_axis: self.get_input_dim(input_shape)})
@@ -79,27 +82,26 @@ class _ResBlock(Layer):
 
         outputs = inputs
         for i in range(RES_DEPTH):
-            strides = self.get_strides_at_depth(i)
+            with K.name_scope("residual_layer_{}".format(i)):
+                strides = self.get_strides_at_depth(i)
 
-            if self.use_batch_normalization:
-                outputs = BatchNormalization()(outputs)
+                if self.use_batch_normalization:
+                    outputs = BatchNormalization()(outputs)
 
-            if self.activation is not None:
-                outputs = self.activation(outputs)
+                if self.activation is not None:
+                    outputs = self.activation(outputs)
 
-            outputs = conv(
-                outputs,
-                self.kernels[i],
-                strides=strides,
-                padding="same",
-                data_format=self.data_format,
-                dilation_rate=self.dilation_rate)
+                outputs = conv(outputs,
+                               self.kernels[i],
+                               strides=strides,
+                               padding="same",
+                               data_format=self.data_format,
+                               dilation_rate=self.dilation_rate)
 
-            if self.use_bias:
-                outputs = K.bias_add(
-                    outputs,
-                    self.biases[i],
-                    data_format=self.data_format)
+                if self.use_bias:
+                    outputs = K.bias_add(outputs,
+                                         self.biases[i],
+                                         data_format=self.data_format)
 
         if self.use_projection(K.int_shape(inputs)):
             inputs = conv(inputs, self.projection_kernel, strides=self.strides, padding="same")

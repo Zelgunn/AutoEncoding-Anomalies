@@ -1,7 +1,7 @@
 # region Select GPU
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # endregion
 
 # region Imports
@@ -33,7 +33,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 
 model_used = "VAEGAN"
 dataset_used = "Subway_Exit"
-alt_config_suffix_used = None
+alt_config_suffix_used = "deep"
 predict_next = True
 use_flow = False
 use_patches = False
@@ -78,6 +78,8 @@ print("Database class \t\t\t\t\t:", str(database_class))
 print("Database path \t\t\t\t\t:", database_path)
 print("Database config alias \t\t\t:", database_config_alias)
 print("Config used \t\t\t\t\t:", config_used)
+print("Scales \t\t\t\t\t\t\t:", auto_encoder.depth)
+print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
 print("Preview tensorboard test images :", preview_tensorboard_test_images)
 print("Allow GPU growth \t\t\t\t:", allow_gpu_growth)
 print("Run cProfile \t\t\t\t\t:", profile)
@@ -139,8 +141,8 @@ if allow_gpu_growth:
 
 # endregion
 
-if previous_weights_to_load is not None:
-    auto_encoder.load_weights(previous_weights_to_load, scale=3)
+# if previous_weights_to_load is not None:
+#     auto_encoder.load_weights(previous_weights_to_load, scale=3)
 
 if profile:
     import cProfile
@@ -155,15 +157,21 @@ if profile:
                    pre_train=False)", sort="cumulative")
 else:
     auto_encoder.train(database,
-                       min_scale=3,
-                       max_scale=3,
+                       min_scale=13,
+                       max_scale=13,
                        epoch_length=500,
-                       epochs=[20, 20, 50, 50, 2000],
-                       batch_size=[32, 32, 32, 32, 32],
+                       epochs=[50] * 21,
+                       batch_size=[32] * 21,
                        pre_train=False)
+
+# TODO : better config for layers
 
 # TODO : Residual Scaling
 # TODO : He-al/MSRA initialization (+ scaled option)
+# TODO : Dense Blocks
+# TODO : ResNet blocks / stack
+
+# TODO : (very) deep networks
 
 # TODO : config - for callbacks (batch_size, samples count, ...)
 

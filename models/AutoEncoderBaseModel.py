@@ -365,6 +365,26 @@ class AutoEncoderBaseModel(ABC):
 
         return self._true_outputs_placeholders[scale]
 
+    def compute_conv_depth(self, scale: int = None):
+        from layers.ResBlock import RES_DEPTH
+        if scale is None:
+            scale = self.depth - 1
+        models = self.get_autoencoder_model_at_scale(scale).layers
+
+        depth = 0
+        for model in models:
+            if isinstance(model, KerasModel):
+                for layer in model.layers:
+                    if isinstance(layer, Conv3D):
+                        depth += 1
+                    elif isinstance(layer, ResBlock3D):
+                        depth += RES_DEPTH
+                        if layer.projection_kernel is not None:
+                            depth += 1
+                    elif isinstance(layer, ResBlock3DTranspose):
+                        depth += RES_DEPTH + 1
+        return depth
+
     # endregion
 
     # region Training

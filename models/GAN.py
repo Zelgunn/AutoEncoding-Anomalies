@@ -38,7 +38,6 @@ class GAN(AutoEncoderBaseModel):
         for layer_info in self.config["discriminator"]:
             layer = self.build_conv_layer_block(layer_info, rank=self.decoder_rank)
             self.discriminator_layers.append(layer)
-
         self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
 
     def build_for_scale(self, scale: int):
