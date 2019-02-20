@@ -15,7 +15,7 @@ class _ResBlock(Layer):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -24,6 +24,8 @@ class _ResBlock(Layer):
                  bias_constraint=None,
                  use_batch_normalization=True,
                  **kwargs):
+
+        assert rank in [1, 2, 3]
 
         super(_ResBlock, self).__init__(**kwargs)
         self.rank = rank
@@ -67,8 +69,7 @@ class _ResBlock(Layer):
                                                          regularizer=self.kernel_regularizer,
                                                          constraint=self.kernel_constraint)
 
-        self.input_spec = InputSpec(ndim=self.rank + 2,
-                                    axes={self.channel_axis: self.get_input_dim(input_shape)})
+        self.input_spec = InputSpec(ndim=self.rank + 2, axes={self.channel_axis: self.get_input_dim(input_shape)})
         super(_ResBlock, self).build(input_shape)
 
     def call(self, inputs, **kwargs):
@@ -144,9 +145,8 @@ class _ResBlock(Layer):
         return self.data_format == "channels_first"
 
     def get_input_dim(self, input_shape):
-        if input_shape[self.channel_axis] is None:
-            raise ValueError("The channel dimension of the inputs "
-                             "should be defined. Found `None`.")
+        assert input_shape[self.channel_axis] is not None,\
+            "The channel dimension of the inputs should be defined. Found `None`."
         return input_shape[self.channel_axis]
 
     def get_kernel_shape(self, input_dim, for_projection_kernel=False):

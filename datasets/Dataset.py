@@ -68,7 +68,7 @@ class Dataset(Sequence, ABC):
 
     def get_batch(self, batch_size=None, seed=None, apply_preprocess_step=True, max_shard_count=1):
         with NumpySeedContext(seed):
-            images: np.ndarray = self.sample(batch_size, max_shard_count=max_shard_count)
+            images: np.ndarray = self.sample(batch_size, max_shard_count=max_shard_count, seed=seed)
 
             inputs, outputs = self.divide_batch_io(images)
 

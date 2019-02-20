@@ -2,6 +2,7 @@
   <dictionary name="zelgunn">
     <words>
       <w>autoencoded</w>
+      <w>cifar</w>
       <w>colorspace</w>
       <w>conv</w>
       <w>convolutional</w>

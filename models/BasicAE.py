@@ -23,11 +23,11 @@ class BasicAE(AutoEncoderBaseModel):
         input_layer = Input(input_shape)
         layer = input_layer
 
-        if scale is not (self.depth - 1):
+        if scale is not (self.scales_count - 1):
             layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
 
         for i in range(scale + 1):
-            layer = self.link_encoder_conv_layer(layer, scale, i)
+            layer = self.link_encoder_stack(layer, scale, i)
 
         # region Embeddings
         with tf.name_scope("embeddings"):

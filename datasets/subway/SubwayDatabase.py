@@ -40,7 +40,7 @@ class SubwayDatabase(PartiallyLoadableDatabase):
         if self.video_capture is None:
             self.open_video(self.base_video_filepath)
 
-        split = int(self.fps * 300)  # 5 minutes
+        split = int(self.fps * 600)  # 10 minutes
         print("Defaulting to {0} frames for Subway Exit".format(split))
         for images_shard, labels_shard in self.build_subset_shards_iterator(shard_size, skip, 0, split):
             yield "train", images_shard, labels_shard

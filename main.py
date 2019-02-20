@@ -1,7 +1,7 @@
 # region Select GPU
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # endregion
 
 # region Imports
@@ -31,13 +31,14 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 
 # endregion
 
-model_used = "VAEGAN"
+model_used = "VAE"
 dataset_used = "Subway_Exit"
-alt_config_suffix_used = "deep"
+alt_config_suffix_used = None
+max_scale = 4
 predict_next = True
 use_flow = False
 use_patches = False
-previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAEGAN/log_1550570400/weights_9"
+previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAE/log_1550668528/weights_26"
 
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
@@ -59,28 +60,29 @@ auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
 print("===============================================")
-for i in range(auto_encoder.depth - 1, -1, -1):
+for i in range(auto_encoder.scales_count - 1, -1, -1):
     print(i, auto_encoder.input_shape_by_scale[i])
 print("===============================================")
-for i in range(auto_encoder.depth):
+for i in range(auto_encoder.scales_count):
     print(i, auto_encoder.output_shape_by_scale[i])
 # endregion
 
 # region Print parameters
 print("===============================================")
 print("===== Running with following parameters : =====")
-print("Model used \t\t\t\t\t\t:", model_used)
+print("Model used \t\t\t\t\t:", model_used)
 print("Dataset used \t\t\t\t\t:", dataset_used)
 print("Predict next \t\t\t\t\t:", predict_next)
-print("Use flow \t\t\t\t\t\t:", use_flow)
+print("Use flow \t\t\t\t\t:", use_flow)
 print("Use patches \t\t\t\t\t:", use_patches)
 print("Database class \t\t\t\t\t:", str(database_class))
 print("Database path \t\t\t\t\t:", database_path)
-print("Database config alias \t\t\t:", database_config_alias)
+print("Database config alias \t\t\t\t:", database_config_alias)
 print("Config used \t\t\t\t\t:", config_used)
-print("Scales \t\t\t\t\t\t\t:", auto_encoder.depth)
-print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
-print("Preview tensorboard test images :", preview_tensorboard_test_images)
+print("Scales \t\t\t\t\t\t:", auto_encoder.scales_count)
+print("Max scale used \t\t\t\t\t:", max_scale)
+print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth(max_scale))
+print("Preview tensorboard test images \t\t:", preview_tensorboard_test_images)
 print("Allow GPU growth \t\t\t\t:", allow_gpu_growth)
 print("Run cProfile \t\t\t\t\t:", profile)
 print("===============================================")
@@ -104,7 +106,7 @@ database = database_class(database_path=database_path,
 database.load()
 
 print("===== Resizing data to input_shape =====")
-database = auto_encoder.resize_database(database, scale=auto_encoder.depth - 1)
+database = auto_encoder.resize_database(database, scale=auto_encoder.scales_count - 1)
 
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
@@ -141,8 +143,8 @@ if allow_gpu_growth:
 
 # endregion
 
-# if previous_weights_to_load is not None:
-#     auto_encoder.load_weights(previous_weights_to_load, scale=3)
+if previous_weights_to_load is not None:
+    auto_encoder.load_weights(previous_weights_to_load, scale=4)
 
 if profile:
     import cProfile
@@ -157,11 +159,11 @@ if profile:
                    pre_train=False)", sort="cumulative")
 else:
     auto_encoder.train(database,
-                       min_scale=13,
-                       max_scale=13,
+                       min_scale=4,
+                       max_scale=max_scale,
                        epoch_length=500,
-                       epochs=[50] * 21,
-                       batch_size=[32] * 21,
+                       epochs=[50] * 6,
+                       batch_size=[32] * 6,
                        pre_train=False)
 
 # TODO : better config for layers
@@ -170,6 +172,7 @@ else:
 # TODO : He-al/MSRA initialization (+ scaled option)
 # TODO : Dense Blocks
 # TODO : ResNet blocks / stack
+# TODO : Residual Bottleneck version
 
 # TODO : (very) deep networks
 
@@ -181,3 +184,5 @@ else:
 
 # TODO : Load complete model
 # TODO : Encode/Decode the complete video !
+
+# TODO : Update bibliography

@@ -92,11 +92,11 @@ class AGE(AutoEncoderBaseModel):
         input_layer = Input(input_shape)
         layer = input_layer
 
-        if scale is not (self.depth - 1):
+        if scale is not (self.scales_count - 1):
             layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
 
         for i in range(scale + 1):
-            layer = self.link_encoder_conv_layer(layer, scale, i)
+            layer = self.link_encoder_stack(layer, scale, i)
 
         with tf.name_scope("embeddings"):
             latent = Reshape([-1])(layer)
@@ -145,7 +145,7 @@ class AGE(AutoEncoderBaseModel):
 
     def get_scale_models(self, scale: int = None) -> AGEScale:
         if scale is None:
-            scale = self.depth - 1
+            scale = self.scales_count - 1
         if self._scales[scale] is None:
             self.build_for_scale(scale)
         return self._scales[scale]

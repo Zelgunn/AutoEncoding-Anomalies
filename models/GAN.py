@@ -4,7 +4,7 @@ import tensorflow as tf
 import numpy as np
 from typing import List
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict, LayerBlock
+from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict, LayerStack
 from datasets import Database
 
 
@@ -27,7 +27,7 @@ class GANScale(AutoEncoderScale):
 class GAN(AutoEncoderBaseModel):
     def __init__(self):
         super(GAN, self).__init__()
-        self.discriminator_layers: List[LayerBlock] = []
+        self.discriminator_layers: List[LayerStack] = []
         self.discriminator_regression_layer = None
         self._scales: List[GANScale] = []
 
@@ -35,9 +35,10 @@ class GAN(AutoEncoderBaseModel):
     def build_layers(self):
         super(GAN, self).build_layers()
 
-        for layer_info in self.config["discriminator"]:
-            layer = self.build_conv_layer_block(layer_info, rank=self.decoder_rank)
-            self.discriminator_layers.append(layer)
+        for stack_info in self.config["discriminator"]:
+            stack = self.build_conv_stack(stack_info, rank=self.decoder_rank)
+            self.discriminator_layers.append(stack)
+
         self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
 
     def build_for_scale(self, scale: int):
@@ -91,11 +92,11 @@ class GAN(AutoEncoderBaseModel):
         input_layer = Input(input_shape)
         layer = input_layer
 
-        if scale is not (self.depth - 1):
+        if scale is not (self.scales_count - 1):
             layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
 
         for i in range(scale + 1):
-            layer = self.link_encoder_conv_layer(layer, scale, i)
+            layer = self.link_encoder_stack(layer, scale, i)
 
         with tf.name_scope("embeddings"):
             if self.use_dense_embeddings:
@@ -116,11 +117,11 @@ class GAN(AutoEncoderBaseModel):
         input_layer = Input(input_shape)
         layer = input_layer
 
-        if scale is not (self.depth - 1):
+        if scale is not (self.scales_count - 1):
             layer = self.build_adaptor_layer(scale_channels, rank=self.decoder_rank)(layer)
 
         for i in range(scale + 1):
-            layer = self.link_discriminator_conv_layer(layer, scale, i)
+            layer = self.link_discriminator_stack(layer, scale, i)
 
         layer = Reshape([-1])(layer)
         layer = self.discriminator_regression_layer(layer)
@@ -129,10 +130,10 @@ class GAN(AutoEncoderBaseModel):
         discriminator = KerasModel(inputs=input_layer, outputs=outputs, name=discriminator_name)
         return discriminator
 
-    def link_discriminator_conv_layer(self, layer, scale: int, layer_index: int):
-        use_dropout = layer_index > 0
-        layer_index = layer_index + self.depth - scale - 1
-        return self.discriminator_layers[layer_index](layer, use_dropout)
+    def link_discriminator_stack(self, input_layer, scale: int, stack_index: int):
+        use_dropout = stack_index > 0
+        stack_index = stack_index + self.scales_count - scale - 1
+        return self.discriminator_layers[stack_index](input_layer, use_dropout)
 
     def get_scale(self, scale: int) -> GANScale:
         result: GANScale = super(GAN, self).get_scale(scale)
@@ -206,8 +207,11 @@ class GAN(AutoEncoderBaseModel):
             # region Batch logs
             def add_metrics_to_batch_logs(model_name, losses):
                 metric_names = ["loss", *self.config["metrics"][model_name]]
-                for j in range(len(losses)):
-                    batch_logs[model_name + '_' + metric_names[j]] = losses[j]
+                if hasattr(losses, "__len__"):
+                    for j in range(len(losses)):
+                        batch_logs[model_name + '_' + metric_names[j]] = losses[j]
+                else:
+                    batch_logs[model_name + '_' + metric_names[0]] = losses
 
             add_metrics_to_batch_logs("autoencoder", autoencoder_metrics)
             add_metrics_to_batch_logs("generator", generator_metrics)

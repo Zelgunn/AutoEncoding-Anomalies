@@ -24,6 +24,7 @@ from utils.summary_utils import image_summary
 from callbacks import ImageCallback, AUCCallback, CallbackModel
 
 
+# region Containers
 class AutoEncoderScale(object):
     def __init__(self,
                  encoder: KerasModel,
@@ -71,6 +72,29 @@ class LayerBlock(object):
         return layer
 
 
+class LayerStack(object):
+    def __init__(self):
+        self.layers: List[LayerBlock] = []
+
+    def add_layer(self, layer_block: LayerBlock):
+        self.layers.append(layer_block)
+
+    @property
+    def depth(self):
+        return len(self.layers)
+
+    def __call__(self, input_layer: tf.Tensor, use_dropout: bool):
+        output_layer = input_layer
+
+        for layer in self.layers:
+            output_layer = layer(output_layer, use_dropout)
+
+        return output_layer
+
+
+# endregion
+
+
 uint8_max_constant = tf.constant(255.0, dtype=tf.float32)
 
 
@@ -81,8 +105,8 @@ class AutoEncoderBaseModel(ABC):
 
         self.layers_built = False
         self.embeddings_layer = None
-        self.encoder_layers: List[LayerBlock] = []
-        self.decoder_layers: List[LayerBlock] = []
+        self.encoder_layers: List[LayerStack] = []
+        self.decoder_layers: List[LayerStack] = []
 
         self.config: dict = None
 
@@ -95,7 +119,7 @@ class AutoEncoderBaseModel(ABC):
         self.embeddings_shape = None
         self.embeddings_filters = None
 
-        self.depth = 0
+        self.scales_count = 0
         self._scales: List[AutoEncoderScale] = []
         self._scales_input_shapes = None
         self._scales_output_shapes = None
@@ -150,9 +174,9 @@ class AutoEncoderBaseModel(ABC):
         # endregion
 
         # region Scales
-        self.depth = len(self.config["encoder"])
-        self._scales: List[AutoEncoderScale] = [None] * self.depth
-        self._true_outputs_placeholders = [None] * self.depth
+        self.scales_count = len(self.config["encoder"])
+        self._scales: List[AutoEncoderScale] = [None] * self.scales_count
+        self._true_outputs_placeholders = [None] * self.scales_count
         # endregion
 
         # region I/O shapes
@@ -208,9 +232,9 @@ class AutoEncoderBaseModel(ABC):
 
     # region Layers
     def build_layers(self):
-        for layer_info in self.config["encoder"]:
-            layer = self.build_conv_layer_block(layer_info, self.encoder_rank)
-            self.encoder_layers.append(layer)
+        for stack_info in self.config["encoder"]:
+            stack = self.build_conv_stack(stack_info, self.encoder_rank)
+            self.encoder_layers.append(stack)
 
         if self.use_dense_embeddings:
             self.embeddings_layer = Dense(units=self.embeddings_size,
@@ -223,52 +247,62 @@ class AutoEncoderBaseModel(ABC):
                                          kernel_regularizer=self.weight_decay_regularizer,
                                          bias_regularizer=self.weight_decay_regularizer)
 
-        for layer_info in self.config["decoder"]:
-            layer = self.build_deconv_layer_block(layer_info, self.decoder_rank)
-            self.decoder_layers.append(layer)
+        for stack_info in self.config["decoder"]:
+            stack = self.build_deconv_stack(stack_info, self.decoder_rank)
+            self.decoder_layers.append(stack)
         self.layers_built = True
 
-    def build_conv_layer_block(self, layer_info: dict, rank: int, transpose=False) -> LayerBlock:
-        # region Pooling layer
-        if (self.config["pooling"] == "strides") or transpose:
-            conv_layer_strides = layer_info["strides"]
-            pool_layer = None
-        else:
-            conv_layer_strides = 1
-            pool_layer = pool_nd[self.config["pooling"]][rank](pool_size=layer_info["strides"])
-        # endregion
+    def build_conv_stack(self, stack_info: dict, rank: int, transpose=False) -> LayerStack:
+        depth: int = stack_info["depth"]
+        stack = LayerStack()
 
-        # region Convolutional layer
-        conv_layer_kwargs = {"filters": layer_info["filters"], "kernel_size": layer_info["kernel_size"],
-                             "strides": conv_layer_strides,
-                             "kernel_initializer": self.weights_initializer,
-                             "kernel_regularizer": self.weight_decay_regularizer,
-                             "bias_regularizer": self.weight_decay_regularizer}
-        # region Residual Block
-        use_resblock = ("resblock" in layer_info) and (layer_info["resblock"] == "True")
-        if use_resblock:
-            conv_layer_kwargs["use_batch_normalization"] = self.use_batch_normalization_in_res_blocks
-        else:
-            conv_layer_kwargs["padding"] = layer_info["padding"] if "padding" in layer_info else "same"
-        # endregion
+        for i in range(depth):
 
-        conv_layer = conv_nd[use_resblock][transpose][rank](**conv_layer_kwargs)
-        # endregion
+            # region Pooling layer
+            if i < (depth - 1):
+                conv_layer_strides = 1
+                pool_layer = None
+            else:
+                if (self.config["pooling"] == "strides") or transpose:
+                    conv_layer_strides = stack_info["strides"]
+                    pool_layer = None
+                else:
+                    conv_layer_strides = 1
+                    pool_layer = pool_nd[self.config["pooling"]][rank](pool_size=stack_info["strides"])
+            # endregion
 
-        # region Spectral normalization
-        if self.use_spectral_norm:
-            conv_layer = SpectralNormalization(conv_layer)
-        # endregion
+            # region Convolutional layer
+            conv_layer_kwargs = {"filters": stack_info["filters"], "kernel_size": stack_info["kernel_size"],
+                                 "strides": conv_layer_strides,
+                                 "kernel_initializer": self.weights_initializer,
+                                 "kernel_regularizer": self.weight_decay_regularizer,
+                                 "bias_regularizer": self.weight_decay_regularizer}
+            # region Residual Block
+            use_resblock = ("resblock" in stack_info) and (stack_info["resblock"] == "True")
+            if use_resblock:
+                conv_layer_kwargs["use_batch_normalization"] = self.use_batch_normalization_in_res_blocks
+            else:
+                conv_layer_kwargs["padding"] = stack_info["padding"] if "padding" in stack_info else "same"
+            # endregion
 
-        activation = AutoEncoderBaseModel.get_activation(self.default_activation)
-        dropout = Dropout(rate=layer_info["dropout"]) if "dropout" in layer_info else None
+            conv_layer = conv_nd[use_resblock][transpose][rank](**conv_layer_kwargs)
+            # endregion
 
-        layer_block = LayerBlock(conv_layer, pool_layer, activation, dropout)
+            # region Spectral normalization
+            if self.use_spectral_norm:
+                conv_layer = SpectralNormalization(conv_layer)
+            # endregion
 
-        return layer_block
+            activation = AutoEncoderBaseModel.get_activation(self.default_activation)
+            dropout = Dropout(rate=stack_info["dropout"]) if "dropout" in stack_info else None
 
-    def build_deconv_layer_block(self, layer_info: dict, rank: int) -> LayerBlock:
-        return self.build_conv_layer_block(layer_info, rank, transpose=True)
+            layer_block = LayerBlock(conv_layer, pool_layer, activation, dropout)
+            stack.add_layer(layer_block)
+
+        return stack
+
+    def build_deconv_stack(self, layers_info: dict, rank: int) -> LayerStack:
+        return self.build_conv_stack(layers_info, rank, transpose=True)
 
     def build_adaptor_layer(self, channels: int, rank: int):
         layer_class = conv_nd[False][False][rank]
@@ -286,10 +320,10 @@ class AutoEncoderBaseModel(ABC):
     def build_encoder_for_scale(self, scale: int):
         raise NotImplementedError
 
-    def link_encoder_conv_layer(self, layer, scale: int, layer_index: int):
-        use_dropout = layer_index > 0
-        layer_index = layer_index + self.depth - scale - 1
-        return self.encoder_layers[layer_index](layer, use_dropout)
+    def link_encoder_stack(self, input_layer, scale: int, stack_index: int):
+        use_dropout = stack_index > 0
+        stack_index = stack_index + self.scales_count - scale - 1
+        return self.encoder_layers[stack_index](input_layer, use_dropout)
 
     # endregion
 
@@ -300,7 +334,7 @@ class AutoEncoderBaseModel(ABC):
         layer = input_layer
 
         for i in range(scale + 1):
-            layer = self.link_decoder_deconv_layer(layer, i)
+            layer = self.link_decoder_stack(layer, i)
 
         layer = self.build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
         output_layer = self.get_activation(self.output_activation)(layer)
@@ -308,9 +342,9 @@ class AutoEncoderBaseModel(ABC):
         decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
         return decoder
 
-    def link_decoder_deconv_layer(self, layer, layer_index: int):
+    def link_decoder_stack(self, input_layer, layer_index: int):
         use_dropout = layer_index > 0
-        return self.decoder_layers[layer_index](layer, use_dropout)
+        return self.decoder_layers[layer_index](input_layer, use_dropout)
 
     # endregion
 
@@ -368,7 +402,7 @@ class AutoEncoderBaseModel(ABC):
     def compute_conv_depth(self, scale: int = None):
         from layers.ResBlock import RES_DEPTH
         if scale is None:
-            scale = self.depth - 1
+            scale = self.scales_count - 1
         models = self.get_autoencoder_model_at_scale(scale).layers
 
         depth = 0
@@ -403,9 +437,10 @@ class AutoEncoderBaseModel(ABC):
         if self.log_dir is not None:
             return
         self.log_dir = self.__class__.make_log_dir(database)
+        print("Logs directory : '{}'".format(self.log_dir))
 
         min_scale = kwargs.pop("min_scale") if "min_scale" in kwargs else 0
-        max_scale = kwargs.pop("max_scale") if "max_scale" in kwargs else self.depth - 1
+        max_scale = kwargs.pop("max_scale") if "max_scale" in kwargs else self.scales_count - 1
 
         model = self.get_autoencoder_model_at_scale(max_scale)
         self.save_model_info(self.log_dir, model)
@@ -791,7 +826,7 @@ class AutoEncoderBaseModel(ABC):
             output_shape = self.embeddings_shape
             self._scales_output_shapes = []
 
-            for j in range(self.depth):
+            for j in range(self.scales_count):
                 layer_info = self.config["decoder"][j]
                 space = output_shape[:-1]
                 kernel_size = conv_utils.normalize_tuple(layer_info["kernel_size"], self.decoder_rank, "kernel_size")
@@ -806,7 +841,8 @@ class AutoEncoderBaseModel(ABC):
                                                    padding=padding,
                                                    output_padding=None)
                     new_space.append(dim)
-                filters = self.config["decoder"][j + 1]["filters"] if j < (self.depth - 1) else self.channels_count
+                filters = self.config["decoder"][j + 1]["filters"] if j < (
+                            self.scales_count - 1) else self.channels_count
                 output_shape = [*new_space, filters]
                 self._scales_output_shapes.append(output_shape)
 

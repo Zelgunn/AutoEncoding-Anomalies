@@ -35,11 +35,11 @@ class VAE(VariationalBaseModel):
         layer = input_layer
 
         # region Encoder
-        if scale is not (self.depth - 1):
+        if scale is not (self.scales_count - 1):
             layer = self.build_adaptor_layer(scale_channels, self.encoder_rank)(layer)
 
         for i in range(scale + 1):
-            layer = self.link_encoder_conv_layer(layer, scale, i)
+            layer = self.link_encoder_stack(layer, scale, i)
         # endregion
 
         # region Embeddings
