@@ -1,6 +1,6 @@
 {
     "input_shape": [8, 192, 256, 1],
-    "embeddings_size": 480,
+    "embeddings_size": 120,
     "embeddings_reshape": [1, 3, 4],
     "use_dense_embeddings": "False",
     "encoder": [
@@ -35,9 +35,9 @@
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
     "output_activation": {"name": "sigmoid"},
-    "weights_initializer": {"mode": "fan_in", "scale": 0.2, "distribution": "normal"},
+    "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "normal"},
     "residual_scaling": "1.0",
-    "optimizer": {"name": "Adam", "lr": 1e-5, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
+    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L1",
     "metrics": ["mean_squared_error"],
     "pixel_level_labels_size": [16, 24],

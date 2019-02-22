@@ -34,7 +34,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 model_used = "VAE"
 dataset_used = "Subway_Exit"
 alt_config_suffix_used = None
-max_scale = 4
+max_scale = 3
 predict_next = True
 use_flow = False
 use_patches = False
@@ -136,11 +136,11 @@ if preview_tensorboard_test_images:
 # endregion
 
 # region Session initialization
-if allow_gpu_growth:
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    session = tf.Session(config=config)
-    K.set_session(session)
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = allow_gpu_growth
+# config.gpu_options.per_process_gpu_memory_fraction = 0.95
+session = tf.Session(config=config)
+K.set_session(session)
 
 # endregion
 
@@ -164,7 +164,7 @@ else:
                        max_scale=max_scale,
                        epoch_length=500,
                        epochs=[50] * 6,
-                       batch_size=[32] * 6,
+                       batch_size=[16] * 6,
                        pre_train=False)
 
 # TODO : better config for layers
