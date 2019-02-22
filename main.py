@@ -38,7 +38,8 @@ max_scale = 4
 predict_next = True
 use_flow = False
 use_patches = False
-previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAE/log_1550668528/weights_26"
+previous_weights_to_load = None
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAE/log_1550668528/weights_26"
 
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)

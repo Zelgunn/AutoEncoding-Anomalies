@@ -1,7 +1,7 @@
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input
 from keras.layers import Conv2D, Deconv2D, Conv3D, Deconv3D
-from keras.layers import MaxPooling2D, MaxPooling3D, AveragePooling2D, AveragePooling3D
+from keras.layers import MaxPooling2D, MaxPooling3D, AveragePooling2D, AveragePooling3D, UpSampling2D, UpSampling3D
 from keras.initializers import VarianceScaling
 from keras.regularizers import l1
 from keras.optimizers import Adam, RMSprop
@@ -18,6 +18,7 @@ import copy
 from typing import List, Any
 
 from layers import ResBlock2D, ResBlock3D, ResBlock2DTranspose, ResBlock3DTranspose, SpectralNormalization
+from layers import DenseBlock2D, DenseBlock3D
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
@@ -40,14 +41,17 @@ class LayerBlock(object):
     def __init__(self,
                  conv_layer: Layer,
                  pool_layer: Layer,
+                 upsampling_layer: Layer,
                  activation_layer: Layer,
-                 dropout_layer: Dropout):
+                 dropout_layer: Dropout,
+                 is_transpose: bool):
         self.conv = conv_layer
         self.pooling = pool_layer
+        self.upsampling_layer = upsampling_layer
         self.activation = activation_layer
         self.dropout = dropout_layer
 
-        self.is_transpose = type(self.conv) in [Deconv2D, Deconv3D, ResBlock2DTranspose, ResBlock3DTranspose]
+        self.is_transpose = is_transpose
 
     def __call__(self, input_layer, use_dropout):
         with tf.name_scope("block"):
@@ -56,6 +60,10 @@ class LayerBlock(object):
 
             if use_dropout and self.is_transpose:
                 layer = self.dropout(layer)
+
+            if self.upsampling_layer is not None:
+                assert self.is_transpose
+                layer = self.upsampling_layer(layer)
 
             layer = self.conv(layer)
 
@@ -131,7 +139,10 @@ class AutoEncoderBaseModel(ABC):
 
         self.weights_initializer = None
 
-        self.use_batch_normalization_in_res_blocks = None
+        self.block_type_name = None
+        self.pooling = None
+        self.upsampling = None
+        self.use_batch_normalization = None
 
         self.optimizer = None
 
@@ -206,7 +217,10 @@ class AutoEncoderBaseModel(ABC):
 
         # endregion
 
-        self.use_batch_normalization_in_res_blocks = (self.config["use_batch_normalization_in_res_blocks"] == "True")
+        self.block_type_name = self.config["block_type"]
+        self.pooling = self.config["pooling"]
+        self.upsampling = self.config["upsampling"]
+        self.use_batch_normalization = (self.config["use_batch_normalization"] == "True")
 
         # region Regularizers
         self.weight_decay_regularizer = l1(self.config["weight_decay"]) if "weight_decay" in self.config else None
@@ -241,7 +255,7 @@ class AutoEncoderBaseModel(ABC):
                                           kernel_regularizer=self.weight_decay_regularizer,
                                           bias_regularizer=self.weight_decay_regularizer)
         else:
-            conv = conv_nd[False][False][self.encoder_rank]
+            conv = conv_nd["conv_block"][False][self.encoder_rank]
             self.embeddings_layer = conv(filters=self.embeddings_filters, kernel_size=3, padding="same",
                                          kernel_initializer=self.weights_initializer,
                                          kernel_regularizer=self.weight_decay_regularizer,
@@ -253,39 +267,90 @@ class AutoEncoderBaseModel(ABC):
         self.layers_built = True
 
     def build_conv_stack(self, stack_info: dict, rank: int, transpose=False) -> LayerStack:
+        if self.block_type_name == "dense_block":
+            return self.build_dense_block(stack_info, rank, transpose)
+        else:
+            return self.build_layer_stack(stack_info, rank, transpose)
+
+    def build_deconv_stack(self, stack_info: dict, rank: int) -> LayerStack:
+        return self.build_conv_stack(stack_info, rank, transpose=True)
+
+    def build_dense_block(self, stack_info: dict, rank: int, transpose=False) -> LayerStack:
+        depth: int = stack_info["depth"]
+        stack = LayerStack()
+
+        conv_block_type = self.get_block_type(transpose, rank)
+        conv_layer = conv_block_type(kernel_size=stack_info["kernel_size"],
+                                     growth_rate=12,
+                                     depth=depth,
+                                     output_filters=stack_info["filters"],
+                                     use_batch_normalization=self.use_batch_normalization,
+                                     use_bias=False,
+                                     kernel_initializer=self.weights_initializer,
+                                     kernel_regularizer=self.weight_decay_regularizer,
+                                     bias_regularizer=self.weight_decay_regularizer
+                                     )
+
+        if self.use_spectral_norm:
+            conv_layer = SpectralNormalization(conv_layer)
+
+        size = stack_info["strides"]
+        if transpose:
+            pool_layer = None
+            upsampling_layer = upsampling_nd[rank](size=size)
+        else:
+            pool_layer = pool_nd[self.pooling][rank](pool_size=size)
+            upsampling_layer = None
+
+        activation = AutoEncoderBaseModel.get_activation(self.default_activation)
+        dropout = Dropout(rate=stack_info["dropout"]) if "dropout" in stack_info else None
+
+        layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose)
+        stack.add_layer(layer_block)
+
+        return stack
+
+    def build_layer_stack(self, stack_info: dict, rank: int, transpose=False) -> LayerStack:
         depth: int = stack_info["depth"]
         stack = LayerStack()
 
         for i in range(depth):
 
-            # region Pooling layer
+            # region Pooling/Upsampling layer
             if i < (depth - 1):
                 conv_layer_strides = 1
                 pool_layer = None
+                upsampling_layer = None
+            elif self.pooling == "strides":
+                conv_layer_strides = stack_info["strides"]
+                pool_layer = None
+                upsampling_layer = None
             else:
-                if (self.config["pooling"] == "strides") or transpose:
-                    conv_layer_strides = stack_info["strides"]
+                conv_layer_strides = 1
+                size = stack_info["strides"]
+                if transpose:
                     pool_layer = None
+                    upsampling_layer = upsampling_nd[rank](size=size)
                 else:
-                    conv_layer_strides = 1
-                    pool_layer = pool_nd[self.config["pooling"]][rank](pool_size=stack_info["strides"])
+                    pool_layer = pool_nd[self.pooling][rank](pool_size=size)
+                    upsampling_layer = None
             # endregion
 
             # region Convolutional layer
-            conv_layer_kwargs = {"filters": stack_info["filters"], "kernel_size": stack_info["kernel_size"],
+            conv_layer_kwargs = {"kernel_size": stack_info["kernel_size"],
+                                 "filters": stack_info["filters"],
                                  "strides": conv_layer_strides,
                                  "kernel_initializer": self.weights_initializer,
                                  "kernel_regularizer": self.weight_decay_regularizer,
                                  "bias_regularizer": self.weight_decay_regularizer}
-            # region Residual Block
-            use_resblock = ("resblock" in stack_info) and (stack_info["resblock"] == "True")
-            if use_resblock:
-                conv_layer_kwargs["use_batch_normalization"] = self.use_batch_normalization_in_res_blocks
+
+            if self.block_type_name == "residual_block":
+                conv_layer_kwargs["use_batch_normalization"] = self.use_batch_normalization
             else:
                 conv_layer_kwargs["padding"] = stack_info["padding"] if "padding" in stack_info else "same"
-            # endregion
 
-            conv_layer = conv_nd[use_resblock][transpose][rank](**conv_layer_kwargs)
+            conv_block_type = self.get_block_type(transpose, rank)
+            conv_layer = conv_block_type(**conv_layer_kwargs)
             # endregion
 
             # region Spectral normalization
@@ -296,18 +361,21 @@ class AutoEncoderBaseModel(ABC):
             activation = AutoEncoderBaseModel.get_activation(self.default_activation)
             dropout = Dropout(rate=stack_info["dropout"]) if "dropout" in stack_info else None
 
-            layer_block = LayerBlock(conv_layer, pool_layer, activation, dropout)
+            layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose)
             stack.add_layer(layer_block)
 
         return stack
 
-    def build_deconv_stack(self, layers_info: dict, rank: int) -> LayerStack:
-        return self.build_conv_stack(layers_info, rank, transpose=True)
-
     def build_adaptor_layer(self, channels: int, rank: int):
-        layer_class = conv_nd[False][False][rank]
+        layer_class = conv_nd["conv_block"][False][rank]
         return layer_class(filters=channels, kernel_size=1, strides=1, padding="same",
                            kernel_initializer=self.weights_initializer)
+
+    def get_block_type(self, transpose: bool, rank: int):
+        if self.block_type_name not in types_with_transpose:
+            transpose = False
+
+        return conv_nd[self.block_type_name][transpose][rank]
 
     # endregion
 
@@ -400,7 +468,6 @@ class AutoEncoderBaseModel(ABC):
         return self._true_outputs_placeholders[scale]
 
     def compute_conv_depth(self, scale: int = None):
-        from layers.ResBlock import RES_DEPTH
         if scale is None:
             scale = self.scales_count - 1
         models = self.get_autoencoder_model_at_scale(scale).layers
@@ -411,12 +478,14 @@ class AutoEncoderBaseModel(ABC):
                 for layer in model.layers:
                     if isinstance(layer, Conv3D):
                         depth += 1
-                    elif isinstance(layer, ResBlock3D):
-                        depth += RES_DEPTH
-                        if layer.projection_kernel is not None:
+                    elif isinstance(layer, ResBlock3D) or isinstance(layer, ResBlock3DTranspose):
+                        depth += len(layer.conv_layers)
+                        if layer.projection_layer is not None:
                             depth += 1
-                    elif isinstance(layer, ResBlock3DTranspose):
-                        depth += RES_DEPTH + 1
+                    elif isinstance(layer, DenseBlock3D):
+                        depth += layer.depth
+                        if layer.transition_layer is not None:
+                            depth += 1
         return depth
 
     # endregion
@@ -842,7 +911,7 @@ class AutoEncoderBaseModel(ABC):
                                                    output_padding=None)
                     new_space.append(dim)
                 filters = self.config["decoder"][j + 1]["filters"] if j < (
-                            self.scales_count - 1) else self.channels_count
+                        self.scales_count - 1) else self.channels_count
                 output_shape = [*new_space, filters]
                 self._scales_output_shapes.append(output_shape)
 
@@ -954,12 +1023,17 @@ metrics_dict = {"L1": absolute_error,
 # endregion
 
 # region Dynamic choice between Conv2D/Deconv2D and Conv3D/Deconv3D
-conv_nd = {False: {False: {2: Conv2D, 3: Conv3D},
-                   True: {2: Deconv2D, 3: Deconv3D}},
-           True: {False: {2: ResBlock2D, 3: ResBlock3D},
-                  True: {2: ResBlock2DTranspose, 3: ResBlock3DTranspose}}
+types_with_transpose = ["conv_block", "residual_block"]
+
+conv_nd = {"conv_block": {False: {2: Conv2D, 3: Conv3D},
+                          True: {2: Deconv2D, 3: Deconv3D}},
+           "residual_block": {False: {2: ResBlock2D, 3: ResBlock3D},
+                              True: {2: ResBlock2DTranspose, 3: ResBlock3DTranspose}},
+           "dense_block": {False: {2: DenseBlock2D, 3: DenseBlock3D}}
            }
 
 pool_nd = {"max": {2: MaxPooling2D, 3: MaxPooling3D},
            "average": {2: AveragePooling2D, 3: AveragePooling3D}}
+
+upsampling_nd = {2: UpSampling2D, 3: UpSampling3D}
 # endregion

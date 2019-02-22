@@ -42,7 +42,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
                                               kernel_regularizer=self.weight_decay_regularizer,
                                               bias_regularizer=self.weight_decay_regularizer)
         else:
-            conv = conv_nd[False][False][self.encoder_rank]
+            conv = conv_nd["conv_block"][False][self.encoder_rank]
             self.latent_log_var_layer = conv(filters=self.embeddings_filters, kernel_size=3, padding="same",
                                              kernel_initializer=self.weights_initializer,
                                              kernel_regularizer=self.weight_decay_regularizer,

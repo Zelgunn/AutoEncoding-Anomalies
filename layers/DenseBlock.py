@@ -74,42 +74,40 @@ class CompositeFunctionBlock(CompositeLayer):
         super(CompositeFunctionBlock, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        with K.name_scope("composite_function_weights"):
-            if self.use_bottleneck:
-                if self.use_batch_normalization:
-                    self.build_sub_layer(self.bottleneck_batch_normalization_layer, input_shape)
-
-                self.build_sub_layer(self.bottleneck_conv_layer, input_shape)
-
-                input_shape = self.bottleneck_conv_layer.compute_output_shape(input_shape)
-
+        if self.use_bottleneck:
             if self.use_batch_normalization:
-                self.build_sub_layer(self.batch_normalization_layer, input_shape)
+                self.build_sub_layer(self.bottleneck_batch_normalization_layer, input_shape)
 
-            self.build_sub_layer(self.conv_layer, input_shape)
+            self.build_sub_layer(self.bottleneck_conv_layer, input_shape)
 
-            super(CompositeFunctionBlock, self).build(input_shape)
+            input_shape = self.bottleneck_conv_layer.compute_output_shape(input_shape)
+
+        if self.use_batch_normalization:
+            self.build_sub_layer(self.batch_normalization_layer, input_shape)
+
+        self.build_sub_layer(self.conv_layer, input_shape)
+
+        super(CompositeFunctionBlock, self).build(input_shape)
 
     def call(self, inputs, **kwargs):
         layer = inputs
 
-        with K.name_scope("composite_function"):
-            if self.use_bottleneck:
-                if self.use_batch_normalization:
-                    layer = self.bottleneck_batch_normalization_layer(layer)
-
-                if self.activation is not None:
-                    layer = self.activation(layer)
-
-                layer = self.bottleneck_conv_layer(layer)
-
+        if self.use_bottleneck:
             if self.use_batch_normalization:
-                layer = self.batch_normalization_layer(layer)
+                layer = self.bottleneck_batch_normalization_layer(layer)
 
             if self.activation is not None:
                 layer = self.activation(layer)
 
-            layer = self.conv_layer(layer)
+            layer = self.bottleneck_conv_layer(layer)
+
+        if self.use_batch_normalization:
+            layer = self.batch_normalization_layer(layer)
+
+        if self.activation is not None:
+            layer = self.activation(layer)
+
+        layer = self.conv_layer(layer)
 
         return layer
 
@@ -124,6 +122,7 @@ class _DenseBlock(CompositeLayer):
                  kernel_size,
                  growth_rate,
                  depth,
+                 output_filters=None,
                  use_bottleneck=True,
                  bottleneck_filters_multiplier=4,
                  use_batch_normalization=True,
@@ -145,6 +144,7 @@ class _DenseBlock(CompositeLayer):
 
         self.rank = rank
         self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, "kernel_size")
+        self.output_filters = output_filters
         self.growth_rate = growth_rate
 
         if use_bottleneck:
@@ -168,10 +168,16 @@ class _DenseBlock(CompositeLayer):
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
 
+        self.composite_function_blocks: List[CompositeFunctionBlock] = None
+        self.transition_layer = None
+
+        self.input_spec = InputSpec(ndim=self.rank + 2)
+
+    def init_layers(self):
         self.composite_function_blocks: List[CompositeFunctionBlock] = []
         for i in range(self._depth):
             composite_function_block = CompositeFunctionBlock(self.rank, self.kernel_size, self.growth_rate,
-                                                              self.use_bottleneck, bottleneck_filters_multiplier,
+                                                              self.use_bottleneck, self.bottleneck_filters_multiplier,
                                                               self.use_batch_normalization, self.data_format,
                                                               self.activation, self.use_bias,
                                                               self.kernel_initializer, self.bias_initializer,
@@ -180,9 +186,23 @@ class _DenseBlock(CompositeLayer):
                                                               self.kernel_constraint, self.bias_constraint)
             self.composite_function_blocks.append(composite_function_block)
 
-        self.input_spec = InputSpec(ndim=self.rank + 2)
+        if self.output_filters is not None:
+            conv_layer_type = Conv1D if self.rank is 1 else Conv2D if self.rank is 2 else Conv3D
+            self.transition_layer = conv_layer_type(filters=self.output_filters, kernel_size=1,
+                                                    use_bias=self.use_bias,
+                                                    data_format=self.data_format,
+                                                    kernel_initializer=self.kernel_initializer,
+                                                    bias_initializer=self.bias_initializer,
+                                                    kernel_regularizer=self.kernel_regularizer,
+                                                    bias_regularizer=self.bias_regularizer,
+                                                    activity_regularizer=self.activity_regularizer,
+                                                    kernel_constraint=self.kernel_constraint,
+                                                    bias_constraint=self.bias_constraint,
+                                                    name="transition_layer")
 
     def build(self, input_shape):
+        self.init_layers()
+
         input_dim = input_shape[self.channel_axis]
         intermediate_shape = list(input_shape)
         self.input_spec = InputSpec(ndim=self.rank + 2, axes={self.channel_axis: input_dim})
@@ -191,6 +211,9 @@ class _DenseBlock(CompositeLayer):
             for i in range(self._depth):
                 self.build_sub_layer(self.composite_function_blocks[i], tuple(intermediate_shape))
                 intermediate_shape[self.channel_axis] += self.growth_rate
+
+            if self.transition_layer is not None:
+                self.build_sub_layer(self.transition_layer, tuple(intermediate_shape))
 
         super(_DenseBlock, self).build(input_shape)
 
@@ -205,13 +228,19 @@ class _DenseBlock(CompositeLayer):
                 inputs_list.append(layer)
                 layer = K.concatenate(inputs_list, axis=-1)
 
+        if self.transition_layer is not None:
+            layer = self.transition_layer(layer)
+
         return layer
 
     def compute_output_shape(self, input_shape):
         input_dim = input_shape[self.channel_axis]
-        output_dim = input_dim + self._depth * self.growth_rate
         output_shape = list(input_shape)
-        output_shape[self.channel_axis] = output_dim
+        if self.output_filters is None:
+            output_dim = input_dim + self._depth * self.growth_rate
+            output_shape[self.channel_axis] = output_dim
+        else:
+            output_shape[self.channel_axis] = self.output_filters
         return tuple(output_shape)
 
     @property
@@ -224,6 +253,7 @@ class _DenseBlock(CompositeLayer):
                 "rank": self.rank,
                 "kernel_size": self.kernel_size,
                 "growth_rate": self.growth_rate,
+                "output_filters": self.output_filters,
                 "depth": self.depth,
                 "use_bottleneck": self.use_bottleneck,
                 "bottleneck_filters_multiplier": self.bottleneck_filters_multiplier,

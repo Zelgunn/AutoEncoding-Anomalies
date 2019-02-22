@@ -144,4 +144,4 @@ if __name__ == "__main__":
         [48, 64],
         [24, 32]
     ]
-    subway_database.prepare_resolutions(prepared_resolutions, shard_size=2000, skip=3)
+    subway_database.prepare_resolutions(prepared_resolutions, shard_size=2000, skip=5)
