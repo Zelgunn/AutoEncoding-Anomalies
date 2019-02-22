@@ -19,14 +19,6 @@
         {"filters": 16, "kernel_size": [3, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
         {"filters": 16, "kernel_size": [3, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"}
     ],
-    "discriminator": [
-        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"}
-    ],
     "block_type": "dense_block",
     "pooling": "average",
     "upsampling": "upsampling",
@@ -42,7 +34,9 @@
     "metrics": ["mean_squared_error"],
     "pixel_level_labels_size": [16, 24],
     "data_generators": {
-        "train": {"dropout_rate": 0.2},
+        "train": {"dropout_rate": 0.4},
         "test": {"dropout_rate": 0.0}
-    }
+    },
+    "lr_drop_epochs" : 5,
+    "weight_decay" : 1e-4
 }

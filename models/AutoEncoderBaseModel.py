@@ -3,7 +3,7 @@ from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input
 from keras.layers import Conv2D, Deconv2D, Conv3D, Deconv3D
 from keras.layers import MaxPooling2D, MaxPooling3D, AveragePooling2D, AveragePooling3D, UpSampling2D, UpSampling3D
 from keras.initializers import VarianceScaling
-from keras.regularizers import l1
+from keras.regularizers import l1, l2
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
 from keras.backend import binary_crossentropy
@@ -223,7 +223,7 @@ class AutoEncoderBaseModel(ABC):
         self.use_batch_normalization = (self.config["use_batch_normalization"] == "True")
 
         # region Regularizers
-        self.weight_decay_regularizer = l1(self.config["weight_decay"]) if "weight_decay" in self.config else None
+        self.weight_decay_regularizer = l2(self.config["weight_decay"]) if "weight_decay" in self.config else None
         self.use_spectral_norm = ("use_spectral_norm" in self.config["use_spectral_norm"])
         self.use_spectral_norm &= self.config["use_spectral_norm"] == "True"
         # endregion
@@ -285,7 +285,7 @@ class AutoEncoderBaseModel(ABC):
                                      depth=depth,
                                      output_filters=stack_info["filters"],
                                      use_batch_normalization=self.use_batch_normalization,
-                                     use_bias=False,
+                                     use_bias=True,
                                      kernel_initializer=self.weights_initializer,
                                      kernel_regularizer=self.weight_decay_regularizer,
                                      bias_regularizer=self.weight_decay_regularizer
@@ -695,7 +695,7 @@ class AutoEncoderBaseModel(ABC):
         common_callbacks = [base_logger, self.tensorboard, progbar_logger]
 
         if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
-            lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule())
+            lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule(), verbose=1)
             common_callbacks.append(lr_scheduler)
 
         return common_callbacks
@@ -729,13 +729,14 @@ class AutoEncoderBaseModel(ABC):
         anomaly_callbacks = [train_image_callback, test_image_callback, frame_auc_callback]
 
         # region Pixel level error AUC (ROC)
-        if pixel_labels is not None:
-            pixel_predictions_model = self.build_pixel_level_error_callback_model(scale)
-            pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
-                                             auc_images, pixel_labels,
-                                             plot_size=(128, 128), batch_size=32,
-                                             num_thresholds=20, name="Pixel_Level_Error_AUC", epoch_freq=5)
-            anomaly_callbacks.append(pixel_auc_callback)
+        # TODO : Check labels size in UCSDDatabase
+        # if pixel_labels is not None:
+        #     pixel_predictions_model = self.build_pixel_level_error_callback_model(scale)
+        #     pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
+        #                                      auc_images, pixel_labels,
+        #                                      plot_size=(128, 128), batch_size=32,
+        #                                      num_thresholds=20, name="Pixel_Level_Error_AUC", epoch_freq=5)
+        #     anomaly_callbacks.append(pixel_auc_callback)
         # endregion
 
         return anomaly_callbacks

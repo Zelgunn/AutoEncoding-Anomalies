@@ -32,14 +32,14 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 # endregion
 
 model_used = "VAE"
-dataset_used = "Subway_Exit"
+dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
-max_scale = 3
+max_scale = 4
 predict_next = True
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAE/log_1550668528/weights_26"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAE/log_1550841953/weights_14"
 
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
@@ -113,9 +113,7 @@ print("===== Normalizing data between {0} and {1} for activation \"{2}\"  ====="
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
 database.normalize(auto_encoder.output_range[0], auto_encoder.output_range[1])
 
-print("===== Shuffling data =====")
 seed = 8
-database.shuffle(seed=seed)
 database.test_dataset.epoch_length = 2
 # endregion
 # endregion
@@ -145,7 +143,7 @@ K.set_session(session)
 # endregion
 
 if previous_weights_to_load is not None:
-    auto_encoder.load_weights(previous_weights_to_load, scale=4)
+    auto_encoder.load_weights(previous_weights_to_load, scale=3)
 
 if profile:
     import cProfile
@@ -160,7 +158,7 @@ if profile:
                    pre_train=False)", sort="cumulative")
 else:
     auto_encoder.train(database,
-                       min_scale=4,
+                       min_scale=3,
                        max_scale=max_scale,
                        epoch_length=500,
                        epochs=[50] * 6,
