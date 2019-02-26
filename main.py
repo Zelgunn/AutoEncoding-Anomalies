@@ -31,7 +31,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 
 # endregion
 
-model_used = "VAE"
+model_used = "VAEGAN"
 dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
 max_scale = 4
@@ -161,8 +161,8 @@ else:
                        min_scale=3,
                        max_scale=max_scale,
                        epoch_length=500,
-                       epochs=[50] * 6,
-                       batch_size=[16] * 6,
+                       epochs=[100] * 6,
+                       batch_size=[32] * 6,
                        pre_train=False)
 
 # TODO : better config for layers

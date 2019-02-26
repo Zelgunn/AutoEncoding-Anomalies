@@ -1,23 +1,23 @@
 {
     "input_shape": [8, 128, 192, 1],
-    "embeddings_size": 240,
+    "embeddings_size": 480,
     "embeddings_reshape": [1, 2, 3],
     "use_dense_embeddings": "False",
     "encoder": [
-        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"}
+        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [1, 2, 2], "depth": 8},
+        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [2, 2, 2], "depth": 8},
+        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [1, 2, 2], "depth": 8},
+        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [2, 2, 2], "depth": 8},
+        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [1, 2, 2], "depth": 8},
+        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [2, 2, 2], "depth": 8}
     ],
     "decoder": [
-        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [2, 2, 2], "depth": 8, "resblock": "True"},
-        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [1, 2, 2], "depth": 8, "resblock": "True"}
+        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [2, 2, 2], "depth": 8},
+        {"filters": 64, "kernel_size": [1, 3, 3], "strides": [1, 2, 2], "depth": 8},
+        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [2, 2, 2], "depth": 8},
+        {"filters": 32, "kernel_size": [2, 3, 3], "strides": [1, 2, 2], "depth": 8},
+        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [2, 2, 2], "depth": 8},
+        {"filters": 16, "kernel_size": [3, 3, 3], "strides": [1, 2, 2], "depth": 8}
     ],
     "block_type": "dense_block",
     "pooling": "average",
@@ -29,14 +29,13 @@
     "output_activation": {"name": "sigmoid"},
     "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "normal"},
     "residual_scaling": "1.0",
-    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
+    "optimizer": {"name": "Adam", "lr": 2e-5, "beta_1": 0.9, "beta_2": 0.99, "decay": 5e-4},
     "reconstruction_loss": "L1",
     "metrics": ["mean_squared_error"],
     "pixel_level_labels_size": [8, 16],
     "data_generators": {
-        "train": {"dropout_rate": 0.01},
+        "train": {"dropout_rate": 0.0},
         "test": {"dropout_rate": 0.0}
     },
-    "lr_drop_epochs" : 5,
     "weight_decay" : 1e-4
 }
