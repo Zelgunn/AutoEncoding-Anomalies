@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import numpy as np
 from typing import List
 
 from data_preprocessors import DataPreprocessor
@@ -12,13 +11,11 @@ class Database(ABC):
                  database_path: str,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 targets_are_predictions: bool,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
         self.database_path = database_path
         self.input_sequence_length = input_sequence_length
         self.output_sequence_length = output_sequence_length
-        self.targets_are_predictions = targets_are_predictions
         self.train_preprocessors = train_preprocessors or []
         self.test_preprocessors = test_preprocessors or []
         self._require_saving = False
@@ -46,13 +43,14 @@ class Database(ABC):
     def images_size(self):
         return self.train_dataset.images_size
 
-    def resized_to_scale(self, image_size, input_sequence_length, output_sequence_length):
+    def resized(self, image_size, input_sequence_length, output_sequence_length):
         if self.images_size == image_size:
+            self.input_sequence_length = input_sequence_length
+            self.output_sequence_length = output_sequence_length
             return self
 
         database_type = type(self)
-        database: Database = database_type(self.database_path, input_sequence_length, output_sequence_length,
-                                           self.targets_are_predictions)
+        database: Database = database_type(self.database_path, input_sequence_length, output_sequence_length)
         database.train_dataset = self.train_dataset.resized(image_size, input_sequence_length, output_sequence_length)
         database.test_dataset = self.test_dataset.resized(image_size, input_sequence_length, output_sequence_length)
         database._require_saving = self._require_saving

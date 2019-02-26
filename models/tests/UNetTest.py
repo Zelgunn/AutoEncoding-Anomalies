@@ -174,13 +174,10 @@ def get_dense_block_model():
 def get_database():
     subway_database = SubwayDatabase(database_path="../datasets/subway/exit",
                                      input_sequence_length=None,
-                                     output_sequence_length=None,
-                                     targets_are_predictions=True)
+                                     output_sequence_length=None)
     subway_database.load()
 
-    subway_database = subway_database.resized_to_scale(image_size=(96, 128),
-                                                       input_sequence_length=8,
-                                                       output_sequence_length=8)
+    subway_database = subway_database.resized(image_size=(96, 128), input_sequence_length=8, output_sequence_length=8)
     subway_database.normalize(0.0, 1.0)
 
     subway_database.train_dataset.epoch_length = 250
@@ -191,43 +188,49 @@ def get_database():
     return subway_database
 
 
-# model = get_dense_block_model()
-model = get_conv_lstm_model()
-database = get_database()
+def main():
+    model = get_conv_lstm_model()
+    database = get_database()
 
-model.compile(optimizer=Adam(lr=1e-4), loss="mae", metrics=["mse"])
-# model.load_weights("../logs/tests/1551101991.9433231/weights.h5")
+    model.compile(optimizer=Adam(lr=1e-4), loss="mae", metrics=["mse"])
+    # model.load_weights("../logs/tests/1551101991.9433231/weights.h5")
 
-log_dir = "../logs/tests/{}".format(time())
-log_dir = os.path.normpath(log_dir)
-tensorboard = TensorBoard(log_dir=log_dir, update_freq="batch")
+    log_dir = "../logs/tests/{}".format(time())
+    log_dir = os.path.normpath(log_dir)
+    tensorboard = TensorBoard(log_dir=log_dir, update_freq="batch")
 
-model.fit_generator(database.train_dataset, epochs=2, validation_data=database.test_dataset,
-                    callbacks=[tensorboard])
+    model.fit_generator(database.train_dataset, epochs=2, validation_data=database.test_dataset,
+                        callbacks=[tensorboard])
 
-key = 13
-escape_key = 27
-seed = 0
-i = 0
+    key = 13
+    escape_key = 27
+    seed = 0
+    i = 0
 
-while key != 27:
-    if key != -1:
-        seed += 1
+    y_pred, y_true, x = None, None, None
 
-        x, y_true = database.test_dataset.get_batch(seed=seed)
-        y_pred = model.predict(x)
-        i = 0
+    while key != escape_key:
+        if key != -1:
+            seed += 1
 
-    y_pred_resized = cv2.resize(y_pred[0][i], dsize=(256, 192))
-    y_true_resized = cv2.resize(y_true[0][i], dsize=(256, 192))
-    x_resized = cv2.resize(x[0][i], dsize=(256, 192))
+            x, y_true = database.test_dataset.get_batch(seed=seed)
+            y_pred = model.predict(x)
+            i = 0
 
-    cv2.imshow("inputs", x_resized)
-    cv2.imshow("y_true", y_true_resized)
-    cv2.imshow("y_pred", y_pred_resized)
-    cv2.imshow("delta", np.abs(y_pred_resized - y_true_resized))
-    key = cv2.waitKey(100)
+        y_pred_resized = cv2.resize(y_pred[0][i], dsize=(256, 192))
+        y_true_resized = cv2.resize(y_true[0][i], dsize=(256, 192))
+        x_resized = cv2.resize(x[0][i], dsize=(256, 192))
 
-    i = (i + 1) % 8
+        cv2.imshow("inputs", x_resized)
+        cv2.imshow("y_true", y_true_resized)
+        cv2.imshow("y_pred", y_pred_resized)
+        cv2.imshow("delta", np.abs(y_pred_resized - y_true_resized))
+        key = cv2.waitKey(100)
 
-model.save_weights(os.path.join(log_dir, "weights.h5"))
+        i = (i + 1) % 8
+
+    model.save_weights(os.path.join(log_dir, "weights.h5"))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,111 +1,89 @@
-from keras.layers import Input, Conv2D, Dense, Reshape
+from keras.layers import Input, Dense, Reshape
 from keras.callbacks import CallbackList
 import tensorflow as tf
 import numpy as np
 import copy
-from typing import List
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
 from datasets import Database
-
-
-class AGEScale(AutoEncoderScale):
-    def __init__(self,
-                 encoder: KerasModel,
-                 decoder: KerasModel,
-                 encoder_real_data_trainer: KerasModel,
-                 encoder_fake_data_trainer: KerasModel,
-                 decoder_real_data_trainer: KerasModel,
-                 decoder_fake_data_trainer: KerasModel,
-                 **kwargs):
-        super(AGEScale, self).__init__(encoder=encoder,
-                                       decoder=decoder,
-                                       autoencoder=encoder_real_data_trainer,
-                                       **kwargs)
-        self.encoder_real_data_trainer = encoder_real_data_trainer
-        self.encoder_fake_data_trainer = encoder_fake_data_trainer
-        self.decoder_real_data_trainer = decoder_real_data_trainer
-        self.decoder_fake_data_trainer = decoder_fake_data_trainer
 
 
 class AGE(AutoEncoderBaseModel):
     def __init__(self):
         super(AGE, self).__init__()
-        self._scales: List[AGEScale] = []
+
+        self._encoder_real_data_trainer: KerasModel = None
+        self._encoder_fake_data_trainer: KerasModel = None
+        self._decoder_real_data_trainer: KerasModel = None
+        self._decoder_fake_data_trainer: KerasModel = None
 
     # region Model building
-    def build_for_scale(self, scale: int):
-        encoder = self.build_encoder_for_scale(scale)
-        decoder = self.build_decoder_for_scale(scale)
-
-        scale_input_shape = self.input_shape_by_scale[scale]
-        input_shape = scale_input_shape[:-1] + [self.channels_count]
-
-        encoder_decoder_input = Input(input_shape)
-        real_data_latent = encoder(encoder_decoder_input)
-        encoder_decoder_output = decoder(real_data_latent)
+    def build(self):
+        encoder_decoder_input = Input(self.input_shape)
+        real_data_latent = self.encoder(encoder_decoder_input)
+        encoder_decoder_output = self.decoder(real_data_latent)
 
         real_data_encoder_loss = self.build_loss(True, True, real_data_latent)
         real_data_decoder_loss = self.build_loss(False, True, real_data_latent)
 
-        decoder_encoder_input = Input([self.embeddings_size])
-        fake_data_latent = encoder(decoder(decoder_encoder_input))
+        decoder_encoder_input = self.decoder_input_layer
+        fake_data_latent = self.encoder(self.reconstructor_output)
         decoder_encoder_output = fake_data_latent
 
         fake_data_encoder_loss = self.build_loss(True, False, fake_data_latent)
         fake_data_decoder_loss = self.build_loss(False, False, fake_data_latent)
 
         # region Real Data
-        encoder.trainable = True
-        decoder.trainable = True
+        self.encoder.trainable = True
+        self.decoder.trainable = True
         encoder_real_data_trainer = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output,
-                                               name="Encoder_real_data_Model_scale_{0}".format(scale))
+                                               name="Encoder_real_data_Model")
         encoder_real_data_trainer.compile(self.optimizer, loss=real_data_encoder_loss)
         encoder_fake_data_trainer = KerasModel(inputs=decoder_encoder_input, outputs=decoder_encoder_output,
-                                               name="Encoder_fake_data_Model_scale_{0}".format(scale))
+                                               name="Encoder_fake_data_Model")
         encoder_fake_data_trainer.compile(self.optimizer, loss=fake_data_encoder_loss)
         # endregion
 
         # region Fake Data
-        encoder.trainable = False
-        decoder.trainable = True
+        self.encoder.trainable = False
+        self.decoder.trainable = True
         decoder_real_data_trainer = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output,
-                                               name="Decoder_real_data_Model_scale_{0}".format(scale))
+                                               name="Decoder_real_data_Model")
         decoder_real_data_trainer.compile(self.optimizer, loss=real_data_decoder_loss)
         decoder_fake_data_trainer = KerasModel(inputs=decoder_encoder_input, outputs=decoder_encoder_output,
-                                               name="Decoder_fake_data_Model_scale_{0}".format(scale))
+                                               name="Decoder_fake_data_Model")
         decoder_fake_data_trainer.compile(self.optimizer, loss=fake_data_decoder_loss)
         # endregion
 
-        scale_models = AGEScale(encoder, decoder,
-                                encoder_real_data_trainer, encoder_fake_data_trainer,
-                                decoder_real_data_trainer, decoder_fake_data_trainer)
-        self._scales[scale] = scale_models
+        self._encoder_real_data_trainer = encoder_real_data_trainer
+        self._encoder_fake_data_trainer = encoder_fake_data_trainer
+        self._decoder_real_data_trainer = decoder_real_data_trainer
+        self._decoder_fake_data_trainer = decoder_fake_data_trainer
 
-    def build_encoder_for_scale(self, scale: int):
-        scale_input_shape = self.input_shape_by_scale[scale]
-        scale_channels = scale_input_shape[-1]
-        input_shape = scale_input_shape[:-1] + [self.channels_count]
+        autoencoder = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output, name="Autoencoder")
+        self._autoencoder = autoencoder
 
-        encoder_name = "Encoder_scale_{0}".format(scale)
-        input_layer = Input(input_shape)
+    def build_encoder(self):
+        input_layer = Input(self.input_shape)
         layer = input_layer
 
-        if scale is not (self.scales_count - 1):
-            layer = Conv2D(filters=scale_channels, kernel_size=1, strides=1, padding="same")(layer)
+        for i in range(self.depth):
+            use_dropout = i > 0
+            layer = self.encoder_layers[i](layer, use_dropout)
 
-        for i in range(scale + 1):
-            layer = self.link_encoder_stack(layer, scale, i)
-
+        # region Embeddings
         with tf.name_scope("embeddings"):
-            latent = Reshape([-1])(layer)
-            latent = Dense(units=self.embeddings_size, name="Latent_Value")(latent)
-            latent = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(latent)
+            if self.use_dense_embeddings:
+                layer = Reshape([-1])(layer)
+            layer = self.embeddings_layer(layer)
+            layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
+            if self.use_dense_embeddings:
+                layer = Reshape(self.compute_embeddings_output_shape())(layer)
+        # endregion
 
-        outputs = latent
-        encoder = KerasModel(inputs=input_layer, outputs=outputs, name=encoder_name)
-        return encoder
+        outputs = layer
+        self._encoder = KerasModel(inputs=input_layer, outputs=outputs, name="Encoder")
 
     def build_loss(self, is_encoder: bool, real_data: bool, latent: tf.Tensor):
         loss_weights = self.config["loss_weights"][
@@ -143,23 +121,35 @@ class AGE(AutoEncoderBaseModel):
 
         return loss_function
 
-    def get_scale_models(self, scale: int = None) -> AGEScale:
-        if scale is None:
-            scale = self.scales_count - 1
-        if self._scales[scale] is None:
-            self.build_for_scale(scale)
-        return self._scales[scale]
-
     # endregion
 
+    @property
+    def encoder_real_data_trainer(self):
+        if self._encoder_real_data_trainer is None:
+            self.build()
+        return self._encoder_real_data_trainer
+
+    @property
+    def encoder_fake_data_trainer(self):
+        if self._encoder_fake_data_trainer is None:
+            self.build()
+        return self._encoder_fake_data_trainer
+
+    @property
+    def decoder_real_data_trainer(self):
+        if self._decoder_real_data_trainer is None:
+            self.build()
+        return self._decoder_real_data_trainer
+
+    @property
+    def decoder_fake_data_trainer(self):
+        if self._decoder_fake_data_trainer is None:
+            self.build()
+        return self._decoder_fake_data_trainer
+
     # region Training
-    def train_epoch(self,
-                    database: Database,
-                    scale: int = None,
-                    callbacks: CallbackList = None):
+    def train_epoch(self, database: Database, callbacks: CallbackList = None):
         epoch_length = len(database.train_dataset)
-        scale_models = self.get_scale_models(scale)
-        base_model = self.get_autoencoder_model_at_scale(scale)
 
         callbacks.on_epoch_begin(self.epochs_seen)
 
@@ -173,13 +163,13 @@ class AGE(AutoEncoderBaseModel):
             callbacks.on_batch_begin(batch_index, batch_logs)
 
             # Train Encoder
-            encoder_real_data_loss = scale_models.encoder_real_data_trainer.train_on_batch(x=x, y=y)
-            encoder_fake_data_loss = scale_models.encoder_fake_data_trainer.train_on_batch(x=z[0], y=z[0])
+            encoder_real_data_loss = self._encoder_real_data_trainer.train_on_batch(x=x, y=y)
+            encoder_fake_data_loss = self._encoder_fake_data_trainer.train_on_batch(x=z[0], y=z[0])
 
             # Train Decoder
             decoder_fake_data_losses = []
             for i in range(1, decoder_steps + 1):
-                decoder_fake_data_loss = scale_models.decoder_fake_data_trainer.train_on_batch(x=z[i], y=z[i])
+                decoder_fake_data_loss = self._decoder_fake_data_trainer.train_on_batch(x=z[i], y=z[i])
                 decoder_fake_data_losses.append(decoder_fake_data_loss)
             decoder_fake_data_loss = float(np.mean(decoder_fake_data_losses))
 
@@ -188,13 +178,13 @@ class AGE(AutoEncoderBaseModel):
             batch_logs["decoder_loss"] = decoder_fake_data_loss
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(base_model, database, callbacks)
+        self.on_epoch_end(database, callbacks)
 
     # endregion
 
     # region Callbacks (building)
-    def callback_metrics(self, model: KerasModel):
-        out_labels = model.metrics_names
+    def callback_metrics(self):
+        out_labels = self.encoder_real_data_trainer.metrics_names
         real_data_metrics = copy.copy(out_labels)
         fake_data_metrics = ["fake_{0}".format(name) for name in out_labels]
         decoder_metrics = ["decoder_{0}".format(name) for name in out_labels]

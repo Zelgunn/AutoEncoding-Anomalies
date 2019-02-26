@@ -12,7 +12,6 @@ class PartiallyLoadableDataset(Dataset):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 targets_are_predictions: bool,
                  dataset_path: str,
                  config: dict,
                  data_preprocessors: List[DataPreprocessor] = None,
@@ -22,7 +21,6 @@ class PartiallyLoadableDataset(Dataset):
                  **kwargs):
         super(PartiallyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
                                                        output_sequence_length=output_sequence_length,
-                                                       targets_are_predictions=targets_are_predictions,
                                                        data_preprocessors=data_preprocessors,
                                                        batch_size=batch_size,
                                                        epoch_length=epoch_length,
@@ -112,7 +110,6 @@ class PartiallyLoadableDataset(Dataset):
         other = dataset_type(dataset_path=self.dataset_path, config=self.config,
                              input_sequence_length=input_sequence_length,
                              output_sequence_length=output_sequence_length,
-                             targets_are_predictions=self.targets_are_predictions,
                              data_preprocessors=self.data_preprocessors, batch_size=self.batch_size,
                              epoch_length=self.epoch_length, shuffle_on_epoch_end=self.shuffle_on_epoch_end)
         other.sub_config_index = target_index

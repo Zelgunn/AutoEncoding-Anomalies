@@ -11,7 +11,6 @@ class Dataset(Sequence, ABC):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 targets_are_predictions: bool,
                  data_preprocessors: List[DataPreprocessor] = None,
                  batch_size=64,
                  epoch_length: int = None,
@@ -20,7 +19,6 @@ class Dataset(Sequence, ABC):
         self.input_sequence_length = input_sequence_length
 
         self.output_sequence_length = output_sequence_length
-        self.targets_are_predictions = targets_are_predictions
         self.data_preprocessors = data_preprocessors or []
         self.batch_size = batch_size
         self.epoch_length = epoch_length
@@ -84,10 +82,7 @@ class Dataset(Sequence, ABC):
     def total_sequence_length(self):
         in_length = 1 if self.input_sequence_length is None else self.input_sequence_length
         out_length = 1 if self.output_sequence_length is None else self.output_sequence_length
-        if self.targets_are_predictions:
-            return in_length + out_length
-        else:
-            return max(in_length, out_length)
+        return max(in_length, out_length)
 
     def sample_indices(self, batch_size, indices_range, sequence_length=None):
         if sequence_length is None:
@@ -112,11 +107,11 @@ class Dataset(Sequence, ABC):
         else:
             outputs = images[:, -self.output_sequence_length:]
 
-        if not self.targets_are_predictions:
-            if self.input_sequence_length < self.output_sequence_length:
-                inputs = np.copy(inputs)
-            else:
-                outputs = np.copy(outputs)
+        if self.input_sequence_length < self.output_sequence_length:
+            inputs = np.copy(inputs)
+        else:
+            outputs = np.copy(outputs)
+
         return inputs, outputs
 
     def sample_input_images(self, batch_size=None, seed=None, max_shard_count=1):

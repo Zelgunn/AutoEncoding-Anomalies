@@ -1,38 +1,20 @@
 from abc import ABC
 import tensorflow as tf
-from keras.layers import Dense, Lambda, Input, Reshape
-from typing import List
+from keras.layers import Dense, Lambda, Reshape
+import numpy as np
 
-from models import AutoEncoderBaseModel, AutoEncoderScale, KerasModel, conv_nd
+from models import AutoEncoderBaseModel, conv_type
 from callbacks import CallbackModel, AUCCallback
 from datasets import Database
 
 
-class VAEScale(AutoEncoderScale):
-    def __init__(self,
-                 encoder: KerasModel,
-                 decoder: KerasModel,
-                 autoencoder: KerasModel,
-                 latent_mean: KerasModel,
-                 latent_log_var: KerasModel,
-                 **kwargs):
-        super(VAEScale, self).__init__(encoder=encoder,
-                                       decoder=decoder,
-                                       autoencoder=autoencoder,
-                                       **kwargs)
-        self.latent_mean = latent_mean
-        self.latent_log_var = latent_log_var
-
-
 class VariationalBaseModel(AutoEncoderBaseModel, ABC):
-    # region Initialization
     def __init__(self):
         super(VariationalBaseModel, self).__init__()
         self.latent_mean_layer = None
         self.latent_log_var_layer = None
-        self._scales: List[VAEScale] = None
-
-    # endregion
+        self._latent_mean = None
+        self._latent_log_var = None
 
     def build_layers(self):
         super(VariationalBaseModel, self).build_layers()
@@ -42,37 +24,50 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
                                               kernel_regularizer=self.weight_decay_regularizer,
                                               bias_regularizer=self.weight_decay_regularizer)
         else:
-            conv = conv_nd["conv_block"][False][self.encoder_rank]
-            self.latent_log_var_layer = conv(filters=self.embeddings_filters, kernel_size=3, padding="same",
+            conv = conv_type["conv_block"][False]
+            self.latent_log_var_layer = conv(filters=self.embeddings_size, kernel_size=3, padding="same",
                                              kernel_initializer=self.weights_initializer,
                                              kernel_regularizer=self.weight_decay_regularizer,
                                              bias_regularizer=self.weight_decay_regularizer)
 
         self.embeddings_layer = Lambda(function=sampling)
 
-    # region Model (Getters)
-    def get_scale(self, scale: int) -> VAEScale:
-        scale: VAEScale = super(VariationalBaseModel, self).get_scale(scale)
-        return scale
+    @property
+    def latent_mean(self):
+        if self._latent_mean is None:
+            self.build()
+        return self._latent_mean
 
-    def get_latent_distribution_at_scale(self, scale):
-        scales = self.get_scale(scale)
-        return scales.latent_mean, scales.latent_log_var
+    @property
+    def latent_log_var(self):
+        if self._latent_log_var is None:
+            self.build()
+        return self._latent_log_var
 
-    # endregion
+    def compute_embeddings_output_shape(self):
+        embeddings_shape = self.compute_embeddings_input_shape()
+        if self.use_dense_embeddings:
+            embeddings_shape = embeddings_shape[:-1]
+            embeddings_shape_prod = np.prod(embeddings_shape)
+            assert (self.embeddings_size % embeddings_shape_prod) == 0
+            embeddings_filters = self.embeddings_size // embeddings_shape_prod
+            embeddings_shape = (*embeddings_shape, embeddings_filters)
+        else:
+            embeddings_shape = (None, *embeddings_shape)
+            embeddings_shape = self.latent_mean_layer.compute_output_shape(embeddings_shape)
+            embeddings_shape = embeddings_shape[1:]
+        return embeddings_shape
 
-    def build_anomaly_callbacks(self,
-                                database: Database,
-                                scale: int = None):
-        database = self.resize_database(database, scale)
+    def build_anomaly_callbacks(self, database: Database):
+        database = self.resize_database(database)
         test_dataset = database.test_dataset
-        anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database, scale)
+        anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
 
         samples = test_dataset.sample(batch_size=256, seed=16, max_shard_count=16, return_labels=True)
         auc_images, frame_labels, _ = samples
         auc_images = test_dataset.divide_batch_io(auc_images)
 
-        n_predictions_model = self.n_predictions(n=32, scale=scale)
+        n_predictions_model = self.n_predictions(n=32)
 
         vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
                                        auc_images, frame_labels, plot_size=(128, 128), batch_size=4,
@@ -81,27 +76,21 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         anomaly_callbacks.append(vae_auc_callback)
         return anomaly_callbacks
 
-    def n_predictions(self, n, scale):
-        encoder = self.get_encoder_model_at_scale(scale)
-        decoder = self.get_decoder_model_at_scale(scale)
-
-        scale_output_shape = self.output_shape_by_scale[scale]
-        output_shape = scale_output_shape[:-1] + [self.channels_count]
-
+    def n_predictions(self, n):
         with tf.name_scope("n_pred"):
-            encoder_input = encoder.get_input_at(0)
-            true_outputs = self.get_true_outputs_placeholder(scale)
-            _, latent_mean, latent_log_var = encoder(encoder_input)
+            encoder_input = self._encoder.get_input_at(0)
+            true_outputs = self.get_true_outputs_placeholder()
+            _, latent_mean, latent_log_var = self._encoder(encoder_input)
 
             sampling_function = sampling_n(n)
             layer = Lambda(function=sampling_function)([latent_mean, latent_log_var])
 
             layer = VariationalBaseModel.get_activation(self.embeddings_activation)(layer)
-            encoded = Reshape(self.embeddings_shape)(layer)
+            encoded = Reshape(self.compute_embeddings_output_shape())(layer)
 
-            autoencoded = decoder(encoded)
+            autoencoded = self.decoder(encoded)
 
-            autoencoded = tf.reshape(autoencoded, [-1, n, *output_shape])
+            autoencoded = tf.reshape(autoencoded, [-1, n, *self.output_shape])
             true_outputs_expanded = tf.expand_dims(true_outputs, axis=1)
             error = tf.abs(true_outputs_expanded - autoencoded)
             predictions = tf.reduce_mean(error, axis=[1, -3, -2, -1])

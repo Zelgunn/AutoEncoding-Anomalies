@@ -14,7 +14,6 @@ class FullyLoadableDataset(Dataset, ABC):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 targets_are_predictions: bool,
                  dataset_path: str,
                  data_preprocessors: List[DataPreprocessor] = None,
                  batch_size=64,
@@ -27,7 +26,6 @@ class FullyLoadableDataset(Dataset, ABC):
         self._frame_level_labels = None
         super(FullyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
                                                    output_sequence_length=output_sequence_length,
-                                                   targets_are_predictions=targets_are_predictions,
                                                    data_preprocessors=data_preprocessors,
                                                    batch_size=batch_size,
                                                    epoch_length=epoch_length,
@@ -38,8 +36,7 @@ class FullyLoadableDataset(Dataset, ABC):
         dataset_type = type(self)
         other: FullyLoadableDataset = dataset_type(dataset_path=self.dataset_path,
                                                    input_sequence_length=self.input_sequence_length,
-                                                   output_sequence_length=self.output_sequence_length,
-                                                   targets_are_predictions=self.targets_are_predictions)
+                                                   output_sequence_length=self.output_sequence_length)
         other.data_preprocessors = self.data_preprocessors
         other.batch_size = self.batch_size
         other.epoch_length = self.epoch_length

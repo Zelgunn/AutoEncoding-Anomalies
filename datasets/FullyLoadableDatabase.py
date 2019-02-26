@@ -12,13 +12,11 @@ class FullyLoadableDatabase(Database, ABC):
                  database_path: str,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 targets_are_predictions: bool,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
         super(FullyLoadableDatabase, self).__init__(database_path=database_path,
                                                     input_sequence_length=input_sequence_length,
                                                     output_sequence_length=output_sequence_length,
-                                                    targets_are_predictions=targets_are_predictions,
                                                     train_preprocessors=train_preprocessors,
                                                     test_preprocessors=test_preprocessors)
         self.train_dataset: FullyLoadableDataset = self.train_dataset

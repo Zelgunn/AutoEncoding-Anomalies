@@ -20,7 +20,6 @@ class UCSDDatabase(FullyLoadableDatabase):
         dataset_path = os.path.join(self.database_path, dataset_name)
         dataset = UCSDDataset(dataset_path=dataset_path, data_preprocessors=data_preprocessors,
                               input_sequence_length=self.input_sequence_length,
-                              output_sequence_length=self.output_sequence_length,
-                              targets_are_predictions=self.targets_are_predictions)
+                              output_sequence_length=self.output_sequence_length)
         dataset.load()
         return dataset

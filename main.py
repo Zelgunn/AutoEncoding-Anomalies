@@ -34,8 +34,6 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 model_used = "VAEGAN"
 dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
-max_scale = 4
-predict_next = True
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
@@ -60,12 +58,9 @@ auto_encoder = auto_encoder_class()
 auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
-print("===============================================")
-for i in range(auto_encoder.scales_count - 1, -1, -1):
-    print(i, auto_encoder.input_shape_by_scale[i])
-print("===============================================")
-for i in range(auto_encoder.scales_count):
-    print(i, auto_encoder.output_shape_by_scale[i])
+auto_encoder.encoder.summary(line_length=200)
+auto_encoder.decoder.summary(line_length=200)
+auto_encoder.autoencoder.summary(line_length=200)
 # endregion
 
 # region Print parameters
@@ -73,16 +68,13 @@ print("===============================================")
 print("===== Running with following parameters : =====")
 print("Model used \t\t\t\t\t:", model_used)
 print("Dataset used \t\t\t\t\t:", dataset_used)
-print("Predict next \t\t\t\t\t:", predict_next)
 print("Use flow \t\t\t\t\t:", use_flow)
 print("Use patches \t\t\t\t\t:", use_patches)
 print("Database class \t\t\t\t\t:", str(database_class))
 print("Database path \t\t\t\t\t:", database_path)
 print("Database config alias \t\t\t\t:", database_config_alias)
 print("Config used \t\t\t\t\t:", config_used)
-print("Scales \t\t\t\t\t\t:", auto_encoder.scales_count)
-print("Max scale used \t\t\t\t\t:", max_scale)
-print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth(max_scale))
+print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
 print("Preview tensorboard test images \t\t:", preview_tensorboard_test_images)
 print("Allow GPU growth \t\t\t\t:", allow_gpu_growth)
 print("Run cProfile \t\t\t\t\t:", profile)
@@ -101,13 +93,12 @@ print("===== Loading data =====")
 database = database_class(database_path=database_path,
                           input_sequence_length=None,
                           output_sequence_length=None,
-                          targets_are_predictions=predict_next,
                           train_preprocessors=train_preprocessors,
                           test_preprocessors=test_preprocessors)
 database.load()
 
 print("===== Resizing data to input_shape =====")
-database = auto_encoder.resize_database(database, scale=auto_encoder.scales_count - 1)
+database = auto_encoder.resize_database(database)
 
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
@@ -143,37 +134,21 @@ K.set_session(session)
 # endregion
 
 if previous_weights_to_load is not None:
-    auto_encoder.load_weights(previous_weights_to_load, scale=3)
+    auto_encoder.load_weights(previous_weights_to_load)
 
 if profile:
     import cProfile
 
     print("===== Profiling activated ... =====")
-    cProfile.run("auto_encoder.train(database,\
-                   min_scale=3,\
-                   max_scale=4,\
-                   epoch_length=50,\
-                   epochs=[2, 2, 2, 2, 2],\
-                   batch_size=[32, 32, 32, 32, 32],\
-                   pre_train=False)", sort="cumulative")
+    cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=100, batch_size=32)", sort="cumulative")
 else:
-    auto_encoder.train(database,
-                       min_scale=3,
-                       max_scale=max_scale,
-                       epoch_length=500,
-                       epochs=[100] * 6,
-                       batch_size=[32] * 6,
-                       pre_train=False)
+    auto_encoder.train(database, epoch_length=2, epochs=2, batch_size=2)
 
-# TODO : better config for layers
+# TODO : Merge self.build_encoder
+# TODO : Separate videos in UCSDDatabase!
 
 # TODO : Residual Scaling
 # TODO : He-al/MSRA initialization (+ scaled option)
-# TODO : Dense Blocks
-# TODO : ResNet blocks / stack
-# TODO : Residual Bottleneck version
-
-# TODO : (very) deep networks
 
 # TODO : config - for callbacks (batch_size, samples count, ...)
 

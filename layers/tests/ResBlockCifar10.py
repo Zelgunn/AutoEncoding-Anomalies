@@ -1,9 +1,8 @@
-from keras.layers import Input, AveragePooling2D, Dense, Reshape, Conv2D
+from keras.layers import Input, AveragePooling2D, Dense, Reshape
 from keras.models import Model
 from keras.datasets import cifar10
 from keras.utils.np_utils import to_categorical
 from keras.preprocessing.image import ImageDataGenerator
-from keras.regularizers import l2
 import numpy as np
 
 from layers import ResBlock2D

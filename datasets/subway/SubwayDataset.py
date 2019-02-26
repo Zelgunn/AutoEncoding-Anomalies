@@ -8,7 +8,6 @@ class SubwayDataset(PartiallyLoadableDataset):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 targets_are_predictions: bool,
                  dataset_path: str = None,
                  data_preprocessors: List[DataPreprocessor] = None,
                  batch_size=64,
@@ -17,7 +16,6 @@ class SubwayDataset(PartiallyLoadableDataset):
                  **kwargs):
         super(SubwayDataset, self).__init__(input_sequence_length=input_sequence_length,
                                             output_sequence_length=output_sequence_length,
-                                            targets_are_predictions=targets_are_predictions,
                                             dataset_path=dataset_path,
                                             data_preprocessors=data_preprocessors,
                                             batch_size=batch_size,

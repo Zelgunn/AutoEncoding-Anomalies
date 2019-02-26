@@ -1,13 +1,12 @@
 from keras.models import Model as KerasModel
 from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input
-from keras.layers import Conv2D, Deconv2D, Conv3D, Deconv3D
-from keras.layers import MaxPooling2D, MaxPooling3D, AveragePooling2D, AveragePooling3D, UpSampling2D, UpSampling3D
+from keras.layers import Conv3D, Deconv3D, MaxPooling3D, AveragePooling3D, UpSampling3D
+from keras.layers import Concatenate
 from keras.initializers import VarianceScaling
-from keras.regularizers import l1, l2
+from keras.regularizers import l2
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
 from keras.backend import binary_crossentropy
-from keras.utils import conv_utils
 from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
@@ -17,8 +16,7 @@ import json
 import copy
 from typing import List, Any
 
-from layers import ResBlock2D, ResBlock3D, ResBlock2DTranspose, ResBlock3DTranspose, SpectralNormalization
-from layers import DenseBlock2D, DenseBlock3D
+from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
@@ -26,17 +24,6 @@ from callbacks import ImageCallback, AUCCallback, CallbackModel
 
 
 # region Containers
-class AutoEncoderScale(object):
-    def __init__(self,
-                 encoder: KerasModel,
-                 decoder: KerasModel,
-                 autoencoder: KerasModel,
-                 **kwargs):
-        self.encoder = encoder
-        self.decoder = decoder
-        self.autoencoder = autoencoder
-
-
 class LayerBlock(object):
     def __init__(self,
                  conv_layer: Layer,
@@ -79,6 +66,17 @@ class LayerBlock(object):
 
         return layer
 
+    def compute_output_shape(self, input_shape):
+        if self.upsampling_layer is not None:
+            input_shape = self.upsampling_layer.compute_output_shape(input_shape)
+
+        input_shape = self.conv.compute_output_shape(input_shape)
+
+        if self.pooling is not None:
+            input_shape = self.pooling.compute_output_shape(input_shape)
+
+        return input_shape
+
 
 class LayerStack(object):
     def __init__(self):
@@ -99,6 +97,11 @@ class LayerStack(object):
 
         return output_layer
 
+    def compute_output_shape(self, input_shape):
+        for layer in self.layers:
+            input_shape = layer.compute_output_shape(input_shape)
+        return input_shape
+
 
 # endregion
 
@@ -112,11 +115,20 @@ class AutoEncoderBaseModel(ABC):
         self.image_summaries_max_outputs = 3
 
         self.layers_built = False
-        self.embeddings_layer = None
+        self.embeddings_layer: Layer = None
         self.encoder_layers: List[LayerStack] = []
         self.decoder_layers: List[LayerStack] = []
 
+        self._encoder: KerasModel = None
+        self._decoder: KerasModel = None
+        self._autoencoder: KerasModel = None
+
+        self.decoder_input_layer = None
+        self.reconstructor_output = None
+        self.predictor_output = None
+
         self.config: dict = None
+        self.depth: int = None
 
         self.input_shape = None
         self.output_shape = None
@@ -124,14 +136,8 @@ class AutoEncoderBaseModel(ABC):
 
         self.embeddings_size = None
         self.use_dense_embeddings = None
-        self.embeddings_shape = None
-        self.embeddings_filters = None
 
-        self.scales_count = 0
-        self._scales: List[AutoEncoderScale] = []
-        self._scales_input_shapes = None
-        self._scales_output_shapes = None
-        self._true_outputs_placeholders = None
+        self._true_outputs_placeholder = None
 
         self.default_activation = None
         self.embeddings_activation = None
@@ -172,33 +178,17 @@ class AutoEncoderBaseModel(ABC):
         # region Embeddings
         self.embeddings_size = self.config["embeddings_size"]
         self.use_dense_embeddings = self.config["use_dense_embeddings"] == "True"
-
-        embeddings_reshape = self.config["embeddings_reshape"]
-        embeddings_reshape_dim = np.prod(embeddings_reshape)
-
-        assert (self.embeddings_size % embeddings_reshape_dim) == 0, \
-            "Embeddings size must be a multiple of {0} " \
-            "(total dimension of embeddings reshape)".format(embeddings_reshape_dim)
-
-        self.embeddings_filters = self.embeddings_size // embeddings_reshape_dim
-        self.embeddings_shape = embeddings_reshape + [self.embeddings_filters]
         # endregion
 
-        # region Scales
-        self.scales_count = len(self.config["encoder"])
-        self._scales: List[AutoEncoderScale] = [None] * self.scales_count
-        self._true_outputs_placeholders = [None] * self.scales_count
-        # endregion
+        self.depth = len(self.config["encoder"])
+        self._true_outputs_placeholder = None
 
         # region I/O shapes
         self.input_shape = self.config["input_shape"]
         assert 3 <= len(self.input_shape) <= 4
-
         self.channels_count = self.input_shape[-1]
-
-        self.output_shape = self.output_shape_by_scale[-1]
-        print(self.output_shape)
-        assert 3 <= len(self.output_shape) <= 4
+        self.output_shape = copy.copy(self.input_shape)
+        self.output_shape[0] *= 2
         # endregion
 
         # region Activations
@@ -247,7 +237,7 @@ class AutoEncoderBaseModel(ABC):
     # region Layers
     def build_layers(self):
         for stack_info in self.config["encoder"]:
-            stack = self.build_conv_stack(stack_info, self.encoder_rank)
+            stack = self.build_conv_stack(stack_info)
             self.encoder_layers.append(stack)
 
         if self.use_dense_embeddings:
@@ -255,31 +245,31 @@ class AutoEncoderBaseModel(ABC):
                                           kernel_regularizer=self.weight_decay_regularizer,
                                           bias_regularizer=self.weight_decay_regularizer)
         else:
-            conv = conv_nd["conv_block"][False][self.encoder_rank]
-            self.embeddings_layer = conv(filters=self.embeddings_filters, kernel_size=3, padding="same",
+            conv = conv_type["conv_block"][False]
+            self.embeddings_layer = conv(filters=self.embeddings_size, kernel_size=3, padding="same",
                                          kernel_initializer=self.weights_initializer,
                                          kernel_regularizer=self.weight_decay_regularizer,
                                          bias_regularizer=self.weight_decay_regularizer)
 
         for stack_info in self.config["decoder"]:
-            stack = self.build_deconv_stack(stack_info, self.decoder_rank)
+            stack = self.build_deconv_stack(stack_info)
             self.decoder_layers.append(stack)
         self.layers_built = True
 
-    def build_conv_stack(self, stack_info: dict, rank: int, transpose=False) -> LayerStack:
+    def build_conv_stack(self, stack_info: dict, transpose=False) -> LayerStack:
         if self.block_type_name == "dense_block":
-            return self.build_dense_block(stack_info, rank, transpose)
+            return self.build_dense_block(stack_info, transpose)
         else:
-            return self.build_layer_stack(stack_info, rank, transpose)
+            return self.build_layer_stack(stack_info, transpose)
 
-    def build_deconv_stack(self, stack_info: dict, rank: int) -> LayerStack:
-        return self.build_conv_stack(stack_info, rank, transpose=True)
+    def build_deconv_stack(self, stack_info: dict) -> LayerStack:
+        return self.build_conv_stack(stack_info, transpose=True)
 
-    def build_dense_block(self, stack_info: dict, rank: int, transpose=False) -> LayerStack:
+    def build_dense_block(self, stack_info: dict, transpose=False) -> LayerStack:
         depth: int = stack_info["depth"]
         stack = LayerStack()
 
-        conv_block_type = self.get_block_type(transpose, rank)
+        conv_block_type = self.get_block_type(transpose)
         conv_layer = conv_block_type(kernel_size=stack_info["kernel_size"],
                                      growth_rate=12,
                                      depth=depth,
@@ -297,9 +287,9 @@ class AutoEncoderBaseModel(ABC):
         size = stack_info["strides"]
         if transpose:
             pool_layer = None
-            upsampling_layer = upsampling_nd[rank](size=size)
+            upsampling_layer = UpSampling3D(size=size)
         else:
-            pool_layer = pool_nd[self.pooling][rank](pool_size=size)
+            pool_layer = pool_type[self.pooling](pool_size=size)
             upsampling_layer = None
 
         activation = AutoEncoderBaseModel.get_activation(self.default_activation)
@@ -310,7 +300,7 @@ class AutoEncoderBaseModel(ABC):
 
         return stack
 
-    def build_layer_stack(self, stack_info: dict, rank: int, transpose=False) -> LayerStack:
+    def build_layer_stack(self, stack_info: dict, transpose=False) -> LayerStack:
         depth: int = stack_info["depth"]
         stack = LayerStack()
 
@@ -330,9 +320,9 @@ class AutoEncoderBaseModel(ABC):
                 size = stack_info["strides"]
                 if transpose:
                     pool_layer = None
-                    upsampling_layer = upsampling_nd[rank](size=size)
+                    upsampling_layer = UpSampling3D(size=size)
                 else:
-                    pool_layer = pool_nd[self.pooling][rank](pool_size=size)
+                    pool_layer = pool_type[self.pooling](pool_size=size)
                     upsampling_layer = None
             # endregion
 
@@ -349,7 +339,7 @@ class AutoEncoderBaseModel(ABC):
             else:
                 conv_layer_kwargs["padding"] = stack_info["padding"] if "padding" in stack_info else "same"
 
-            conv_block_type = self.get_block_type(transpose, rank)
+            conv_block_type = self.get_block_type(transpose)
             conv_layer = conv_block_type(**conv_layer_kwargs)
             # endregion
 
@@ -366,55 +356,70 @@ class AutoEncoderBaseModel(ABC):
 
         return stack
 
-    def build_adaptor_layer(self, channels: int, rank: int):
-        layer_class = conv_nd["conv_block"][False][rank]
-        return layer_class(filters=channels, kernel_size=1, strides=1, padding="same",
-                           kernel_initializer=self.weights_initializer)
-
-    def get_block_type(self, transpose: bool, rank: int):
+    def get_block_type(self, transpose: bool):
         if self.block_type_name not in types_with_transpose:
             transpose = False
 
-        return conv_nd[self.block_type_name][transpose][rank]
+        return conv_type[self.block_type_name][transpose]
+
+    def compute_embeddings_input_shape(self):
+        embeddings_shape = (None, *self.input_shape)
+
+        for stack in self.encoder_layers:
+            embeddings_shape = stack.compute_output_shape(embeddings_shape)
+
+        return embeddings_shape[1:]
+
+    def compute_embeddings_output_shape(self):
+        embeddings_shape = self.compute_embeddings_input_shape()
+        if self.use_dense_embeddings:
+            embeddings_shape = embeddings_shape[:-1]
+            embeddings_shape_prod = np.prod(embeddings_shape)
+            assert (self.embeddings_size % embeddings_shape_prod) == 0
+            embeddings_filters = self.embeddings_size // embeddings_shape_prod
+            embeddings_shape = (*embeddings_shape, embeddings_filters)
+        else:
+            embeddings_shape = (None, *embeddings_shape)
+            embeddings_shape = self.embeddings_layer.compute_output_shape(embeddings_shape)
+            embeddings_shape = embeddings_shape[1:]
+        return embeddings_shape
+
+    def compute_decoder_input_shape(self):
+        return self.compute_embeddings_output_shape()
 
     # endregion
 
     @abstractmethod
-    def build_for_scale(self, scale: int):
+    def build(self):
         raise NotImplementedError
 
-    # region Encoder models
     @abstractmethod
-    def build_encoder_for_scale(self, scale: int):
+    def build_encoder(self):
         raise NotImplementedError
 
-    def link_encoder_stack(self, input_layer, scale: int, stack_index: int):
-        use_dropout = stack_index > 0
-        stack_index = stack_index + self.scales_count - scale - 1
-        return self.encoder_layers[stack_index](input_layer, use_dropout)
-
-    # endregion
-
-    # region Decoder models
-    def build_decoder_for_scale(self, scale: int):
-        decoder_name = "Decoder_scale_{0}".format(scale)
-        input_layer = Input(self.embeddings_shape)
+    def build_decoder_half(self, input_layer):
         layer = input_layer
 
-        for i in range(scale + 1):
-            layer = self.link_decoder_stack(layer, i)
+        for i in range(self.depth):
+            use_dropout = i < (self.depth - 1)
+            layer = self.decoder_layers[i](layer, use_dropout)
 
-        layer = self.build_adaptor_layer(self.channels_count, self.decoder_rank)(layer)
+        transition_layer_class = conv_type["conv_block"][False]
+        layer = transition_layer_class(filters=self.channels_count, kernel_size=1,
+                                       kernel_initializer=self.weights_initializer)(layer)
+
         output_layer = self.get_activation(self.output_activation)(layer)
+        return output_layer
 
-        decoder = KerasModel(inputs=input_layer, outputs=output_layer, name=decoder_name)
-        return decoder
+    def build_decoder(self):
+        self.decoder_input_layer = Input(self.compute_decoder_input_shape())
 
-    def link_decoder_stack(self, input_layer, layer_index: int):
-        use_dropout = layer_index > 0
-        return self.decoder_layers[layer_index](input_layer, use_dropout)
+        self.reconstructor_output = self.build_decoder_half(self.decoder_input_layer)
+        self.predictor_output = self.build_decoder_half(self.decoder_input_layer)
 
-    # endregion
+        output_layer = Concatenate(axis=1)([self.reconstructor_output, self.predictor_output])
+
+        self._decoder = KerasModel(inputs=self.decoder_input_layer, outputs=output_layer, name="Decoder")
 
     @staticmethod
     def get_activation(activation_config: dict):
@@ -440,37 +445,17 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     # region Model(s) (Getters)
+    def get_true_outputs_placeholder(self) -> tf.Tensor:
+        if self._true_outputs_placeholder is None:
+            pred_output = self.autoencoder.output
+            self._true_outputs_placeholder = tf.placeholder(dtype=pred_output.dtype,
+                                                            shape=[None, *self.output_shape],
+                                                            name="true_outputs_placeholder")
 
-    def get_scale(self, scale: int) -> AutoEncoderScale:
-        if self._scales[scale] is None:
-            self.build_for_scale(scale)
-        return self._scales[scale]
+        return self._true_outputs_placeholder
 
-    def get_autoencoder_model_at_scale(self, scale: int) -> KerasModel:
-        return self.get_scale(scale).autoencoder
-
-    def get_encoder_model_at_scale(self, scale: int) -> KerasModel:
-        return self.get_scale(scale).encoder
-
-    def get_decoder_model_at_scale(self, scale: int) -> KerasModel:
-        return self.get_scale(scale).decoder
-
-    def get_true_outputs_placeholder(self, scale: int) -> tf.Tensor:
-        if self._true_outputs_placeholders[scale] is None:
-            pred_output = self.get_autoencoder_model_at_scale(scale).output
-            output_shape = self.output_shape_by_scale[scale]
-            output_shape[-1] = self.channels_count
-
-            true_outputs_placeholder = tf.placeholder(dtype=pred_output.dtype, shape=[None, *output_shape],
-                                                      name="true_outputs_placeholder_scale_{0}".format(scale))
-            self._true_outputs_placeholders[scale] = true_outputs_placeholder
-
-        return self._true_outputs_placeholders[scale]
-
-    def compute_conv_depth(self, scale: int = None):
-        if scale is None:
-            scale = self.scales_count - 1
-        models = self.get_autoencoder_model_at_scale(scale).layers
+    def compute_conv_depth(self):
+        models = self.autoencoder.layers
 
         depth = 0
         for model in models:
@@ -488,15 +473,32 @@ class AutoEncoderBaseModel(ABC):
                             depth += 1
         return depth
 
+    @property
+    def autoencoder(self):
+        if self._autoencoder is None:
+            self.build()
+        return self._autoencoder
+
+    @property
+    def encoder(self):
+        if self._encoder is None:
+            self.build_encoder()
+        return self._encoder
+
+    @property
+    def decoder(self):
+        if self._decoder is None:
+            self.build_decoder()
+        return self._decoder
+
     # endregion
 
     # region Training
     def train(self,
               database: Database,
-              batch_size: int or List[int] = 64,
+              batch_size: int = 64,
               epoch_length: int = None,
-              epochs: int or List[int] = 1,
-              **kwargs):
+              epochs: int = 1):
         assert isinstance(batch_size, int) or isinstance(batch_size, list)
         assert isinstance(epochs, int) or isinstance(epochs, list)
 
@@ -508,104 +510,42 @@ class AutoEncoderBaseModel(ABC):
         self.log_dir = self.__class__.make_log_dir(database)
         print("Logs directory : '{}'".format(self.log_dir))
 
-        min_scale = kwargs.pop("min_scale") if "min_scale" in kwargs else 0
-        max_scale = kwargs.pop("max_scale") if "max_scale" in kwargs else self.scales_count - 1
-
-        model = self.get_autoencoder_model_at_scale(max_scale)
-        self.save_model_info(self.log_dir, model)
-
-        if isinstance(batch_size, int):
-            batch_size = [batch_size] * (max_scale + 1)
-
-        if isinstance(epochs, int):
-            epochs = [epochs] * (max_scale + 1)
+        self.save_models_info(self.log_dir)
 
         samples_count = database.train_dataset.samples_count
         if epoch_length is None:
-            epoch_length = [samples_count // scale_batch_size for scale_batch_size in batch_size]
+            epoch_length = samples_count // batch_size
 
         # region Pre-train
-        common_callbacks = self.build_common_callbacks()
-        common_callbacks = self.setup_callbacks(common_callbacks, model, batch_size[0], epochs[0],
-                                                epoch_length, samples_count)
+        callbacks = self.build_callbacks(database)
+        callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length, samples_count)
 
-        common_callbacks.on_train_begin()
-        if ("pre_train" not in kwargs) or kwargs["pre_train"]:
-            self.pre_train_loop(database, common_callbacks, batch_size, epoch_length, epochs, min_scale, max_scale)
-        # endregion
-
-        # region Max scale training
-        AutoEncoderBaseModel.update_callbacks_param(common_callbacks, "epochs", epochs[max_scale] + self.epochs_seen)
-        anomaly_callbacks = self.build_anomaly_callbacks(database, scale=max_scale)
-        anomaly_callbacks = self.setup_callbacks(anomaly_callbacks, model, batch_size[max_scale], epochs[max_scale],
-                                                 epoch_length, samples_count)
-
-        callbacks = CallbackList(common_callbacks.callbacks + anomaly_callbacks.callbacks)
-        self.print_training_model_at_scale_header(max_scale, max_scale)
-
-        anomaly_callbacks.on_train_begin()
+        callbacks.on_train_begin()
         try:
-            self.train_loop(database, callbacks, batch_size[max_scale], epoch_length, epochs[max_scale], max_scale)
+            self.train_loop(database, callbacks, batch_size, epoch_length, epochs)
         except KeyboardInterrupt:
             print("==== Training was stopped by a Keyboard Interrupt ====")
         print("============== Saving models weights... ==============")
-        self.save_weights("weights_{}".format(self.epochs_seen), max_scale)
+        self.save_weights("weights".format(self.epochs_seen))
         print("======================= Done ! =======================")
         callbacks.on_train_end()
         # endregion
 
-    def resize_database(self, database: Database,
-                        scale: int) -> Database:
-        input_image_size = self.input_image_size_by_scale(scale)
-        input_sequence_length = self.input_sequence_length_by_scale(scale)
-        output_sequence_length = self.output_sequence_length_by_scale(scale)
-        database = database.resized_to_scale(input_image_size, input_sequence_length, output_sequence_length)
+    def resize_database(self, database: Database) -> Database:
+        database = database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
         return database
 
-    def pre_train_loop(self,
-                       database: Database,
-                       callbacks: CallbackList,
-                       batch_size: List[int],
-                       epoch_length,
-                       epochs: List[int],
-                       min_scale: int,
-                       max_scale: int):
-        for scale in range(min_scale, max_scale):
-            AutoEncoderBaseModel.update_callbacks_param(callbacks, "epochs", epochs[scale] + self.epochs_seen)
-            AutoEncoderBaseModel.update_callbacks_param(callbacks, "batch_size", batch_size[scale])
-            self.print_training_model_at_scale_header(scale, max_scale)
-            self.pre_train_scale(database, callbacks, scale, batch_size[scale], epoch_length, epochs[scale])
-
-    def pre_train_scale(self,
-                        database: Database,
-                        callbacks: CallbackList,
-                        scale: int,
-                        batch_size: int,
-                        epoch_length: int,
-                        epochs: int):
-        self.train_loop(database, callbacks, batch_size, epoch_length, epochs, scale)
-
-    def train_loop(self,
-                   database: Database,
-                   callbacks: CallbackList,
-                   batch_size: int,
-                   epoch_length: int,
-                   epochs: int,
-                   scale: int):
-        database = self.resize_database(database, scale)
+    def train_loop(self, database: Database, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
+        database = self.resize_database(database)
         database.train_dataset.epoch_length = epoch_length
         database.train_dataset.batch_size = batch_size
         database.test_dataset.batch_size = batch_size
 
         for _ in range(epochs):
-            self.train_epoch(database, scale, callbacks)
+            self.train_epoch(database, callbacks)
 
-    def train_epoch(self,
-                    database: Database,
-                    scale: int = None,
-                    callbacks: CallbackList = None):
+    def train_epoch(self, database: Database, callbacks: CallbackList = None):
         epoch_length = len(database.train_dataset)
-        model = self.get_autoencoder_model_at_scale(scale)
 
         callbacks.on_epoch_begin(self.epochs_seen)
 
@@ -615,7 +555,7 @@ class AutoEncoderBaseModel(ABC):
             batch_logs = {"batch": batch_index, "size": x.shape[0]}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            results = model.train_on_batch(x=x, y=y)
+            results = self.autoencoder.train_on_batch(x=x, y=y)
 
             if "metrics" in self.config:
                 batch_logs["loss"] = results[0]
@@ -626,18 +566,17 @@ class AutoEncoderBaseModel(ABC):
 
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(model, database, callbacks)
+        self.on_epoch_end(database, callbacks)
 
     def on_epoch_end(self,
-                     base_model: KerasModel,
                      database: Database,
                      callbacks: CallbackList = None,
                      epoch_logs: dict = None):
         if epoch_logs is None:
             epoch_logs = {}
 
-        out_labels = base_model.metrics_names
-        val_outs = base_model.evaluate_generator(database.test_dataset)
+        out_labels = self.autoencoder.metrics_names
+        val_outs = self.autoencoder.evaluate_generator(database.test_dataset)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
@@ -648,44 +587,30 @@ class AutoEncoderBaseModel(ABC):
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
         self.epochs_seen += 1
 
-    def save_weights(self, base_filename, scale):
-        encoder = self.get_encoder_model_at_scale(scale)
-        decoder = self.get_decoder_model_at_scale(scale)
+    def save_weights(self, base_filename):
+        self._save_model_weights(self.encoder, base_filename, "encoder")
+        self._save_model_weights(self.decoder, base_filename, "decoder")
 
-        self._save_model_weights(encoder, base_filename, scale, "encoder")
-        self._save_model_weights(decoder, base_filename, scale, "decoder")
-
-    def _save_model_weights(self, model: KerasModel, base_filename, scale, name):
-        filepath = "{}{sep}{}_{}_{}.h5".format(self.log_dir, base_filename, name, scale, sep=os.path.sep)
+    def _save_model_weights(self, model: KerasModel, base_filename, name):
+        filepath = "{}{sep}{}_{}.h5".format(self.log_dir, base_filename, name, sep=os.path.sep)
         model.save_weights(filepath)
 
-    def load_weights(self, base_filepath, scale):
-        encoder = self.get_encoder_model_at_scale(scale)
-        decoder = self.get_decoder_model_at_scale(scale)
-
-        AutoEncoderBaseModel._load_model_weights(encoder, base_filepath, scale, "encoder")
-        AutoEncoderBaseModel._load_model_weights(decoder, base_filepath, scale, "decoder")
+    def load_weights(self, base_filepath):
+        AutoEncoderBaseModel._load_model_weights(self.encoder, base_filepath, "encoder")
+        AutoEncoderBaseModel._load_model_weights(self.decoder, base_filepath, "decoder")
 
     @staticmethod
-    def _load_model_weights(model: KerasModel, base_filepath, scale, name):
-        filepath = "{}_{}_{}.h5".format(base_filepath, name, scale)
+    def _load_model_weights(model: KerasModel, base_filepath, name):
+        filepath = "{}_{}.h5".format(base_filepath, name)
         model.load_weights(filepath)
-
-    def print_training_model_at_scale_header(self,
-                                             scale: int,
-                                             max_scale: int):
-        scale_shape = self.input_image_size_by_scale(scale)
-        tmp = len(str(scale_shape[0])) + len(str(scale_shape[1]))
-        print("=============================================" + "=" * tmp)
-        print("===== Training model at scale {0}x{1} (n°{2}/{3}) =====".format(scale_shape[0],
-                                                                               scale_shape[1],
-                                                                               scale, max_scale))
-        print("=============================================" + "=" * tmp)
 
     # endregion
 
     # region Callbacks
-    def build_common_callbacks(self):
+    def build_callbacks(self, database: Database):
+        return self.build_common_callbacks() + self.build_anomaly_callbacks(database)
+
+    def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
         self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq="epoch")
 
@@ -700,17 +625,15 @@ class AutoEncoderBaseModel(ABC):
 
         return common_callbacks
 
-    def build_anomaly_callbacks(self,
-                                database: Database,
-                                scale: int = None):
+    def build_anomaly_callbacks(self, database: Database) -> List[Callback]:
         # region Getting database/datasets
-        database = self.resize_database(database, scale)
+        database = self.resize_database(database)
         test_dataset = database.test_dataset
         train_dataset = database.train_dataset
         # endregion
 
-        train_image_callback = self.build_auto_encoding_callback(train_dataset, "train", self.tensorboard, scale=scale)
-        test_image_callback = self.build_auto_encoding_callback(test_dataset, "test", self.tensorboard, scale=scale)
+        train_image_callback = self.build_auto_encoding_callback(train_dataset, "train", self.tensorboard)
+        test_image_callback = self.build_auto_encoding_callback(test_dataset, "test", self.tensorboard)
 
         # region Getting samples used for AUC callbacks
         samples = test_dataset.sample(batch_size=512, seed=16, max_shard_count=8, return_labels=True)
@@ -719,7 +642,7 @@ class AutoEncoderBaseModel(ABC):
         # endregion
 
         # region Frame level error AUC (ROC)
-        frame_predictions_model = self.build_frame_level_error_callback_model(scale)
+        frame_predictions_model = self.build_frame_level_error_callback_model()
         frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
                                          auc_images, frame_labels,
                                          plot_size=(128, 128), batch_size=32,
@@ -731,7 +654,6 @@ class AutoEncoderBaseModel(ABC):
         # region Pixel level error AUC (ROC)
         # TODO : Check labels size in UCSDDatabase
         # if pixel_labels is not None:
-        #     pixel_predictions_model = self.build_pixel_level_error_callback_model(scale)
         #     pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
         #                                      auc_images, pixel_labels,
         #                                      plot_size=(128, 128), batch_size=32,
@@ -743,13 +665,12 @@ class AutoEncoderBaseModel(ABC):
 
     def setup_callbacks(self,
                         callbacks: CallbackList or List[Callback],
-                        model: KerasModel,
                         batch_size: int,
                         epochs: int,
                         epoch_length: int,
                         samples_count: int) -> CallbackList:
         callbacks = CallbackList(callbacks)
-        callbacks.set_model(model)
+        callbacks.set_model(self.autoencoder)
         callbacks.set_params({
             'batch_size': batch_size,
             'epochs': epochs,
@@ -757,12 +678,12 @@ class AutoEncoderBaseModel(ABC):
             'samples': samples_count,
             'verbose': 1,
             'do_validation': True,
-            'metrics': self.callback_metrics(model),
+            'metrics': self.callback_metrics(),
         })
         return callbacks
 
-    def callback_metrics(self, model: KerasModel):
-        metrics_names = model.metrics_names
+    def callback_metrics(self):
+        metrics_names = self.autoencoder.metrics_names
         validation_callbacks = ["val_{0}".format(name) for name in metrics_names]
         callback_metrics = copy.copy(metrics_names) + validation_callbacks
         return callback_metrics
@@ -771,23 +692,20 @@ class AutoEncoderBaseModel(ABC):
                                      dataset: Dataset,
                                      name: str,
                                      tensorboard: TensorBoard,
-                                     frequency="epoch",
-                                     scale: int = None) -> ImageCallback:
+                                     frequency="epoch") -> ImageCallback:
 
         images = dataset.get_batch(self.image_summaries_max_outputs, seed=0, apply_preprocess_step=False,
                                    max_shard_count=self.image_summaries_max_outputs)
 
-        autoencoder = self.get_autoencoder_model_at_scale(scale)
-
         # region Placeholders
-        true_outputs_placeholder = self.get_true_outputs_placeholder(scale)
-        summary_inputs = [autoencoder.input, true_outputs_placeholder]
+        true_outputs_placeholder = self.get_true_outputs_placeholder()
+        summary_inputs = [self.autoencoder.input, true_outputs_placeholder]
         # endregion
 
         # region Image/Video normalization (uint8)
-        inputs = self.normalize_image_tensor(autoencoder.input)
+        inputs = self.normalize_image_tensor(self.autoencoder.input)
         true_outputs = self.normalize_image_tensor(true_outputs_placeholder)
-        pred_outputs = self.normalize_image_tensor(autoencoder.output)
+        pred_outputs = self.normalize_image_tensor(self.autoencoder.output)
         # endregion
 
         io_delta = (pred_outputs - true_outputs) * (tf.cast(pred_outputs < true_outputs, dtype=tf.uint8) * 254 + 1)
@@ -811,24 +729,22 @@ class AutoEncoderBaseModel(ABC):
             normalized = tf.cast(normalized * uint8_max_constant, tf.uint8)
         return normalized
 
-    def build_pixel_level_error_callback_model(self, scale: int = None):
-        model = self.get_autoencoder_model_at_scale(scale)
-        true_outputs = self.get_true_outputs_placeholder(scale)
+    def build_pixel_level_error_callback_model(self):
+        true_outputs = self.get_true_outputs_placeholder()
 
-        error = tf.abs(model.output - true_outputs)
+        error = tf.square(self.autoencoder.output - true_outputs)
 
-        pixel_predictions_model = CallbackModel([model.input, true_outputs], error)
+        pixel_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], error)
 
         return pixel_predictions_model
 
-    def build_frame_level_error_callback_model(self, scale: int = None):
-        model = self.get_autoencoder_model_at_scale(scale)
-        true_outputs = self.get_true_outputs_placeholder(scale)
+    def build_frame_level_error_callback_model(self):
+        true_outputs = self.get_true_outputs_placeholder()
 
-        squared_delta = tf.abs(model.output - true_outputs)
+        squared_delta = tf.square(self.autoencoder.output - true_outputs)
         average_error = tf.reduce_max(squared_delta, axis=[-3, -2, -1])
 
-        frame_predictions_model = CallbackModel([model.input, true_outputs], average_error)
+        frame_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], average_error)
 
         return frame_predictions_model
 
@@ -854,81 +770,6 @@ class AutoEncoderBaseModel(ABC):
 
     # endregion
 
-    # region I/O Shape by scale
-    @property
-    def input_shape_by_scale(self):
-        if self._scales_input_shapes is None:
-            input_shape = self.input_shape
-            self._scales_input_shapes = []
-
-            for layer_info in self.config["encoder"]:
-                self._scales_input_shapes.append(input_shape)
-
-                space = input_shape[:-1]
-                kernel_size = conv_utils.normalize_tuple(layer_info["kernel_size"], self.encoder_rank, "kernel_size")
-                strides = conv_utils.normalize_tuple(layer_info["strides"], self.encoder_rank, "strides")
-
-                new_space = []
-                for i in range(len(space)):
-                    padding = layer_info["padding"] if "padding" in layer_info else "same"
-                    dim = conv_utils.conv_output_length(space[i],
-                                                        kernel_size[i],
-                                                        padding=padding,
-                                                        stride=strides[i])
-                    new_space.append(dim)
-                input_shape = [*new_space, layer_info["filters"]]
-
-            self._scales_input_shapes.reverse()
-        return self._scales_input_shapes
-
-    def input_image_size_by_scale(self, scale):
-        shape = self.input_shape_by_scale[scale]
-        return shape[self.encoder_rank - 2:-1]
-
-    def input_sequence_length_by_scale(self, scale):
-        if self.encoder_rank == 2:
-            return None
-        return self.input_shape_by_scale[scale][0]
-
-    @property
-    def output_shape_by_scale(self):
-        if self._scales_output_shapes is None:
-            output_shape = self.embeddings_shape
-            self._scales_output_shapes = []
-
-            for j in range(self.scales_count):
-                layer_info = self.config["decoder"][j]
-                space = output_shape[:-1]
-                kernel_size = conv_utils.normalize_tuple(layer_info["kernel_size"], self.decoder_rank, "kernel_size")
-                strides = conv_utils.normalize_tuple(layer_info["strides"], self.decoder_rank, "strides")
-
-                new_space = []
-                for i in range(len(space)):
-                    padding = layer_info["padding"] if "padding" in layer_info else "same"
-                    dim = conv_utils.deconv_length(space[i],
-                                                   strides[i],
-                                                   kernel_size[i],
-                                                   padding=padding,
-                                                   output_padding=None)
-                    new_space.append(dim)
-                filters = self.config["decoder"][j + 1]["filters"] if j < (
-                        self.scales_count - 1) else self.channels_count
-                output_shape = [*new_space, filters]
-                self._scales_output_shapes.append(output_shape)
-
-        return self._scales_output_shapes
-
-    def output_image_size_by_scale(self, scale):
-        shape = self.output_shape_by_scale[scale]
-        return shape[self.decoder_rank - 2:-1]
-
-    def output_sequence_length_by_scale(self, scale):
-        if self.decoder_rank == 2:
-            return None
-        return self.output_shape_by_scale[scale][0]
-
-    # endregion
-
     # region Log dir
 
     @classmethod
@@ -939,49 +780,46 @@ class AutoEncoderBaseModel(ABC):
         log_dir = get_log_dir(base_dir)
         return log_dir
 
-    def save_model_info(self,
-                        log_dir: str,
-                        model: KerasModel):
+    def save_models_info(self, log_dir: str):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
-        keras_config_filename = os.path.join(log_dir, "{0}_keras_config.json".format(model.name))
+        AutoEncoderBaseModel.save_model_info(log_dir, self.encoder)
+        AutoEncoderBaseModel.save_model_info(log_dir, self.decoder)
+        AutoEncoderBaseModel.save_model_info(log_dir, self.autoencoder)
+
+        config_filename = os.path.join(log_dir, "global_config.json")
+        with open(config_filename, "w") as file:
+            json.dump(self.config, file)
+
+    @staticmethod
+    def save_model_info(log_dir: str, model: KerasModel):
+        keras_config_filename = os.path.join(log_dir, "{}_keras_config.json".format(model.name))
         with open(keras_config_filename, "w") as file:
             file.write(model.to_json())
 
-        summary_filename = os.path.join(log_dir, "{0}_summary.txt".format(model.name))
+        summary_filename = os.path.join(log_dir, "{}_summary.txt".format(model.name))
         with open(summary_filename, "w") as file:
             model.summary(print_fn=lambda x: file.write(x + '\n'))
-
-        config_filename = os.path.join(log_dir, "{0}_config.json".format(model.name))
-        with open(config_filename, "w") as file:
-            json.dump(self.config, file)
 
     # endregion
 
     # region Properties
     @property
-    def image_size(self):
-        if self.input_is_sequence:
-            return self.input_shape[1:3]
-        else:
-            return self.input_shape[:2]
+    def input_image_size(self):
+        return self.input_shape[1:-1]
 
     @property
-    def encoder_rank(self):
-        return len(self.input_shape) - 1
+    def input_sequence_length(self):
+        return self.input_shape[0]
 
     @property
-    def decoder_rank(self):
-        return len(self.embeddings_shape) - 1
+    def output_image_size(self):
+        return self.output_shape[1:-1]
 
     @property
-    def input_is_sequence(self):
-        return self.encoder_rank > 2
-
-    @property
-    def output_is_sequence(self):
-        return self.decoder_rank > 2
+    def output_sequence_length(self):
+        return self.output_shape[0]
     # endregion
 
 
@@ -1026,15 +864,10 @@ metrics_dict = {"L1": absolute_error,
 # region Dynamic choice between Conv2D/Deconv2D and Conv3D/Deconv3D
 types_with_transpose = ["conv_block", "residual_block"]
 
-conv_nd = {"conv_block": {False: {2: Conv2D, 3: Conv3D},
-                          True: {2: Deconv2D, 3: Deconv3D}},
-           "residual_block": {False: {2: ResBlock2D, 3: ResBlock3D},
-                              True: {2: ResBlock2DTranspose, 3: ResBlock3DTranspose}},
-           "dense_block": {False: {2: DenseBlock2D, 3: DenseBlock3D}}
-           }
+conv_type = {"conv_block": {False: Conv3D, True: Deconv3D},
+             "residual_block": {False: ResBlock3D, True: ResBlock3DTranspose},
+             "dense_block": {False: DenseBlock3D}}
 
-pool_nd = {"max": {2: MaxPooling2D, 3: MaxPooling3D},
-           "average": {2: AveragePooling2D, 3: AveragePooling3D}}
-
-upsampling_nd = {2: UpSampling2D, 3: UpSampling3D}
+pool_type = {"max": MaxPooling3D,
+             "average": AveragePooling3D}
 # endregion

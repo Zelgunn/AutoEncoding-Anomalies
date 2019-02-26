@@ -1,30 +1,40 @@
 {
-    "input_shape": [192, 256, 1],
-    "embeddings_size": 120,
-    "embeddings_reshape": [3, 4],
-    "use_dense_embeddings": "False",
-    "use_resblock": "True",
-    "use_spectral_norm": "True",
+    "input_shape": [16, 192, 256, 1],
+    "embeddings_size": 192,
+    "use_dense_embeddings": "True",
     "encoder": [
-        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 128, "kernel_size": 3, "strides": 2, "padding": "same"}
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 1, "depth": 8}
     ],
     "decoder": [
-        {"filters": 128, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same"}
+        {"filters": 64, "kernel_size": 3, "strides": 1, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 8}
     ],
+
+    "block_type": "conv_block",
+    "pooling": "average",
+    "upsampling": "upsampling",
+    "use_batch_normalization": "False",
+    "use_spectral_norm": "False",
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
-    "output_activation": {"name": "tanh"},
-    "optimizer": {"name": "Adam", "lr": 1e-5, "beta_1": 0.0, "beta_2": 0.99, "decay": 1e-8},
+    "output_activation": {"name": "sigmoid"},
+    "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "normal"},
+    "residual_scaling": "1.0",
+    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
+    "reconstruction_loss": "L1",
+    "metrics": ["mean_squared_error"],
+    "pixel_level_labels_size": [8, 16],
+    "data_generators": {
+        "train": {"dropout_rate": 0.0},
+        "test": {"dropout_rate": 0.0}
+    },
+    "weight_decay" : 1e-4,
+
     "decoder_steps": 2,
     "loss_weights": {
         "encoder": {
@@ -36,10 +46,5 @@
             "fake_data": {"reconstruction": 1000.0, "divergence": 1.0}
         }
     },
-    "reconstruction_metrics": {"real": "L1", "fake": "cos"},
-    "pixel_level_labels_size": [16, 24],
-    "data_generators": {
-        "train": {"dropout_rate": 0.2},
-        "test": {"dropout_rate": 0.0}
-    }
+    "reconstruction_metrics": {"real": "L1", "fake": "cos"}
 }

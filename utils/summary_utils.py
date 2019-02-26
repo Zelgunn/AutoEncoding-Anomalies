@@ -93,15 +93,15 @@ def py_gif_summary(tag: bytes or str,
     batch_size = min(batch_size, max_outputs)
 
     for i in range(batch_size):
-        image_summary = tf.Summary.Image()
-        image_summary.height = height
-        image_summary.width = width
-        image_summary.colorspace = channels
-        image_summary.encoded_image_string = encode_gif(images[i], fps)
+        ith_image_summary = tf.Summary.Image()
+        ith_image_summary.height = height
+        ith_image_summary.width = width
+        ith_image_summary.colorspace = channels
+        ith_image_summary.encoded_image_string = encode_gif(images[i], fps)
 
         summary_tag = "{}/gif".format(tag) if (batch_size == 1) else "{}/gif/{}".format(tag, i)
 
-        summary.value.add(tag=summary_tag, image=image_summary)
+        summary.value.add(tag=summary_tag, image=ith_image_summary)
 
     summary_string = summary.SerializeToString()
     return summary_string
@@ -157,7 +157,7 @@ def image_summary(name: str,
                 or a 5-D `uint8` `Tensor` of shape `[batch_size, time, height, width, channels]`
                 where `channels` is 1 or 3.
             max_outputs: Max number of batch elements to generate gifs for.
-                fps: frames per second of the animation
+            fps: Frames per second of the animation
             collections: Optional - List of tf.GraphKeys. The collections to add the summary to.
                 Defaults to [tf.GraphKeys.SUMMARIES]
             family: Optional - If provided, used as the prefix of the summary tag name,
