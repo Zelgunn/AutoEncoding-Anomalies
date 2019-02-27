@@ -14,7 +14,7 @@ class VAE(VariationalBaseModel):
         def vae_loss(y_true, y_pred):
             reconstruction_loss = metrics_dict[self.config["reconstruction_loss"]](y_true, y_pred)
             divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_log_var)
-            return reconstruction_loss + divergence
+            return reconstruction_loss + divergence * 0.01
 
         autoencoder = KerasModel(inputs=input_layer, outputs=autoencoded, name="AutoEncoder")
         autoencoder.compile(self.optimizer, loss=vae_loss, metrics=self.config["metrics"])

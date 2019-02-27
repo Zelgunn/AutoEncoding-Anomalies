@@ -31,7 +31,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 
 # endregion
 
-model_used = "VAEGAN"
+model_used = "VAE"
 dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
 use_flow = False
@@ -125,7 +125,7 @@ if preview_tensorboard_test_images:
 # endregion
 
 # region Session initialization
-config = tf.ConfigProto()
+config = tf.ConfigProto(allow_soft_placement=True)
 config.gpu_options.allow_growth = allow_gpu_growth
 # config.gpu_options.per_process_gpu_memory_fraction = 0.95
 session = tf.Session(config=config)
@@ -142,7 +142,7 @@ if profile:
     print("===== Profiling activated ... =====")
     cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=100, batch_size=32)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=2, epochs=2, batch_size=2)
+    auto_encoder.train(database, epoch_length=500, epochs=75, batch_size=8)
 
 # TODO : Merge self.build_encoder
 # TODO : Separate videos in UCSDDatabase!

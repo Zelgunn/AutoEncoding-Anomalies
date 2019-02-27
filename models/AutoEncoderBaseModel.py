@@ -117,7 +117,8 @@ class AutoEncoderBaseModel(ABC):
         self.layers_built = False
         self.embeddings_layer: Layer = None
         self.encoder_layers: List[LayerStack] = []
-        self.decoder_layers: List[LayerStack] = []
+        self.reconstructor_layers: List[LayerStack] = []
+        self.predictor_layers: List[LayerStack] = []
 
         self._encoder: KerasModel = None
         self._decoder: KerasModel = None
@@ -253,7 +254,9 @@ class AutoEncoderBaseModel(ABC):
 
         for stack_info in self.config["decoder"]:
             stack = self.build_deconv_stack(stack_info)
-            self.decoder_layers.append(stack)
+            self.reconstructor_layers.append(stack)
+            stack = self.build_deconv_stack(stack_info)
+            self.predictor_layers.append(stack)
         self.layers_built = True
 
     def build_conv_stack(self, stack_info: dict, transpose=False) -> LayerStack:
@@ -397,12 +400,13 @@ class AutoEncoderBaseModel(ABC):
     def build_encoder(self):
         raise NotImplementedError
 
-    def build_decoder_half(self, input_layer):
+    def build_decoder_half(self, input_layer, predictor_half):
         layer = input_layer
 
+        layers = self.predictor_layers if predictor_half else self.reconstructor_layers
         for i in range(self.depth):
             use_dropout = i < (self.depth - 1)
-            layer = self.decoder_layers[i](layer, use_dropout)
+            layer = layers[i](layer, use_dropout)
 
         transition_layer_class = conv_type["conv_block"][False]
         layer = transition_layer_class(filters=self.channels_count, kernel_size=1,
@@ -414,8 +418,8 @@ class AutoEncoderBaseModel(ABC):
     def build_decoder(self):
         self.decoder_input_layer = Input(self.compute_decoder_input_shape())
 
-        self.reconstructor_output = self.build_decoder_half(self.decoder_input_layer)
-        self.predictor_output = self.build_decoder_half(self.decoder_input_layer)
+        self.reconstructor_output = self.build_decoder_half(self.decoder_input_layer, False)
+        self.predictor_output = self.build_decoder_half(self.decoder_input_layer, True)
 
         output_layer = Concatenate(axis=1)([self.reconstructor_output, self.predictor_output])
 
@@ -516,7 +520,6 @@ class AutoEncoderBaseModel(ABC):
         if epoch_length is None:
             epoch_length = samples_count // batch_size
 
-        # region Pre-train
         callbacks = self.build_callbacks(database)
         callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length, samples_count)
 
@@ -524,12 +527,11 @@ class AutoEncoderBaseModel(ABC):
         try:
             self.train_loop(database, callbacks, batch_size, epoch_length, epochs)
         except KeyboardInterrupt:
-            print("==== Training was stopped by a Keyboard Interrupt ====")
+            print("\n==== Training was stopped by a Keyboard Interrupt ====\n")
         print("============== Saving models weights... ==============")
         self.save_weights("weights".format(self.epochs_seen))
         print("======================= Done ! =======================")
         callbacks.on_train_end()
-        # endregion
 
     def resize_database(self, database: Database) -> Database:
         database = database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
@@ -612,7 +614,7 @@ class AutoEncoderBaseModel(ABC):
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
-        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq="epoch")
+        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq=128)
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")

@@ -1,13 +1,20 @@
 {
-    "input_shape": [16, 128, 192, 1],
-    "embeddings_size": 120,
-    "embeddings_reshape": [1, 2, 3],
+    "encoder": [
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 1, "depth": 8}
+    ],
     "decoder": [
-        {"filters": 128, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
-        {"filters": 96, "kernel_size": 3, "strides": 2, "padding": "same", "resblock": "True"},
-        {"filters": 64, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "padding": "same", "resblock": "True"},
-        {"filters": 48, "kernel_size": 3, "strides": [1, 2, 2], "padding": "same", "resblock": "True"},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "padding": "same", "resblock": "True"}
+        {"filters": 64, "kernel_size": 3, "strides": 1, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 8}
+    ],
+    "discriminator": [
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 8},
+        {"filters": 64, "kernel_size": 3, "strides": 1, "depth": 8}
     ]
 }
