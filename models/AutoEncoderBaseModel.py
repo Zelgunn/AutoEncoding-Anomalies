@@ -612,7 +612,7 @@ class AutoEncoderBaseModel(ABC):
 
     # region Callbacks
     def build_callbacks(self, database: Database):
-        return self.build_common_callbacks()  # + self.build_anomaly_callbacks(database)
+        return self.build_common_callbacks() + self.build_anomaly_callbacks(database)
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
@@ -698,21 +698,33 @@ class AutoEncoderBaseModel(ABC):
                                      tensorboard: TensorBoard,
                                      frequency="epoch") -> ImageCallback:
 
-        _, videos = dataset.get_batch(self.image_summaries_max_outputs, seed=0, apply_preprocess_step=False,
-                                      max_shard_count=self.image_summaries_max_outputs)
+        videos = dataset.get_batch(self.image_summaries_max_outputs, seed=1, apply_preprocess_step=False,
+                                   max_shard_count=self.image_summaries_max_outputs)
 
         true_outputs_placeholder = self.get_true_outputs_placeholder()
-        summary_inputs = [true_outputs_placeholder]
+        summary_inputs = [self.autoencoder.input, true_outputs_placeholder]
 
         true_outputs = self.normalize_image_tensor(true_outputs_placeholder)
         pred_outputs = self.normalize_image_tensor(self.autoencoder.output)
 
         io_delta = (pred_outputs - true_outputs) * (tf.cast(pred_outputs < true_outputs, dtype=tf.uint8) * 254 + 1)
 
+        with tf.name_scope("composite_error_computation"):
+            error = tf.cast(io_delta, tf.float32) / 255.0
+            composite_hue = tf.multiply(1.0 - error, 0.25, name="composite_hue")
+            composite_saturation = tf.identity(error, name="composite_saturation")
+            composite_value = tf.cast(true_outputs, tf.float32) / 255.0 + error
+            composite_value = tf.clip_by_value(composite_value, 0.0, 1.0, name="composite_value")
+            composite_hsv = tf.concat([composite_hue, composite_saturation, composite_value], axis=-1,
+                                      name="composite_hsv")
+            composite_rgb = tf.image.hsv_to_rgb(composite_hsv)
+            composite_rgb = tf.cast(composite_rgb * 255.0, tf.uint8, name="composite_rgb")
+
         max_outputs = self.image_summaries_max_outputs
-        one_shot_summaries = [image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=5)]
-        repeated_summaries = [image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=5),
-                              image_summary(name + "_delta", io_delta, max_outputs, fps=5)]
+        one_shot_summaries = [image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=8)]
+        repeated_summaries = [image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=8),
+                              image_summary(name + "_delta", io_delta, max_outputs, fps=8),
+                              image_summary(name + "_composite", composite_rgb, max_outputs, fps=8)]
 
         one_shot_summary_model = CallbackModel(summary_inputs, one_shot_summaries, output_is_summary=True)
         repeated_summary_model = CallbackModel(summary_inputs, repeated_summaries, output_is_summary=True)

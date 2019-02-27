@@ -33,7 +33,7 @@ class FullyLoadableDatabase(Database, ABC):
                 current_max = video_max
             else:
                 current_min = min(current_min, video_min)
-                current_max = min(current_max, video_max)
+                current_max = max(current_max, video_max)
 
         self.train_dataset.normalize(current_min, current_max, target_min, target_max)
         self.test_dataset.normalize(current_min, current_max, target_min, target_max)
