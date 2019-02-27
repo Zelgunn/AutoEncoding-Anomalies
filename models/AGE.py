@@ -1,4 +1,4 @@
-from keras.layers import Input, Dense, Reshape
+from keras.layers import Input, Reshape
 from keras.callbacks import CallbackList
 import tensorflow as tf
 import numpy as np

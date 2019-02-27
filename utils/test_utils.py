@@ -50,9 +50,13 @@ def evaluate_model_anomaly_detection(model: Model,
                                      dataset: Dataset,
                                      epoch_length: int,
                                      batch_size: int,
-                                     evaluate_on_whole_video: bool):
+                                     evaluate_on_whole_video=True,
+                                     variational_resampling=4):
     dataset.epoch_length = epoch_length
     dataset.batch_size = batch_size
+    model_is_variational = hasattr(model, "_latent_mean")
+    if model_is_variational and variational_resampling > 0:
+        print("Using variational aspect of model to re-sample {} times".format(variational_resampling))
 
     input_layer = model.input
     pred_output = model.output
@@ -70,13 +74,18 @@ def evaluate_model_anomaly_detection(model: Model,
     labels = np.zeros(shape=predictions_shape, dtype=np.bool)
     session = K.get_session()
     for i in tqdm(range(dataset.epoch_length), desc="Computing errors..."):
-        images, step_labels, _ = dataset.sample(return_labels=True)
-        x, y_true = dataset.divide_batch_io(images)
+        videos, step_labels, _ = dataset.sample(return_labels=True)
+        x, y_true = dataset.divide_batch_io(videos)
         x, y_true = dataset.apply_preprocess(x, y_true)
 
-        step_error = session.run(error_op, feed_dict={input_layer: x, true_output: y_true})
-        indices = np.arange(i * dataset.batch_size, (i + 1) * dataset.batch_size)
+        feed_dict = {input_layer: x, true_output: y_true}
+        step_error = session.run(error_op, feed_dict)
+        if model_is_variational and (variational_resampling > 0):
+            for _ in range(variational_resampling):
+                step_error += session.run(error_op, feed_dict)
+            step_error /= (variational_resampling + 1)
 
+        indices = np.arange(i * dataset.batch_size, (i + 1) * dataset.batch_size)
         errors[indices] = step_error
         if evaluate_on_whole_video:
             labels[indices] = np.any(step_labels, axis=1)

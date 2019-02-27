@@ -20,17 +20,17 @@ class UCSDDataset(FullyLoadableDataset):
         if self.saved_to_npz:
             print("Found saved dataset (in .npz file)")
             npz_file = np.load(self.npz_filepath)
-            self.images = npz_file["images"]
+            self.videos = npz_file["videos"]
             if "anomaly_labels" in npz_file:
                 self.anomaly_labels = npz_file["anomaly_labels"]
                 if None in self.anomaly_labels:
                     self.anomaly_labels = None
         else:
             print("Building dataset from raw data")
-            self.images = UCSDDataset._load_ucsd_images_raw(self.dataset_path)
-            bmp_images_dictionary = UCSDDataset._get_images_dictionary(self.dataset_path, ".bmp")
-            if len(bmp_images_dictionary) > 0:
-                self.anomaly_labels = UCSDDataset._load_images_from_dictionary_of_paths(bmp_images_dictionary,
+            self.videos = UCSDDataset._load_ucsd_videos_raw(self.dataset_path)
+            labels_dictionary = UCSDDataset._get_videos_dictionary(self.dataset_path, ".bmp")
+            if len(labels_dictionary) > 0:
+                self.anomaly_labels = UCSDDataset._load_videos_from_dictionary_of_paths(labels_dictionary,
                                                                                         dtype=np.bool)
             else:
                 self.anomaly_labels = None
@@ -39,7 +39,7 @@ class UCSDDataset(FullyLoadableDataset):
         if self.saved_to_npz and not force:
             return
         print("Saving UCSD dataset : " + self.dataset_path + " (to .npz file)")
-        np.savez_compressed(self.npz_filepath, images=self.images, anomaly_labels=self.anomaly_labels)
+        np.savez(self.npz_filepath, videos=self.videos, anomaly_labels=self.anomaly_labels)
 
     @property
     def npz_filepath(self) -> str:
@@ -47,7 +47,7 @@ class UCSDDataset(FullyLoadableDataset):
 
     # region Static loading methods
     @staticmethod
-    def _get_images_dictionary(dataset_path: str, extension: str):
+    def _get_videos_dictionary(dataset_path: str, extension: str):
         if not extension.startswith("."):
             extension = "." + extension
         sub_directories = [dir_info[0] for dir_info in os.walk(dataset_path)]
@@ -72,34 +72,30 @@ class UCSDDataset(FullyLoadableDataset):
         return result
 
     @staticmethod
-    def _load_images_from_dictionary_of_paths(dictionary, dtype: Type = np.float32):
-        images_count = 0
-        for _, tiff_images_paths in dictionary.items():
-            images_count += len(tiff_images_paths)
-
-        images = None
-        index = 0
+    def _load_videos_from_dictionary_of_paths(dictionary, dtype: Type = np.float32):
+        videos = []
         sub_directories = dictionary.keys()
         sub_directories = sorted(sub_directories)
         for sub_directory in sub_directories:
             tiff_images_paths = dictionary[sub_directory]
-            images_count_in_folder = len(tiff_images_paths)
+            video_length = len(tiff_images_paths)
             sub_directory_info: str = sub_directory.split(os.path.sep)[-1]
-            for i in tqdm(range(images_count_in_folder), desc=sub_directory_info):
+            video = None
+            for i in tqdm(range(video_length), desc=sub_directory_info):
                 image_path = os.path.join(sub_directory, tiff_images_paths[i])
                 image = Image.open(image_path)
                 image = np.array(image)
-                if images is None:
-                    images = np.ndarray([images_count, image.shape[0], image.shape[1]], dtype=dtype)
-                images[index] = image
-                index += 1
-        images = np.expand_dims(images, axis=-1)
-        return images
+                if video is None:
+                    video = np.empty(shape=[video_length, image.shape[0], image.shape[1]], dtype=dtype)
+                video[i] = image
+            video = np.expand_dims(video, axis=-1)
+            videos.append(video)
+        return videos
 
     @staticmethod
-    def _load_ucsd_images_raw(dataset_path: str):
-        tiff_images_dictionary = UCSDDataset._get_images_dictionary(dataset_path, ".tif")
-        return UCSDDataset._load_images_from_dictionary_of_paths(tiff_images_dictionary)
+    def _load_ucsd_videos_raw(dataset_path: str):
+        videos_dictionary = UCSDDataset._get_videos_dictionary(dataset_path, ".tif")
+        return UCSDDataset._load_videos_from_dictionary_of_paths(videos_dictionary)
     # endregion
     # endregion
 

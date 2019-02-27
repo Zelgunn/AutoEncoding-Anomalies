@@ -6,7 +6,6 @@ from typing import List
 
 from datasets import Dataset
 from data_preprocessors import DataPreprocessor
-from utils.numpy_utils import NumpySeedContext
 
 
 class FullyLoadableDataset(Dataset, ABC):
@@ -15,13 +14,13 @@ class FullyLoadableDataset(Dataset, ABC):
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
                  dataset_path: str,
-                 data_preprocessors: List[DataPreprocessor] = None,
+                 epoch_length: int,
                  batch_size=64,
-                 epoch_length: int = None,
+                 data_preprocessors: List[DataPreprocessor] = None,
                  shuffle_on_epoch_end=True,
                  **kwargs):
         self.dataset_path = dataset_path
-        self.images = None
+        self.videos = None
         self.anomaly_labels = None
         self._frame_level_labels = None
         super(FullyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
@@ -36,10 +35,10 @@ class FullyLoadableDataset(Dataset, ABC):
         dataset_type = type(self)
         other: FullyLoadableDataset = dataset_type(dataset_path=self.dataset_path,
                                                    input_sequence_length=self.input_sequence_length,
-                                                   output_sequence_length=self.output_sequence_length)
+                                                   output_sequence_length=self.output_sequence_length,
+                                                   epoch_length=self.epoch_length)
         other.data_preprocessors = self.data_preprocessors
         other.batch_size = self.batch_size
-        other.epoch_length = self.epoch_length
         other.shuffle_on_epoch_end = self.shuffle_on_epoch_end
 
         other.saved_to_npz = self.saved_to_npz
@@ -47,7 +46,7 @@ class FullyLoadableDataset(Dataset, ABC):
         other.epochs_completed = self.epochs_completed
         other._normalization_range = copy.copy(self._normalization_range)
 
-        other.images = np.copy(self.images) if copy_inputs else self.images
+        other.videos = np.copy(self.videos) if copy_inputs else self.videos
         if self.anomaly_labels is not None:
             if copy_labels:
                 other.anomaly_labels = np.copy(self.anomaly_labels)
@@ -62,49 +61,42 @@ class FullyLoadableDataset(Dataset, ABC):
     def normalize(self, current_min, current_max, target_min=0.0, target_max=1.0):
         super(FullyLoadableDataset, self).normalize(current_min, current_max, target_min, target_max)
         multiplier = (target_max - target_min) / (current_max - current_min)
-        self.images = (self.images - current_min) * multiplier + target_min
+        self.videos = (self.videos - current_min) * multiplier + target_min
 
-    def sample(self, batch_size=None, seed=None, sequence_length=None, max_shard_count=1, return_labels=False):
-        if batch_size is None:
-            batch_size = self.batch_size
+    def sample_single_video(self, video_index, shard_size, sequence_length, return_labels):
+        video = self.videos[video_index]
 
-        with NumpySeedContext(seed):
-            indices = self.sample_indices(batch_size, self.samples_count, sequence_length)
+        indices = self.sample_indices(shard_size, len(video), sequence_length)
+        video = video[indices]
 
-        images: np.ndarray = self.images[indices]
-
+        frame_labels = pixel_labels = None
         if return_labels:
-            if self.output_sequence_length is None:
-                labels_indices = indices[:, -1]
-            else:
-                labels_indices = indices[:, -self.output_sequence_length:]
+            labels_indices = indices[:, -self.output_sequence_length:]
+            labels = self.anomaly_labels[video_index][labels_indices]
 
             if self.has_pixel_level_anomaly_labels:
-                frame_level_labels = self.frame_level_labels[labels_indices]
-                pixel_level_labels = self.anomaly_labels[labels_indices]
+                pixel_labels = labels
+                frame_labels = self.frame_level_labels[video_index][labels_indices]
             else:
-                frame_level_labels = self.anomaly_labels[labels_indices]
-                pixel_level_labels = None
+                frame_labels = labels
 
-            return images, frame_level_labels, pixel_level_labels
-        else:
-            return images
+        return video, frame_labels, pixel_labels
 
     def shuffle(self):
         if self.anomaly_labels is None:
-            np.random.shuffle(self.images)
+            np.random.shuffle(self.videos)
         else:
-            shuffle_indices = np.random.permutation(np.arange(self.samples_count))
-            self.images = self.images[shuffle_indices]
+            shuffle_indices = np.random.permutation(np.arange(self.videos_count))
+            self.videos = self.videos[shuffle_indices]
             self.anomaly_labels = self.anomaly_labels[shuffle_indices]
 
     # region Resizing
     def resized(self, size, input_sequence_length, output_sequence_length):
-        images = self.resized_images(size)
+        videos = self.resized_videos(size)
         anomaly_labels = self.resized_anomaly_labels(size)
 
         dataset = self.make_copy()
-        dataset.images = images
+        dataset.videos = videos
         dataset.input_sequence_length = input_sequence_length
         dataset.output_sequence_length = output_sequence_length
 
@@ -113,37 +105,69 @@ class FullyLoadableDataset(Dataset, ABC):
             dataset._frame_level_labels = np.copy(self.frame_level_labels)
         return dataset
 
-    def resized_images(self, size):
-        return resize_images(self.images, size)
+    def resized_videos(self, size):
+        return resize_videos(self.videos, size)
 
     def resized_anomaly_labels(self, size):
         if self.anomaly_labels is None:
             anomaly_labels = None
         else:
-            anomaly_labels = resize_images(self.anomaly_labels.astype(np.float32), size).astype(bool)
+            anomaly_labels = []
+            for i in range(len(self.anomaly_labels)):
+                video_labels = self.anomaly_labels[i]
+                video_labels = video_labels.astype(np.float32)
+                video_labels = resize_images(video_labels, size)
+                video_labels = video_labels.astype(np.bool)
+                anomaly_labels.append(video_labels)
+            anomaly_labels = np.array(anomaly_labels)
+
         return anomaly_labels
 
     # endregion
 
     # region Properties
     @property
-    def samples_count(self):
-        return self.images.shape[0]
+    def videos_count(self):
+        return len(self.videos)
+
+    def samples_count(self) -> int:
+        count = 0
+        for i in range(self.videos_count):
+            count += len(self.videos[i])
+        return count
 
     @property
     def images_size(self):
-        return self.images.shape[1:3]
+        return self.videos.shape[2:4]
 
     @property
     def frame_level_labels(self):
         assert self.anomaly_labels is not None
+
         if not self.has_pixel_level_anomaly_labels:
             return self.anomaly_labels
 
         if self._frame_level_labels is None:
-            self._frame_level_labels = np.any(self.anomaly_labels, axis=(1, 2, 3))
+            self._frame_level_labels = []
+            for i in range(len(self.anomaly_labels)):
+                pixel_labels: np.ndarray = self.anomaly_labels[i]
+                frame_labels = np.any(pixel_labels, axis=(1, 2, 3))
+                self._frame_level_labels.append(frame_labels)
+            self._frame_level_labels = np.array(self.frame_level_labels)
+
         return self._frame_level_labels
     # endregion
+
+
+def resize_videos(videos, size) -> np.ndarray:
+    videos_count = len(videos)
+    resized_videos = []
+    for i in range(videos_count):
+        resized_video = resize_images(videos[i], size)
+        resized_videos.append(resized_video)
+
+    resized_videos = np.array(resized_videos)
+    return resized_videos
 
 
 def resize_images(images, size) -> np.ndarray:

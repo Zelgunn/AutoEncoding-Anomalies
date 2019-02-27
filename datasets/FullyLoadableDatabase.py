@@ -23,8 +23,18 @@ class FullyLoadableDatabase(Database, ABC):
         self.test_dataset: FullyLoadableDataset = self.test_dataset
 
     def normalize(self, target_min=0.0, target_max=1.0):
-        current_min = min(self.train_dataset.images.min(), self.test_dataset.images.min())
-        current_max = max(self.train_dataset.images.max(), self.test_dataset.images.max())
+        current_min = None
+        current_max = None
+        for i in range(self.train_dataset.videos_count):
+            video_min = self.train_dataset.videos[i].min()
+            video_max = self.train_dataset.videos[i].max()
+            if current_min is None:
+                current_min = video_min
+                current_max = video_max
+            else:
+                current_min = min(current_min, video_min)
+                current_max = min(current_max, video_max)
+
         self.train_dataset.normalize(current_min, current_max, target_min, target_max)
         self.test_dataset.normalize(current_min, current_max, target_min, target_max)
 
@@ -35,7 +45,7 @@ class FullyLoadableDatabase(Database, ABC):
             tmp: np.ndarray = self.test_dataset.anomaly_labels[i]
             tmp = tmp.astype(np.float32)
             inv_tmp = 1.0 - tmp
-            tmp = self.test_dataset.images[i] * tmp
-            tmp += self.test_dataset.images[i] * inv_tmp * 0.25
+            tmp = self.test_dataset.videos[i] * tmp
+            tmp += self.test_dataset.videos[i] * inv_tmp * 0.25
             cv2.imshow("test_dataset", tmp)
             cv2.waitKey(30)

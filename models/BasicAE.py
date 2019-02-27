@@ -1,6 +1,5 @@
 from keras.layers import Input, Reshape
 import tensorflow as tf
-import numpy as np
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 

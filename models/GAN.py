@@ -185,10 +185,10 @@ class GAN(AutoEncoderBaseModel):
 
         self.on_epoch_end(database, callbacks)
 
-    def save_weights(self, base_filename):
-        super(GAN, self).save_weights(base_filename)
+    def save_weights(self):
+        super(GAN, self).save_weights()
 
-        self._save_model_weights(self._discriminator, base_filename, "discriminator")
+        self._save_model_weights(self._discriminator, "discriminator")
 
     def load_weights(self, base_filepath):
         super(GAN, self).load_weights(base_filepath)

@@ -32,12 +32,12 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 # endregion
 
 model_used = "VAE"
-dataset_used = "UCSD_Ped2"
+dataset_used = "Subway_Exit"
 alt_config_suffix_used = None
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/SubwayDatabase/VAE/log_1550841953/weights_14"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551254815"
 
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
@@ -58,9 +58,6 @@ auto_encoder = auto_encoder_class()
 auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
-auto_encoder.encoder.summary(line_length=200)
-auto_encoder.decoder.summary(line_length=200)
-auto_encoder.autoencoder.summary(line_length=200)
 # endregion
 
 # region Print parameters
@@ -74,6 +71,7 @@ print("Database class \t\t\t\t\t:", str(database_class))
 print("Database path \t\t\t\t\t:", database_path)
 print("Database config alias \t\t\t\t:", database_config_alias)
 print("Config used \t\t\t\t\t:", config_used)
+print("Blocks used \t\t\t\t\t:", auto_encoder.block_type_name)
 print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
 print("Preview tensorboard test images \t\t:", preview_tensorboard_test_images)
 print("Allow GPU growth \t\t\t\t:", allow_gpu_growth)
@@ -111,9 +109,8 @@ database.test_dataset.epoch_length = 2
 
 # region Test dataset preview
 if preview_tensorboard_test_images:
-    samples_count = database.test_dataset.samples_count
     preview_count = auto_encoder.image_summaries_max_outputs
-    previewed_image = database.test_dataset.sample_input_images(preview_count, seed=0,
+    previewed_image = database.test_dataset.sample_input_videos(preview_count, seed=0,
                                                                 max_shard_count=preview_count)
     previewed_image = (previewed_image - previewed_image.min()) / (previewed_image.max() - previewed_image.min())
     for i in range(preview_count):
@@ -134,6 +131,7 @@ K.set_session(session)
 # endregion
 
 if previous_weights_to_load is not None:
+    print("=> Loading weights from :", previous_weights_to_load)
     auto_encoder.load_weights(previous_weights_to_load)
 
 if profile:

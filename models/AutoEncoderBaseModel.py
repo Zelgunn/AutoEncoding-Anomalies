@@ -501,8 +501,8 @@ class AutoEncoderBaseModel(ABC):
     # region Training
     def train(self,
               database: Database,
+              epoch_length: int,
               batch_size: int = 64,
-              epoch_length: int = None,
               epochs: int = 1):
         assert isinstance(batch_size, int) or isinstance(batch_size, list)
         assert isinstance(epochs, int) or isinstance(epochs, list)
@@ -517,11 +517,8 @@ class AutoEncoderBaseModel(ABC):
 
         self.save_models_info(self.log_dir)
 
-        samples_count = database.train_dataset.samples_count
-        if epoch_length is None:
-            epoch_length = samples_count // batch_size
-
         callbacks = self.build_callbacks(database)
+        samples_count = database.train_dataset.samples_count
         callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length, samples_count)
 
         callbacks.on_train_begin()
@@ -532,7 +529,7 @@ class AutoEncoderBaseModel(ABC):
         callbacks.on_train_end()
 
         print("============== Saving models weights... ==============")
-        self.save_weights("weights".format(self.epochs_seen))
+        self.save_weights()
         print("======================= Done ! =======================")
 
         visualize_model_errors(self.autoencoder, database.test_dataset)
@@ -594,12 +591,12 @@ class AutoEncoderBaseModel(ABC):
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
         self.epochs_seen += 1
 
-    def save_weights(self, base_filename):
-        self._save_model_weights(self.encoder, base_filename, "encoder")
-        self._save_model_weights(self.decoder, base_filename, "decoder")
+    def save_weights(self):
+        self._save_model_weights(self.encoder, "encoder")
+        self._save_model_weights(self.decoder, "decoder")
 
-    def _save_model_weights(self, model: KerasModel, base_filename, name):
-        filepath = "{}{sep}{}_{}.h5".format(self.log_dir, base_filename, name, sep=os.path.sep)
+    def _save_model_weights(self, model: KerasModel, name):
+        filepath = "{}/weights_{}.h5".format(self.log_dir, name)
         model.save_weights(filepath)
 
     def load_weights(self, base_filepath):
@@ -608,14 +605,14 @@ class AutoEncoderBaseModel(ABC):
 
     @staticmethod
     def _load_model_weights(model: KerasModel, base_filepath, name):
-        filepath = "{}_{}.h5".format(base_filepath, name)
+        filepath = "{}/weights_{}.h5".format(base_filepath, name)
         model.load_weights(filepath)
 
     # endregion
 
     # region Callbacks
     def build_callbacks(self, database: Database):
-        return self.build_common_callbacks() + self.build_anomaly_callbacks(database)
+        return self.build_common_callbacks()  # + self.build_anomaly_callbacks(database)
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
@@ -643,15 +640,15 @@ class AutoEncoderBaseModel(ABC):
         test_image_callback = self.build_auto_encoding_callback(test_dataset, "test", self.tensorboard)
 
         # region Getting samples used for AUC callbacks
-        samples = test_dataset.sample(batch_size=512, seed=16, max_shard_count=8, return_labels=True)
-        auc_images, frame_labels, pixel_labels = samples
-        auc_images = test_dataset.divide_batch_io(auc_images)
+        samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=8, return_labels=True)
+        videos, frame_labels, pixel_labels = samples
+        videos = test_dataset.divide_batch_io(videos)
         # endregion
 
         # region Frame level error AUC (ROC)
         frame_predictions_model = self.build_frame_level_error_callback_model()
         frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
-                                         auc_images, frame_labels,
+                                         videos, frame_labels,
                                          plot_size=(128, 128), batch_size=32,
                                          name="Frame_Level_Error_AUC", epoch_freq=5)
         # endregion
@@ -662,7 +659,7 @@ class AutoEncoderBaseModel(ABC):
         # TODO : Check labels size in UCSDDatabase
         # if pixel_labels is not None:
         #     pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
-        #                                      auc_images, pixel_labels,
+        #                                      videos, pixel_labels,
         #                                      plot_size=(128, 128), batch_size=32,
         #                                      num_thresholds=20, name="Pixel_Level_Error_AUC", epoch_freq=5)
         #     anomaly_callbacks.append(pixel_auc_callback)
@@ -701,34 +698,26 @@ class AutoEncoderBaseModel(ABC):
                                      tensorboard: TensorBoard,
                                      frequency="epoch") -> ImageCallback:
 
-        images = dataset.get_batch(self.image_summaries_max_outputs, seed=0, apply_preprocess_step=False,
-                                   max_shard_count=self.image_summaries_max_outputs)
+        _, videos = dataset.get_batch(self.image_summaries_max_outputs, seed=0, apply_preprocess_step=False,
+                                      max_shard_count=self.image_summaries_max_outputs)
 
-        # region Placeholders
         true_outputs_placeholder = self.get_true_outputs_placeholder()
-        summary_inputs = [self.autoencoder.input, true_outputs_placeholder]
-        # endregion
+        summary_inputs = [true_outputs_placeholder]
 
-        # region Image/Video normalization (uint8)
-        inputs = self.normalize_image_tensor(self.autoencoder.input)
         true_outputs = self.normalize_image_tensor(true_outputs_placeholder)
         pred_outputs = self.normalize_image_tensor(self.autoencoder.output)
-        # endregion
 
         io_delta = (pred_outputs - true_outputs) * (tf.cast(pred_outputs < true_outputs, dtype=tf.uint8) * 254 + 1)
 
-        # region Summary operations
         max_outputs = self.image_summaries_max_outputs
-        one_shot_summaries = [image_summary(name + "_inputs", inputs, max_outputs, fps=5),
-                              image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=5)]
+        one_shot_summaries = [image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=5)]
         repeated_summaries = [image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=5),
                               image_summary(name + "_delta", io_delta, max_outputs, fps=5)]
-        # endregion
 
         one_shot_summary_model = CallbackModel(summary_inputs, one_shot_summaries, output_is_summary=True)
         repeated_summary_model = CallbackModel(summary_inputs, repeated_summaries, output_is_summary=True)
 
-        return ImageCallback(one_shot_summary_model, repeated_summary_model, images, tensorboard, frequency)
+        return ImageCallback(one_shot_summary_model, repeated_summary_model, videos, tensorboard, frequency)
 
     def normalize_image_tensor(self, tensor: tf.Tensor) -> tf.Tensor:
         with tf.name_scope("normalize_image_tensor"):

@@ -8,10 +8,10 @@ class SubwayDataset(PartiallyLoadableDataset):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 dataset_path: str = None,
+                 dataset_path: str,
+                 epoch_length: int,
                  data_preprocessors: List[DataPreprocessor] = None,
                  batch_size=64,
-                 epoch_length: int = None,
                  shuffle_on_epoch_end=True,
                  **kwargs):
         super(SubwayDataset, self).__init__(input_sequence_length=input_sequence_length,

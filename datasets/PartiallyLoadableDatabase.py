@@ -31,13 +31,15 @@ class PartiallyLoadableDatabase(Database, ABC):
                                                       config=self.header["train"],
                                                       data_preprocessors=self.train_preprocessors,
                                                       input_sequence_length=self.input_sequence_length,
-                                                      output_sequence_length=self.output_sequence_length)
+                                                      output_sequence_length=self.output_sequence_length,
+                                                      epoch_length=-1)
 
         self.test_dataset = PartiallyLoadableDataset(dataset_path=self.database_path,
                                                      config=self.header["test"],
                                                      data_preprocessors=self.test_preprocessors,
                                                      input_sequence_length=self.input_sequence_length,
-                                                     output_sequence_length=self.output_sequence_length)
+                                                     output_sequence_length=self.output_sequence_length,
+                                                     epoch_length=-1)
 
     def prepare_resolutions(self, resolutions: List, shard_size=5000, skip=0):
         header = {"train": [None] * len(resolutions), "test": [None] * len(resolutions)}
@@ -88,11 +90,11 @@ class PartiallyLoadableDatabase(Database, ABC):
 
             shard_size = np.shape(images_shard)[0]
             if dataset_id in shards_dict:
-                shards_dict[dataset_id]["images_filenames"] += [images_shard_filename]
+                shards_dict[dataset_id]["videos_filenames"] += [images_shard_filename]
                 shards_dict[dataset_id]["labels_filenames"] += [labels_shard_filename]
                 shards_dict[dataset_id]["samples_count"] += shard_size
             else:
-                shards_dict[dataset_id] = {"images_filenames": [images_shard_filename],
+                shards_dict[dataset_id] = {"videos_filenames": [images_shard_filename],
                                            "labels_filenames": [labels_shard_filename],
                                            "images_size": np.shape(images_shard)[1:3],
                                            "samples_count": shard_size}

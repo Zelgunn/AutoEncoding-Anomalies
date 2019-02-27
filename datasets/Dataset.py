@@ -4,16 +4,16 @@ import numpy as np
 from typing import List
 
 from data_preprocessors import DataPreprocessor
-from utils.numpy_utils import NumpySeedContext
+from utils.numpy_utils import NumpySeedContext, fast_concatenate_0
 
 
 class Dataset(Sequence, ABC):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 data_preprocessors: List[DataPreprocessor] = None,
+                 epoch_length: int,
                  batch_size=64,
-                 epoch_length: int = None,
+                 data_preprocessors: List[DataPreprocessor] = None,
                  shuffle_on_epoch_end=True,
                  **kwargs):
         self.input_sequence_length = input_sequence_length
@@ -32,10 +32,7 @@ class Dataset(Sequence, ABC):
         self._normalization_range = [None, None]
 
     def __len__(self):
-        if self.epoch_length is None:
-            return int(np.ceil(self.samples_count / self.batch_size))
-        else:
-            return self.epoch_length
+        return self.epoch_length
 
     def __getitem__(self, index):
         if self.epoch_length is None:
@@ -66,23 +63,60 @@ class Dataset(Sequence, ABC):
 
     def get_batch(self, batch_size=None, seed=None, apply_preprocess_step=True, max_shard_count=1):
         with NumpySeedContext(seed):
-            images: np.ndarray = self.sample(batch_size, max_shard_count=max_shard_count, seed=seed)
+            videos: np.ndarray = self.sample(batch_size, seed=seed, sampled_videos_count=max_shard_count)
 
-            inputs, outputs = self.divide_batch_io(images)
+            inputs, outputs = self.divide_batch_io(videos)
 
             if apply_preprocess_step and (len(self.data_preprocessors) > 0):
                 inputs, outputs = self.apply_preprocess(inputs, outputs)
         return inputs, outputs
 
+    def sample(self, batch_size=None, seed=None, sequence_length=None, sampled_videos_count=None, return_labels=False):
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        if sampled_videos_count is None:
+            sampled_videos_count = self.videos_count
+        else:
+            sampled_videos_count = min(sampled_videos_count, self.videos_count)
+
+        with NumpySeedContext(seed):
+            videos_indices = np.random.permutation(np.arange(self.videos_count))[:sampled_videos_count]
+            sampled_videos, sampled_frame_labels, sampled_pixel_labels,  = [], [], None
+            shard_size = batch_size // sampled_videos_count
+
+            for i, video_index in enumerate(videos_indices):
+                if i == (sampled_videos_count - 1):
+                    shard_size += batch_size % sampled_videos_count
+
+                video, frame_labels, pixel_labels = self.sample_single_video(video_index, shard_size, sequence_length,
+                                                                             return_labels)
+                sampled_videos.append(video)
+
+                if return_labels:
+                    sampled_frame_labels.append(frame_labels)
+                    if pixel_labels is not None:
+                        if sampled_pixel_labels is None:
+                            sampled_pixel_labels = []
+                        sampled_pixel_labels.append(pixel_labels)
+
+        sampled_videos = fast_concatenate_0(sampled_videos)
+
+        if return_labels:
+            sampled_frame_labels = fast_concatenate_0(sampled_frame_labels)
+            if sampled_pixel_labels is not None:
+                sampled_pixel_labels = fast_concatenate_0(sampled_pixel_labels)
+            return sampled_videos, sampled_frame_labels, sampled_pixel_labels
+        else:
+            return sampled_videos
+
     @abstractmethod
-    def sample(self, batch_size=None, seed=None, sequence_length=None, max_shard_count=1, return_labels=False):
+    def sample_single_video(self, video_index, shard_size, sequence_length, return_labels):
         raise NotImplementedError
 
     @property
     def total_sequence_length(self):
-        in_length = 1 if self.input_sequence_length is None else self.input_sequence_length
-        out_length = 1 if self.output_sequence_length is None else self.output_sequence_length
-        return max(in_length, out_length)
+        return max(self.input_sequence_length, self.output_sequence_length)
 
     def sample_indices(self, batch_size, indices_range, sequence_length=None):
         if sequence_length is None:
@@ -96,16 +130,9 @@ class Dataset(Sequence, ABC):
 
         return indices
 
-    def divide_batch_io(self, images):
-        if self.input_sequence_length is None:
-            inputs = images[:, 0]
-        else:
-            inputs = images[:, :self.input_sequence_length]
-
-        if self.output_sequence_length is None:
-            outputs = images[:, -1]
-        else:
-            outputs = images[:, -self.output_sequence_length:]
+    def divide_batch_io(self, videos):
+        inputs = videos[:, :self.input_sequence_length]
+        outputs = videos[:, -self.output_sequence_length:]
 
         if self.input_sequence_length < self.output_sequence_length:
             inputs = np.copy(inputs)
@@ -114,13 +141,18 @@ class Dataset(Sequence, ABC):
 
         return inputs, outputs
 
-    def sample_input_images(self, batch_size=None, seed=None, max_shard_count=1):
+    def sample_input_videos(self, batch_size=None, seed=None, max_shard_count=1):
         return self.sample(batch_size, seed, sequence_length=self.input_sequence_length,
-                           max_shard_count=max_shard_count, return_labels=False)
+                           sampled_videos_count=max_shard_count, return_labels=False)
 
     @property
     @abstractmethod
-    def samples_count(self):
+    def videos_count(self) -> int:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def samples_count(self) -> int:
         raise NotImplementedError
 
     @property

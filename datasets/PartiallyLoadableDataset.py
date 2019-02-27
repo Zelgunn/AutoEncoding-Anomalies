@@ -5,7 +5,6 @@ from typing import List
 
 from datasets import Dataset
 from data_preprocessors import DataPreprocessor
-from utils.numpy_utils import NumpySeedContext, fast_concatenate_0
 
 
 class PartiallyLoadableDataset(Dataset):
@@ -14,9 +13,9 @@ class PartiallyLoadableDataset(Dataset):
                  output_sequence_length: int or None,
                  dataset_path: str,
                  config: dict,
+                 epoch_length: int,
                  data_preprocessors: List[DataPreprocessor] = None,
                  batch_size=64,
-                 epoch_length: int = None,
                  shuffle_on_epoch_end=True,
                  **kwargs):
         super(PartiallyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
@@ -32,63 +31,25 @@ class PartiallyLoadableDataset(Dataset):
         self._shard_indices_offset = None
         self.normalization_range = None
 
-    def sample(self, batch_size=None, seed=None, sequence_length=None, max_shard_count=1, return_labels=False):
-        if batch_size is None:
-            batch_size = self.batch_size
+    def sample_single_video(self, video_index, shard_size, sequence_length, return_labels):
+        video_shard_filepath = os.path.join(self.dataset_path, self.videos_filenames[video_index])
+        video_shard = np.load(video_shard_filepath, mmap_mode="r")
 
-        if max_shard_count is None:
-            max_shard_count = self.shards_count
-        else:
-            max_shard_count = min(max_shard_count, self.shards_count)
+        indices = self.sample_indices(shard_size, len(video_shard), sequence_length)
+        video = video_shard[indices]
+        video = self.normalize_samples(video)
 
-        with NumpySeedContext(seed):
-            shards = self.get_random_shards(max_shard_count, return_labels)
-            images, labels, labels_shard = [], [], None
-            shard_size = batch_size // max_shard_count
-
-            for i, shard in enumerate(shards):
-                if return_labels:
-                    images_shard, labels_shard = shard
-                else:
-                    images_shard = shard
-
-                if i == (max_shard_count - 1):
-                    shard_size += batch_size % max_shard_count
-
-                indices = self.sample_indices(shard_size, len(images_shard), sequence_length)
-                images.append(images_shard[indices])
-
-                if return_labels:
-                    if self.output_sequence_length is None:
-                        labels_indices = indices[:, -1]
-                    else:
-                        labels_indices = indices[:, -self.output_sequence_length:]
-                    labels.append(labels_shard[labels_indices])
-
-        images = fast_concatenate_0(images)
-        images = self.normalize_samples(images)
-
+        video_labels = None
         if return_labels:
-            # np.any(self.anomaly_labels, axis=(1, 2, 3))
-            # TODO : Load pixel_level labels
-            labels = fast_concatenate_0(labels)
-            return images, labels, None
-        else:
-            return images
+            shard_labels_filepath = os.path.join(self.dataset_path, self.labels_filenames[video_index])
+            shard_labels = np.load(shard_labels_filepath, mmap_mode="r")
+            labels_indices = indices[:, -self.output_sequence_length:]
+            video_labels = shard_labels[labels_indices]
 
-    def get_random_shards(self, max_shard_count, return_labels=False):
-        indices = np.random.permutation(np.arange(self.shards_count))[:max_shard_count]
-        shards = []
-        for index in indices:
-            images_shard_filepath = os.path.join(self.dataset_path, self.images_filenames[index])
-            images_shard = np.load(images_shard_filepath, mmap_mode="r")
-            if return_labels:
-                labels_shard_filepath = os.path.join(self.dataset_path, self.labels_filenames[index])
-                labels_shard = np.load(labels_shard_filepath, mmap_mode="r")
-                shards.append((images_shard, labels_shard))
-            else:
-                shards.append(images_shard)
-        return shards
+        # np.any(self.anomaly_labels, axis=(1, 2, 3))
+        # TODO : Load pixel_level labels
+
+        return video, video_labels, None
 
     def normalize_samples(self, samples: np.ndarray):
         return samples * self.normalization_range[1] + self.normalization_range[0]
@@ -122,7 +83,10 @@ class PartiallyLoadableDataset(Dataset):
         return self.config[self.sub_config_index]
 
     @property
-    def samples_count(self):
+    def videos_count(self):
+        return len(self.videos_filenames)
+
+    def samples_count(self) -> int:
         return self.sub_config["samples_count"]
 
     @property
@@ -130,8 +94,8 @@ class PartiallyLoadableDataset(Dataset):
         return self.sub_config["images_size"]
 
     @property
-    def images_filenames(self):
-        return self.sub_config["images_filenames"]
+    def videos_filenames(self):
+        return self.sub_config["videos_filenames"]
 
     @property
     def labels_filenames(self):
@@ -139,5 +103,5 @@ class PartiallyLoadableDataset(Dataset):
 
     @property
     def shards_count(self):
-        return len(self.images_filenames)
+        return len(self.videos_filenames)
     # endregion
