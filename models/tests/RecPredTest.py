@@ -1,18 +1,14 @@
-import tensorflow as tf
 from keras.models import Model
 from keras.layers import Input, Conv3D, Deconv3D, BatchNormalization, LeakyReLU, MaxPooling3D, concatenate, UpSampling3D
 from keras.optimizers import Adam
 from keras.callbacks import TensorBoard
-import keras.backend as K
 import os
 from time import time
-import cv2
-import numpy as np
-from tqdm import tqdm
 
 from layers import ResBlock3D, DenseBlock3D, ResBlock3DTranspose
 from datasets import UCSDDatabase, SubwayDatabase
 from data_preprocessors import BrightnessShifter, DropoutNoiser
+from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection
 
 
 def build_conv_encoder(input_layer):
@@ -118,7 +114,6 @@ def build_dense_block_decoder(input_layer):
     layer = DenseBlock3D(kernel_size=3, growth_rate=12, depth=4, output_filters=32)(layer)
     layer = UpSampling3D(size=2)(layer)
 
-    # layer = DenseBlock3D(kernel_size=3, growth_rate=12, depth=4, output_filters=32)(layer)
     layer = Conv3D(kernel_size=1, filters=1, kernel_initializer="he_normal", activation="sigmoid")(layer)
 
     return layer
@@ -195,46 +190,6 @@ def get_subway_database(shift_brightness, dropout_noise):
     return database
 
 
-def visualize(model, dataset):
-    key = 13
-    escape_key = 27
-    seed = 0
-    i = 0
-
-    y_pred = y_true = tmp = None
-
-    while key != escape_key:
-        if key != -1:
-            seed += 1
-            x, y_true = dataset.get_batch(seed=seed)
-            y_pred = model.predict(x)
-            tmp = np.abs(y_pred - y_true).max()
-            i = 0
-
-        y_pred_resized = cv2.resize(y_pred[0][i], dsize=(512, 512))
-        y_true_resized = cv2.resize(y_true[0][i], dsize=(512, 512))
-        delta = np.abs(y_pred_resized - y_true_resized) / tmp
-        # delta = (delta - delta.min()) / (delta.max() - delta.min())
-        # delta = np.square(delta)
-
-        composite = np.zeros(shape=[512, 512], dtype=np.float32)
-        composite = np.repeat(composite[:, :, np.newaxis], 3, axis=2)
-
-        composite[..., 0] = (1.0 - delta) * 90
-        composite[..., 1] = delta
-        composite[..., 2] = y_true_resized
-        composite = cv2.cvtColor(composite, cv2.COLOR_HSV2BGR)
-
-        cv2.imshow("y_true", y_true_resized)
-        cv2.imshow("y_pred", y_pred_resized)
-        cv2.imshow("delta", delta)
-        cv2.imshow("composite", composite)
-        key = cv2.waitKey(30)
-
-        i = (i + 1) % 32
-    cv2.destroyAllWindows()
-
-
 def train_model(model, database, mode):
     log_dir = "../logs/tests/conv3d_rec_pred/{}/{}".format(mode, int(time()))
     log_dir = os.path.normpath(log_dir)
@@ -244,45 +199,6 @@ def train_model(model, database, mode):
                         callbacks=[tensorboard])
 
     model.save_weights(os.path.join(log_dir, "weights.h5"))
-
-
-def test_anomaly_detection(model, dataset):
-    dataset.epoch_length = 500
-    dataset.batch_size = 8
-
-    input_layer = model.input
-    pred_output = model.output
-    true_output = tf.placeholder(dtype=tf.float32, shape=model.output_shape)
-    error_op = tf.square(pred_output - true_output)
-    error_op = tf.reduce_sum(error_op, axis=[2, 3, 4])
-
-    session = K.get_session()
-
-    errors = np.zeros(shape=[dataset.epoch_length * dataset.batch_size, 32])
-    labels = np.zeros(shape=[dataset.epoch_length * dataset.batch_size, 32], dtype=np.bool)
-    for i in tqdm(range(dataset.epoch_length), desc="Computing errors..."):
-        images, step_labels, _ = dataset.sample(return_labels=True)
-        x, y_true = dataset.divide_batch_io(images)
-        x, y_true = dataset.apply_preprocess(x, y_true)
-
-        step_error = session.run(error_op, feed_dict={input_layer: x, true_output: y_true})
-        indices = np.arange(i * dataset.batch_size, (i + 1) * dataset.batch_size)
-
-        errors[indices] = step_error
-        labels[indices] = step_labels
-
-    errors = (errors - errors.min()) / (errors.max() - errors.min())
-    print(np.mean(labels.astype(np.float32)))
-
-    labels = tf.constant(labels)
-    errors = tf.constant(errors)
-    roc_ops = tf.metrics.auc(labels, errors, summation_method="careful_interpolation")
-    pr_ops = tf.metrics.auc(labels, errors, curve="PR", summation_method="careful_interpolation")
-    auc_ops = roc_ops + pr_ops
-
-    session.run(tf.local_variables_initializer())
-    _, roc, _, pr = session.run(auc_ops)
-    print("ROC : {} | PR : {}".format(roc, pr))
 
 
 def main():
@@ -298,9 +214,9 @@ def main():
     model.load_weights("../logs/tests/conv3d_rec_pred/{}/1551190470/weights.h5".format(mode))
 
     train_model(model, database, mode)
-    visualize(model, test_dataset)
-    visualize(model, train_dataset)
-    test_anomaly_detection(model, test_dataset)
+    visualize_model_errors(model, test_dataset)
+    visualize_model_errors(model, train_dataset)
+    evaluate_model_anomaly_detection(model, test_dataset, 500, 8, evaluate_on_whole_video=True)
 
 
 if __name__ == "__main__":

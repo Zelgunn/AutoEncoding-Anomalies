@@ -20,6 +20,7 @@ from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormal
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
+from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection
 from callbacks import ImageCallback, AUCCallback, CallbackModel
 
 
@@ -528,10 +529,14 @@ class AutoEncoderBaseModel(ABC):
             self.train_loop(database, callbacks, batch_size, epoch_length, epochs)
         except KeyboardInterrupt:
             print("\n==== Training was stopped by a Keyboard Interrupt ====\n")
+        callbacks.on_train_end()
+
         print("============== Saving models weights... ==============")
         self.save_weights("weights".format(self.epochs_seen))
         print("======================= Done ! =======================")
-        callbacks.on_train_end()
+
+        visualize_model_errors(self.autoencoder, database.test_dataset)
+        evaluate_model_anomaly_detection(self.autoencoder, database.test_dataset, epoch_length, batch_size, True)
 
     def resize_database(self, database: Database) -> Database:
         database = database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
