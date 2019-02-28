@@ -1,11 +1,14 @@
-from abc import ABC
 import tensorflow as tf
 from keras.layers import Dense, Lambda, Reshape
+import keras.backend as K
 import numpy as np
+import cv2
+from abc import ABC
+from tqdm import tqdm
 
 from models import AutoEncoderBaseModel, conv_type
 from callbacks import CallbackModel, AUCCallback
-from datasets import Database
+from datasets import Database, Dataset
 
 
 class VariationalBaseModel(AutoEncoderBaseModel, ABC):
@@ -58,6 +61,14 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             embeddings_shape = embeddings_shape[1:]
         return embeddings_shape
 
+    def train(self,
+              database: Database,
+              epoch_length: int,
+              batch_size: int = 64,
+              epochs: int = 1):
+        super(VariationalBaseModel, self).train(database, epoch_length, batch_size, epochs)
+        self.visualize_vae_interpolation(database.test_dataset)
+
     def build_anomaly_callbacks(self, database: Database):
         database = self.resize_database(database)
         test_dataset = database.test_dataset
@@ -78,9 +89,9 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
     def n_predictions(self, n):
         with tf.name_scope("n_pred"):
-            encoder_input = self._encoder.get_input_at(0)
+            encoder_input = self.encoder.get_input_at(0)
             true_outputs = self.get_true_outputs_placeholder()
-            _, latent_mean, latent_log_var = self._encoder(encoder_input)
+            _, latent_mean, latent_log_var = self.encoder(encoder_input)
 
             sampling_function = sampling_n(n)
             layer = Lambda(function=sampling_function)([latent_mean, latent_log_var])
@@ -96,6 +107,40 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             predictions = tf.reduce_mean(error, axis=[1, -3, -2, -1])
 
         return CallbackModel(inputs=[encoder_input, true_outputs], outputs=predictions)
+
+    def visualize_vae_interpolation(self, dataset: Dataset):
+        encoder_input = self.encoder.get_input_at(0)
+        _, latent_mean, latent_log_var = self.encoder(encoder_input)
+
+        decoder_input = self.decoder.get_input_at(0)
+        decoder_output = self.decoder.get_output_at(0)
+
+        interpolation_count = 64
+        input_video, output_video = dataset.get_batch(batch_size=1, seed=1, apply_preprocess_step=False,
+                                                      max_shard_count=1)
+        session = K.get_session()
+
+        mean, log_var = session.run([latent_mean, latent_log_var], feed_dict={encoder_input: input_video})
+        stddev = np.sqrt(np.exp(log_var))
+        z_start = np.random.normal(loc=mean, scale=stddev)
+        z_end = np.random.normal(loc=mean, scale=stddev)
+        z_shape = [1, *self.compute_decoder_input_shape()]
+        z_start = np.reshape(z_start, z_shape)
+        z_end = np.reshape(z_end, z_shape)
+
+        decoded = np.empty(shape=[interpolation_count, *self.decoder.output_shape[1:]])
+        for i in tqdm(range(interpolation_count), desc="Generating output videos..."):
+            progress = i / (interpolation_count - 1.0)
+            z = z_start * (1.0 - progress) + z_end * progress
+
+            decoded[i] = session.run(decoder_output, feed_dict={decoder_input: z})
+
+        key = 13
+        i = 0
+        while key != 27:
+            cv2.imshow("frame", decoded[i][-1])
+            i = (i + 1) % interpolation_count
+            key = cv2.waitKey(30)
 
 
 # region Utils

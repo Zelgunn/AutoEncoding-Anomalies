@@ -51,12 +51,9 @@ def evaluate_model_anomaly_detection(model: Model,
                                      epoch_length: int,
                                      batch_size: int,
                                      evaluate_on_whole_video=True,
-                                     variational_resampling=4):
+                                     variational_resampling=0):
     dataset.epoch_length = epoch_length
     dataset.batch_size = batch_size
-    model_is_variational = hasattr(model, "_latent_mean")
-    if model_is_variational and variational_resampling > 0:
-        print("Using variational aspect of model to re-sample {} times".format(variational_resampling))
 
     input_layer = model.input
     pred_output = model.output
@@ -80,7 +77,7 @@ def evaluate_model_anomaly_detection(model: Model,
 
         feed_dict = {input_layer: x, true_output: y_true}
         step_error = session.run(error_op, feed_dict)
-        if model_is_variational and (variational_resampling > 0):
+        if variational_resampling > 0:
             for _ in range(variational_resampling):
                 step_error += session.run(error_op, feed_dict)
             step_error /= (variational_resampling + 1)

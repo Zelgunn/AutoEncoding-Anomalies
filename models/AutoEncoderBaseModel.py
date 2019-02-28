@@ -106,6 +106,54 @@ class LayerStack(object):
 
 # endregion
 
+# region Output activations
+
+output_activation_ranges = {"sigmoid": [0.0, 1.0],
+                            "tanh": [-1.0, 1.0]}
+
+
+# endregion
+
+# region Reconstruction metrics
+def absolute_error(y_true, y_pred, axis=None):
+    error = tf.abs(y_true - y_pred)
+    return tf.reduce_mean(error, axis)
+
+
+def squared_error(y_true, y_pred, axis=None):
+    error = tf.square(y_true - y_pred)
+    return tf.reduce_mean(error, axis)
+
+
+def cosine_distance(y_true, y_pred, axis=None):
+    with tf.name_scope("Cosine_distance"):
+        y_true = tf.nn.l2_normalize(y_true, axis=axis)
+        y_pred = tf.nn.l2_normalize(y_pred, axis=axis)
+        distance = 2.0 - y_true * y_pred
+        return tf.reduce_mean(distance, axis)
+
+
+def mean_binary_crossentropy(y_true, y_pred, axis=None):
+    return tf.reduce_mean(binary_crossentropy(y_true, y_pred), axis=axis)
+
+
+metrics_dict = {"L1": absolute_error,
+                "L2": squared_error,
+                "cos": cosine_distance,
+                "bce": mean_binary_crossentropy}
+
+# endregion
+
+# region Dynamic choice between Conv2D/Deconv2D and Conv3D/Deconv3D
+types_with_transpose = ["conv_block", "residual_block"]
+
+conv_type = {"conv_block": {False: Conv3D, True: Deconv3D},
+             "residual_block": {False: ResBlock3D, True: ResBlock3DTranspose},
+             "dense_block": {False: DenseBlock3D}}
+
+pool_type = {"max": MaxPooling3D,
+             "average": AveragePooling3D}
+# endregion
 
 uint8_max_constant = tf.constant(255.0, dtype=tf.float32)
 
@@ -533,7 +581,8 @@ class AutoEncoderBaseModel(ABC):
         print("======================= Done ! =======================")
 
         visualize_model_errors(self.autoencoder, database.test_dataset)
-        evaluate_model_anomaly_detection(self.autoencoder, database.test_dataset, epoch_length, batch_size, True)
+        evaluate_model_anomaly_detection(self.autoencoder, database.test_dataset, epoch_length, batch_size, True,
+                                         variational_resampling=4)
 
     def resize_database(self, database: Database) -> Database:
         database = database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
@@ -750,7 +799,7 @@ class AutoEncoderBaseModel(ABC):
         true_outputs = self.get_true_outputs_placeholder()
 
         squared_delta = tf.square(self.autoencoder.output - true_outputs)
-        average_error = tf.reduce_max(squared_delta, axis=[-3, -2, -1])
+        average_error = tf.reduce_sum(squared_delta, axis=[-3, -2, -1])
 
         frame_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], average_error)
 
@@ -829,53 +878,3 @@ class AutoEncoderBaseModel(ABC):
     def output_sequence_length(self):
         return self.output_shape[0]
     # endregion
-
-
-# region Output activations
-
-output_activation_ranges = {"sigmoid": [0.0, 1.0],
-                            "tanh": [-1.0, 1.0]}
-
-
-# endregion
-
-# region Reconstruction metrics
-def absolute_error(y_true, y_pred, axis=None):
-    error = tf.abs(y_true - y_pred)
-    return tf.reduce_mean(error, axis)
-
-
-def squared_error(y_true, y_pred, axis=None):
-    error = tf.square(y_true - y_pred)
-    return tf.reduce_mean(error, axis)
-
-
-def cosine_distance(y_true, y_pred, axis=None):
-    with tf.name_scope("Cosine_distance"):
-        y_true = tf.nn.l2_normalize(y_true, axis=axis)
-        y_pred = tf.nn.l2_normalize(y_pred, axis=axis)
-        distance = 2.0 - y_true * y_pred
-        return tf.reduce_mean(distance, axis)
-
-
-def mean_binary_crossentropy(y_true, y_pred, axis=None):
-    return tf.reduce_mean(binary_crossentropy(y_true, y_pred), axis=axis)
-
-
-metrics_dict = {"L1": absolute_error,
-                "L2": squared_error,
-                "cos": cosine_distance,
-                "bce": mean_binary_crossentropy}
-
-# endregion
-
-# region Dynamic choice between Conv2D/Deconv2D and Conv3D/Deconv3D
-types_with_transpose = ["conv_block", "residual_block"]
-
-conv_type = {"conv_block": {False: Conv3D, True: Deconv3D},
-             "residual_block": {False: ResBlock3D, True: ResBlock3DTranspose},
-             "dense_block": {False: DenseBlock3D}}
-
-pool_type = {"max": MaxPooling3D,
-             "average": AveragePooling3D}
-# endregion
