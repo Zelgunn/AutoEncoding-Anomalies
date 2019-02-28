@@ -2,8 +2,10 @@
   <dictionary name="Degva">
     <words>
       <w>astype</w>
+      <w>autoencode</w>
       <w>autoencoder</w>
       <w>degva</w>
+      <w>divx</w>
       <w>filenames</w>
       <w>imshow</w>
       <w>lstm</w>

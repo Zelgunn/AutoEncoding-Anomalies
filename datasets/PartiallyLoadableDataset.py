@@ -32,8 +32,7 @@ class PartiallyLoadableDataset(Dataset):
         self.normalization_range = None
 
     def sample_single_video(self, video_index, shard_size, sequence_length, return_labels):
-        video_shard_filepath = os.path.join(self.dataset_path, self.videos_filenames[video_index])
-        video_shard = np.load(video_shard_filepath, mmap_mode="r")
+        video_shard = self.get_video_hook(video_index)
 
         indices = self.sample_indices(shard_size, len(video_shard), sequence_length)
         video = video_shard[indices]
@@ -53,6 +52,21 @@ class PartiallyLoadableDataset(Dataset):
 
     def normalize_samples(self, samples: np.ndarray):
         return samples * self.normalization_range[1] + self.normalization_range[0]
+
+    def get_video_hook(self, video_index):
+        assert 0 <= video_index < self.videos_count
+        video_shard_filepath = os.path.join(self.dataset_path, self.videos_filenames[video_index])
+        return np.load(video_shard_filepath, mmap_mode="r")
+
+    def get_video_length(self, video_index):
+        assert 0 <= video_index < self.videos_count
+        return len(self.get_video_hook(video_index))
+
+    def get_video_frames(self, video_index, start, end):
+        assert 0 <= video_index < self.videos_count
+        video_shard = self.get_video_hook(video_index)
+        assert 0 <= start < end < len(video_shard)
+        return video_shard[start:end]
 
     def shuffle(self):
         pass

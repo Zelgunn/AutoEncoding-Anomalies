@@ -10,17 +10,19 @@ from keras.backend import binary_crossentropy
 from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
+import cv2
 from abc import ABC, abstractmethod
 import os
 import json
 import copy
+from tqdm import tqdm
 from typing import List, Any
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
-from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection
+from utils.test_utils import evaluate_model_anomaly_detection
 from callbacks import ImageCallback, AUCCallback, CallbackModel
 
 
@@ -200,6 +202,7 @@ class AutoEncoderBaseModel(ABC):
         self.upsampling = None
         self.use_batch_normalization = None
 
+        self.temporal_loss_weights = None
         self.optimizer = None
 
         self.log_dir = None
@@ -495,6 +498,17 @@ class AutoEncoderBaseModel(ABC):
         else:
             raise ValueError
 
+    def apply_temporal_weights_to_loss(self, loss: tf.Tensor):
+        if self.temporal_loss_weights is None:
+            reconstruction_loss_weights = np.ones([self.input_sequence_length], dtype=np.float32)
+            prediction_loss_weights = np.arange(start=1.0, stop=0.0, step=-1/self.input_sequence_length,
+                                                dtype=np.float32)
+            prediction_loss_weights = np.square(prediction_loss_weights)
+            loss_weights = np.concatenate([reconstruction_loss_weights, prediction_loss_weights])
+            self.temporal_loss_weights = tf.constant(loss_weights)
+
+        return loss * self.temporal_loss_weights
+
     # endregion
 
     # region Model(s) (Getters)
@@ -580,7 +594,7 @@ class AutoEncoderBaseModel(ABC):
         self.save_weights()
         print("======================= Done ! =======================")
 
-        visualize_model_errors(self.autoencoder, database.test_dataset)
+        # visualize_model_errors(self.autoencoder, database.test_dataset)
         evaluate_model_anomaly_detection(self.autoencoder, database.test_dataset, epoch_length, batch_size, True,
                                          variational_resampling=4)
 
@@ -826,6 +840,26 @@ class AutoEncoderBaseModel(ABC):
         return schedule
 
     # endregion
+
+    def autoencode_video(self, dataset: Dataset, video_index: int, output_video_filepath: str, fps=25.0):
+        video_length = dataset.get_video_length(video_index)
+        window_length = self.input_sequence_length
+
+        frame_size = tuple(self.output_image_size)
+        fourcc = cv2.VideoWriter_fourcc(*"DIVX")
+        video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
+
+        for i in tqdm(range(video_length - window_length)):
+            input_shard = dataset.get_video_frames(video_index, i, i + window_length)
+            input_shard = np.expand_dims(input_shard, axis=0)
+            predicted_shard = self.autoencoder.predict_on_batch(input_shard)
+
+            output_frame = predicted_shard[0][1]
+            output_frame = (output_frame * 255).astype(np.uint8)
+            output_frame = np.repeat(output_frame, 3, axis=-1)
+            video_writer.write(output_frame)
+
+        video_writer.release()
 
     # region Log dir
 

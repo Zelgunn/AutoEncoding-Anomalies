@@ -108,6 +108,7 @@ class SubwayDatabase(PartiallyLoadableDatabase):
             if not ret:
                 break
             frame = cv2.resize(frame, dsize=frame_size)
+            print(frame.shape)
             video_writer.write(frame)
         print('', end=os.linesep)
 
@@ -136,6 +137,7 @@ if __name__ == "__main__":
                                      input_sequence_length=None,
                                      output_sequence_length=None)
     prepared_resolutions = [
+        [128, 128],
         [192, 256],
         [96, 128],
         [48, 64],

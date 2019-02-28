@@ -114,6 +114,14 @@ class Dataset(Sequence, ABC):
     def sample_single_video(self, video_index, shard_size, sequence_length, return_labels):
         raise NotImplementedError
 
+    @abstractmethod
+    def get_video_length(self, video_index):
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_video_frames(self, video_index, start, end):
+        raise NotImplementedError
+
     @property
     def total_sequence_length(self):
         return max(self.input_sequence_length, self.output_sequence_length)

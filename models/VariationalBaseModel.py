@@ -115,8 +115,8 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         decoder_input = self.decoder.get_input_at(0)
         decoder_output = self.decoder.get_output_at(0)
 
-        interpolation_count = 64
-        input_video, output_video = dataset.get_batch(batch_size=1, seed=1, apply_preprocess_step=False,
+        interpolation_count = 16
+        input_video, output_video = dataset.get_batch(batch_size=1, seed=None, apply_preprocess_step=False,
                                                       max_shard_count=1)
         session = K.get_session()
 
@@ -136,11 +136,23 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             decoded[i] = session.run(decoder_output, feed_dict={decoder_input: z})
 
         key = 13
-        i = 0
+        i = j = 0
+        input_video_length = len(input_video[0])
+        predicted_video_lenght = len(output_video[0]) - input_video_length
         while key != 27:
-            cv2.imshow("frame", decoded[i][-1])
-            i = (i + 1) % interpolation_count
+            frame = decoded[i][j + input_video_length]
+            frame = cv2.resize(frame, (512, 512))
+            cv2.imshow("frame", frame)
+
+            base = output_video[0][j + input_video_length]
+            base = cv2.resize(base, (512, 512))
+            cv2.imshow("base", base)
+
             key = cv2.waitKey(30)
+
+            j = (j + 1) % predicted_video_lenght
+            if key != -1:
+                i = (i + 1) % interpolation_count
 
 
 # region Utils

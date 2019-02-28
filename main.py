@@ -58,6 +58,10 @@ auto_encoder = auto_encoder_class()
 auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
+auto_encoder.build()
+x = tf.random_normal(shape=[8, 32])
+print(auto_encoder.apply_temporal_weights_to_loss(x))
+exit()
 # endregion
 
 # region Print parameters
@@ -143,17 +147,16 @@ else:
     auto_encoder.train(database, epoch_length=500, epochs=75, batch_size=8)
 
 # TODO : Merge self.build_encoder
+# TODO : Rename .build() to .compile() ?
+# TODO : Prediction loss not just L2 (weighted)
 
 # TODO : Residual Scaling
-# TODO : He-al/MSRA initialization (+ scaled option)
 
 # TODO : config - for callbacks (batch_size, samples count, ...)
 
 # TODO : Make patches from images
 # TODO : Flow version
-# TODO : Video version (Normal + Flow)
 
 # TODO : Load complete model
-# TODO : Encode/Decode the complete video !
 
 # TODO : Update bibliography
