@@ -12,8 +12,8 @@
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1}
     ],
-    "block_type": "dense_block",
-    "pooling": "average",
+    "block_type": "residual_block",
+    "pooling": "max",
     "upsampling": "upsampling",
     "use_batch_normalization": "False",
     "use_spectral_norm": "False",
@@ -24,11 +24,10 @@
     "residual_scaling": "1.0",
     "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",
-    "metrics": ["mean_squared_error"],
+    "metrics": ["mean_squared_error", "mean_absolute_error"],
     "pixel_level_labels_size": [8, 16],
     "data_generators": {
         "train": {"dropout_rate": 0.0},
         "test": {"dropout_rate": 0.0}
-    },
-    "weight_decay" : 1e-4
+    }
 }

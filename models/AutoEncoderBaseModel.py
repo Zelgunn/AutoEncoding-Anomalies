@@ -713,8 +713,8 @@ class AutoEncoderBaseModel(ABC):
             error = tf.cast(io_delta, tf.float32) / 255.0
             composite_hue = tf.multiply(1.0 - error, 0.25, name="composite_hue")
             composite_saturation = tf.identity(error, name="composite_saturation")
-            composite_value = tf.cast(true_outputs, tf.float32) / 255.0 + error
-            composite_value = tf.clip_by_value(composite_value, 0.0, 1.0, name="composite_value")
+            composite_value = tf.cast(true_outputs, tf.float32) / 255.0
+            composite_value = tf.maximum(composite_value, error, name="composite_value")
             composite_hsv = tf.concat([composite_hue, composite_saturation, composite_value], axis=-1,
                                       name="composite_hsv")
             composite_rgb = tf.image.hsv_to_rgb(composite_hsv)

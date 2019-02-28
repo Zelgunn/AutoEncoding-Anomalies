@@ -61,7 +61,7 @@ class Dataset(Sequence, ABC):
     def resized(self, size, input_sequence_length, output_sequence_length):
         raise NotImplementedError
 
-    def get_batch(self, batch_size=None, seed=None, apply_preprocess_step=True, max_shard_count=1):
+    def get_batch(self, batch_size=None, seed=None, apply_preprocess_step=True, max_shard_count=8):
         with NumpySeedContext(seed):
             videos: np.ndarray = self.sample(batch_size, seed=seed, sampled_videos_count=max_shard_count)
 
