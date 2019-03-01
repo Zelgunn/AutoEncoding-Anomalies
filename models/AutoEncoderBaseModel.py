@@ -891,7 +891,7 @@ class AutoEncoderBaseModel(ABC):
         true_outputs = self.get_true_outputs_placeholder()
 
         squared_delta = tf.square(self.autoencoder.output - true_outputs)
-        average_error = tf.reduce_sum(squared_delta, axis=[-3, -2, -1])
+        average_error = tf.reduce_sum(squared_delta, axis=[2, 3, 4])
 
         frame_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], average_error)
 

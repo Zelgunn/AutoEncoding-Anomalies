@@ -165,7 +165,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         test_dataset = database.test_dataset
         anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
 
-        samples = test_dataset.sample(batch_size=64, seed=16, sampled_videos_count=16, return_labels=True)
+        samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=16, return_labels=True)
         videos, frame_labels, _ = samples
         videos = test_dataset.divide_batch_io(videos)
 
@@ -194,8 +194,9 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
             autoencoded = tf.reshape(autoencoded, [-1, n, *self.output_shape])
             true_outputs_expanded = tf.expand_dims(true_outputs, axis=1)
-            error = tf.abs(true_outputs_expanded - autoencoded)
-            predictions = tf.reduce_mean(error, axis=[1, -3, -2, -1])
+            error = tf.square(true_outputs_expanded - autoencoded)
+            # reduced axis are [1 : n, 3 : height, 4 : width, 5 : channels]
+            predictions = tf.reduce_mean(error, axis=[1, 3, 4, 5])
 
         return CallbackModel(inputs=[encoder_input, true_outputs], outputs=predictions)
 

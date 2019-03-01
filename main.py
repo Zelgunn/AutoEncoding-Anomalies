@@ -38,6 +38,7 @@ use_patches = False
 previous_weights_to_load = None
 # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551254815"
 
+# region Config/Database selection
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
 config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
 if alt_config_suffix_used is None:
@@ -45,6 +46,7 @@ if alt_config_suffix_used is None:
 else:
     alt_config_used = "configs/alt/{dataset}/{model}_{dataset}_{suffix}.json".format(
         model=model_used, dataset=database_config_alias, suffix=alt_config_suffix_used)
+# endregion
 
 preview_tensorboard_test_images = False
 allow_gpu_growth = False
@@ -121,11 +123,11 @@ config.gpu_options.allow_growth = allow_gpu_growth
 session = tf.Session(config=config)
 K.set_session(session)
 
-# endregion
-
 if previous_weights_to_load is not None:
     print("=> Loading weights from :", previous_weights_to_load)
     auto_encoder.load_weights(previous_weights_to_load)
+
+# endregion
 
 if profile:
     import cProfile
