@@ -5,7 +5,7 @@ from models import AutoEncoderBaseModel, KerasModel, metrics_dict
 
 
 class BasicAE(AutoEncoderBaseModel):
-    def build(self):
+    def compile(self):
         autoencoded = self.decoder(self.encoder(self.encoder.input))
         autoencoder = KerasModel(inputs=self.encoder.inputs, outputs=autoencoded)
         reconstruction_loss = metrics_dict[self.config["reconstruction_loss"]]
@@ -13,7 +13,7 @@ class BasicAE(AutoEncoderBaseModel):
 
         self._autoencoder = autoencoder
 
-    def build_encoder(self):
+    def compile_encoder(self):
         input_layer = Input(self.input_shape)
         layer = input_layer
 

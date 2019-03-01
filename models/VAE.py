@@ -6,7 +6,7 @@ from models.VariationalBaseModel import kullback_leibler_divergence_mean0_var1
 
 
 class VAE(VariationalBaseModel):
-    def build(self):
+    def compile(self):
         input_layer = self.encoder.input
         encoded, latent_mean, latent_log_var = self.encoder(input_layer)
         autoencoded = self.decoder(encoded)
@@ -24,7 +24,7 @@ class VAE(VariationalBaseModel):
         self._latent_mean = latent_mean
         self._latent_log_var = latent_log_var
 
-    def build_encoder(self):
+    def compile_encoder(self):
         input_layer = Input(self.input_shape)
         layer = input_layer
 

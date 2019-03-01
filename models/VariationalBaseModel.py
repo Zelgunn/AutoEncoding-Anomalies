@@ -38,13 +38,13 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     @property
     def latent_mean(self):
         if self._latent_mean is None:
-            self.build()
+            self.compile()
         return self._latent_mean
 
     @property
     def latent_log_var(self):
         if self._latent_log_var is None:
-            self.build()
+            self.compile()
         return self._latent_log_var
 
     def compute_embeddings_output_shape(self):

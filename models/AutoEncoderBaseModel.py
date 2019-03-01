@@ -445,14 +445,14 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     @abstractmethod
-    def build(self):
+    def compile(self):
         raise NotImplementedError
 
     @abstractmethod
-    def build_encoder(self):
+    def compile_encoder(self):
         raise NotImplementedError
 
-    def build_decoder_half(self, input_layer, predictor_half):
+    def compile_decoder_half(self, input_layer, predictor_half):
         layer = input_layer
 
         layers = self.predictor_layers if predictor_half else self.reconstructor_layers
@@ -467,11 +467,11 @@ class AutoEncoderBaseModel(ABC):
         output_layer = self.get_activation(self.output_activation)(layer)
         return output_layer
 
-    def build_decoder(self):
+    def compile_decoder(self):
         self.decoder_input_layer = Input(self.compute_decoder_input_shape())
 
-        self.reconstructor_output = self.build_decoder_half(self.decoder_input_layer, False)
-        self.predictor_output = self.build_decoder_half(self.decoder_input_layer, True)
+        self.reconstructor_output = self.compile_decoder_half(self.decoder_input_layer, False)
+        self.predictor_output = self.compile_decoder_half(self.decoder_input_layer, True)
 
         output_layer = Concatenate(axis=1)([self.reconstructor_output, self.predictor_output])
 
@@ -543,19 +543,19 @@ class AutoEncoderBaseModel(ABC):
     @property
     def autoencoder(self):
         if self._autoencoder is None:
-            self.build()
+            self.compile()
         return self._autoencoder
 
     @property
     def encoder(self):
         if self._encoder is None:
-            self.build_encoder()
+            self.compile_encoder()
         return self._encoder
 
     @property
     def decoder(self):
         if self._decoder is None:
-            self.build_decoder()
+            self.compile_decoder()
         return self._decoder
 
     # endregion

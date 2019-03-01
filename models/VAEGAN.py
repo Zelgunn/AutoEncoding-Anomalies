@@ -7,7 +7,7 @@ from models.VAE import kullback_leibler_divergence_mean0_var1
 
 class VAEGAN(GAN, VariationalBaseModel):
     # region Model building
-    def build_encoder(self):
+    def compile_encoder(self):
         input_layer = Input(self.input_shape)
         layer = input_layer
 
@@ -37,7 +37,7 @@ class VAEGAN(GAN, VariationalBaseModel):
         self._latent_log_var = latent_log_var
         self._encoder = KerasModel(inputs=input_layer, outputs=outputs, name="Encoder")
 
-    def build(self):
+    def compile(self):
         with tf.name_scope("Autoencoder"):
             encoder_input = Input(self.input_shape)
             encoded, latent_mean, latent_log_var = self.encoder(encoder_input)

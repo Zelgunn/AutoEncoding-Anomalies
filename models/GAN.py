@@ -26,7 +26,7 @@ class GAN(AutoEncoderBaseModel):
 
         self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
 
-    def build(self):
+    def compile(self):
         encoder_input = Input(self.input_shape)
         autoencoded = self.decoder(self.encoder(encoder_input))
         autoencoder = KerasModel(inputs=encoder_input, outputs=autoencoded,
@@ -62,7 +62,7 @@ class GAN(AutoEncoderBaseModel):
         self._autoencoder = autoencoder
         self._adversarial_generator = adversarial_generator
 
-    def build_encoder(self):
+    def compile_encoder(self):
         input_layer = Input(self.input_shape)
         layer = input_layer
 
@@ -82,7 +82,7 @@ class GAN(AutoEncoderBaseModel):
 
         self._encoder = KerasModel(inputs=input_layer, outputs=outputs, name="Encoder")
 
-    def build_discriminator(self):
+    def compile_discriminator(self):
         discriminator_name = "Discriminator"
         input_layer = Input(self.input_shape)
         layer = input_layer
@@ -102,13 +102,13 @@ class GAN(AutoEncoderBaseModel):
     @property
     def discriminator(self):
         if self._discriminator is None:
-            self.build_discriminator()
+            self.compile_discriminator()
         return self._discriminator
 
     @property
     def adversarial_generator(self):
         if self._adversarial_generator is None:
-            self.build()
+            self.compile()
         return self._adversarial_generator
 
     # region Training

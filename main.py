@@ -58,10 +58,7 @@ auto_encoder = auto_encoder_class()
 auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
-auto_encoder.build()
-x = tf.random_normal(shape=[8, 32])
-print(auto_encoder.apply_temporal_weights_to_loss(x))
-exit()
+auto_encoder.compile()
 # endregion
 
 # region Print parameters

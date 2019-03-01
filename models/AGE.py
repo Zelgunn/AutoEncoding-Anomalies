@@ -19,7 +19,7 @@ class AGE(AutoEncoderBaseModel):
         self._decoder_fake_data_trainer: KerasModel = None
 
     # region Model building
-    def build(self):
+    def compile(self):
         encoder_decoder_input = Input(self.input_shape)
         real_data_latent = self.encoder(encoder_decoder_input)
         encoder_decoder_output = self.decoder(real_data_latent)
@@ -64,7 +64,7 @@ class AGE(AutoEncoderBaseModel):
         autoencoder = KerasModel(inputs=encoder_decoder_input, outputs=encoder_decoder_output, name="Autoencoder")
         self._autoencoder = autoencoder
 
-    def build_encoder(self):
+    def compile_encoder(self):
         input_layer = Input(self.input_shape)
         layer = input_layer
 
@@ -126,25 +126,25 @@ class AGE(AutoEncoderBaseModel):
     @property
     def encoder_real_data_trainer(self):
         if self._encoder_real_data_trainer is None:
-            self.build()
+            self.compile()
         return self._encoder_real_data_trainer
 
     @property
     def encoder_fake_data_trainer(self):
         if self._encoder_fake_data_trainer is None:
-            self.build()
+            self.compile()
         return self._encoder_fake_data_trainer
 
     @property
     def decoder_real_data_trainer(self):
         if self._decoder_real_data_trainer is None:
-            self.build()
+            self.compile()
         return self._decoder_real_data_trainer
 
     @property
     def decoder_fake_data_trainer(self):
         if self._decoder_fake_data_trainer is None:
-            self.build()
+            self.compile()
         return self._decoder_fake_data_trainer
 
     # region Training
