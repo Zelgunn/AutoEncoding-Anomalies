@@ -35,8 +35,8 @@ dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
 use_flow = False
 use_patches = False
-# previous_weights_to_load = None
-previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551442658"
+previous_weights_to_load = None
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551442658"
 
 # region Config/Database selection
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]

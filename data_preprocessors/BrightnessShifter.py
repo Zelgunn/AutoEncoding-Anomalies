@@ -4,8 +4,14 @@ from data_preprocessors import DataPreprocessor
 
 
 class BrightnessShifter(DataPreprocessor):
-    def __init__(self, inputs_gain=None, inputs_bias=None, outputs_gain=None, outputs_bias=None,
-                 values_range=(0.0, 1.0), normalization_method="clip"):
+    def __init__(self,
+                 inputs_gain=None,
+                 inputs_bias=None,
+                 outputs_gain=None,
+                 outputs_bias=None,
+                 values_range=(0.0, 1.0),
+                 normalization_method="clip",
+                 process_outputs_with_inputs=True):
         super(BrightnessShifter, self).__init__()
         self.inputs_gain = inputs_gain
         self.inputs_bias = inputs_bias
@@ -13,10 +19,18 @@ class BrightnessShifter(DataPreprocessor):
         self.outputs_bias = outputs_bias
         self.values_range = values_range
         self.normalization_method = normalization_method
+        self.process_outputs_with_inputs = process_outputs_with_inputs
 
     def process(self, inputs: np.ndarray, outputs: np.ndarray):
-        inputs = self.process_one(inputs, self.inputs_gain, self.inputs_bias)
-        outputs = self.process_one(outputs, self.outputs_gain, self.outputs_bias)
+        if self.process_outputs_with_inputs:
+            inputs_len = inputs.shape[1]
+            array = np.concatenate([inputs, outputs], axis=1)
+            array = self.process_one(array, self.inputs_gain, self.inputs_bias)
+            inputs = array[:, :inputs_len]
+            outputs = array[:, inputs_len:]
+        else:
+            inputs = self.process_one(inputs, self.inputs_gain, self.inputs_bias)
+            outputs = self.process_one(outputs, self.outputs_gain, self.outputs_bias)
 
         return inputs, outputs
 
