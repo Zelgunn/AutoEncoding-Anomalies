@@ -285,9 +285,7 @@ class AutoEncoderBaseModel(ABC):
 
     # endregion
 
-    # region Model(s) (Builders)
-
-    # region Layers
+    # region Build
     def build_layers(self):
         for stack_info in self.config["encoder"]:
             stack = self.build_conv_stack(stack_info)
@@ -442,7 +440,23 @@ class AutoEncoderBaseModel(ABC):
     def compute_decoder_input_shape(self):
         return self.compute_embeddings_output_shape()
 
+    def build_optimizer(self):
+        optimizer_name = self.config["optimizer"]["name"].lower()
+        if optimizer_name == "adam":
+            self.optimizer = Adam(lr=self.config["optimizer"]["lr"],
+                                  beta_1=self.config["optimizer"]["beta_1"],
+                                  beta_2=self.config["optimizer"]["beta_2"],
+                                  decay=self.config["optimizer"]["decay"])
+        elif optimizer_name == "rmsprop":
+            self.optimizer = RMSprop(lr=self.config["optimizer"]["lr"],
+                                     rho=self.config["optimizer"]["rho"],
+                                     decay=self.config["optimizer"]["decay"])
+        else:
+            raise ValueError
+
     # endregion
+
+    # region Compile
 
     @abstractmethod
     def compile(self):
@@ -484,24 +498,10 @@ class AutoEncoderBaseModel(ABC):
         else:
             return Activation(activation_config["name"])
 
-    def build_optimizer(self):
-        optimizer_name = self.config["optimizer"]["name"].lower()
-        if optimizer_name == "adam":
-            self.optimizer = Adam(lr=self.config["optimizer"]["lr"],
-                                  beta_1=self.config["optimizer"]["beta_1"],
-                                  beta_2=self.config["optimizer"]["beta_2"],
-                                  decay=self.config["optimizer"]["decay"])
-        elif optimizer_name == "rmsprop":
-            self.optimizer = RMSprop(lr=self.config["optimizer"]["lr"],
-                                     rho=self.config["optimizer"]["rho"],
-                                     decay=self.config["optimizer"]["decay"])
-        else:
-            raise ValueError
-
     def apply_temporal_weights_to_loss(self, loss: tf.Tensor):
         if self.temporal_loss_weights is None:
             reconstruction_loss_weights = np.ones([self.input_sequence_length], dtype=np.float32)
-            prediction_loss_weights = np.arange(start=1.0, stop=0.0, step=-1/self.input_sequence_length,
+            prediction_loss_weights = np.arange(start=1.0, stop=0.0, step=-1 / self.input_sequence_length,
                                                 dtype=np.float32)
             prediction_loss_weights = np.square(prediction_loss_weights)
             loss_weights = np.concatenate([reconstruction_loss_weights, prediction_loss_weights])
@@ -673,6 +673,30 @@ class AutoEncoderBaseModel(ABC):
 
     # endregion
 
+    # region Testing
+
+    def autoencode_video(self, dataset: Dataset, video_index: int, output_video_filepath: str, fps=25.0):
+        video_length = dataset.get_video_length(video_index)
+        window_length = self.input_sequence_length
+
+        frame_size = tuple(self.output_image_size)
+        fourcc = cv2.VideoWriter_fourcc(*"DIVX")
+        video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
+
+        for i in tqdm(range(video_length - window_length)):
+            input_shard = dataset.get_video_frames(video_index, i, i + window_length)
+            input_shard = np.expand_dims(input_shard, axis=0)
+            predicted_shard = self.autoencoder.predict_on_batch(input_shard)
+
+            output_frame = predicted_shard[0][1]
+            output_frame = (output_frame * 255).astype(np.uint8)
+            output_frame = np.repeat(output_frame, 3, axis=-1)
+            video_writer.write(output_frame)
+
+        video_writer.release()
+
+    # endregion
+
     # region Callbacks
     def build_callbacks(self, database: Database):
         return self.build_common_callbacks() + self.build_anomaly_callbacks(database)
@@ -840,26 +864,6 @@ class AutoEncoderBaseModel(ABC):
         return schedule
 
     # endregion
-
-    def autoencode_video(self, dataset: Dataset, video_index: int, output_video_filepath: str, fps=25.0):
-        video_length = dataset.get_video_length(video_index)
-        window_length = self.input_sequence_length
-
-        frame_size = tuple(self.output_image_size)
-        fourcc = cv2.VideoWriter_fourcc(*"DIVX")
-        video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
-
-        for i in tqdm(range(video_length - window_length)):
-            input_shard = dataset.get_video_frames(video_index, i, i + window_length)
-            input_shard = np.expand_dims(input_shard, axis=0)
-            predicted_shard = self.autoencoder.predict_on_batch(input_shard)
-
-            output_frame = predicted_shard[0][1]
-            output_frame = (output_frame * 255).astype(np.uint8)
-            output_frame = np.repeat(output_frame, 3, axis=-1)
-            video_writer.write(output_frame)
-
-        video_writer.release()
 
     # region Log dir
 
