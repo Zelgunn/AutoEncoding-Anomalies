@@ -19,7 +19,7 @@ class DropoutNoiser(DataPreprocessor):
         return inputs, outputs
 
 
-def add_dropout_noise_to(images, dropout_rate=None):
+def add_dropout_noise_to(images, dropout_rate):
     noisy_images = images
     if dropout_rate > 0.0:
         noisy_images = np.copy(noisy_images)
