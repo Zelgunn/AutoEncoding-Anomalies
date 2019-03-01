@@ -296,17 +296,20 @@ class AutoEncoderBaseModel(ABC):
         section_name = "train" if train else "test"
         section = self.config["data_generators"][section_name]
 
-        if "dropout_rate" in section:
-            dropout_noise_rate = section["dropout_rate"]
-            dropout_noiser = DropoutNoiser(inputs_dropout_rate=dropout_noise_rate)
-            data_preprocessors.append(dropout_noiser)
-
         if "brightness" in section:
             brightness_section = section["brightness"]
             gain = brightness_section["gain"] if "gain" in brightness_section else None
             bias = brightness_section["bias"] if "bias" in brightness_section else None
-            brightness_shifter = BrightnessShifter(inputs_gain=gain, inputs_bias=bias, values_range=self.output_range)
+            norm_method = brightness_section["normalization_method"] if "normalization_method" in brightness_section\
+                else "clip"
+            brightness_shifter = BrightnessShifter(inputs_gain=gain, inputs_bias=bias, values_range=self.output_range,
+                                                   normalization_method=norm_method)
             data_preprocessors.append(brightness_shifter)
+
+        if "dropout_rate" in section:
+            dropout_noise_rate = section["dropout_rate"]
+            dropout_noiser = DropoutNoiser(inputs_dropout_rate=dropout_noise_rate)
+            data_preprocessors.append(dropout_noiser)
 
         return data_preprocessors
 
