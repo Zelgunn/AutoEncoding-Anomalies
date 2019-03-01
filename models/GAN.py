@@ -16,7 +16,6 @@ class GAN(AutoEncoderBaseModel):
         self._discriminator = None
         self._adversarial_generator = None
 
-    # region Model building
     def build_layers(self):
         super(GAN, self).build_layers()
 
@@ -26,6 +25,7 @@ class GAN(AutoEncoderBaseModel):
 
         self.discriminator_regression_layer = Dense(units=1, activation="sigmoid")
 
+    # region Compile
     def compile(self):
         encoder_input = Input(self.input_shape)
         autoencoded = self.decoder(self.encoder(encoder_input))
@@ -61,26 +61,6 @@ class GAN(AutoEncoderBaseModel):
 
         self._autoencoder = autoencoder
         self._adversarial_generator = adversarial_generator
-
-    def compile_encoder(self):
-        input_layer = Input(self.input_shape)
-        layer = input_layer
-
-        for i in range(self.depth):
-            use_dropout = i > 0
-            layer = self.encoder_layers[i](layer, use_dropout)
-
-        with tf.name_scope("embeddings"):
-            if self.use_dense_embeddings:
-                layer = Reshape([-1])(layer)
-            layer = self.embeddings_layer(layer)
-            layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
-            if self.use_dense_embeddings:
-                layer = Reshape(self.compute_embeddings_output_shape())(layer)
-
-        outputs = layer
-
-        self._encoder = KerasModel(inputs=input_layer, outputs=outputs, name="Encoder")
 
     def compile_discriminator(self):
         discriminator_name = "Discriminator"

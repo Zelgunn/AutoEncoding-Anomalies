@@ -27,7 +27,14 @@
     "metrics": ["mean_squared_error", "mean_absolute_error"],
     "pixel_level_labels_size": [8, 16],
     "data_generators": {
-        "train": {"dropout_rate": 0.0},
-        "test": {"dropout_rate": 0.0}
-    }
+        "train": {
+            "dropout_rate": 0.0,
+            "brightness": {"gain": 0.1, "bias": 0.1}
+        },
+        "test": {
+            "dropout_rate": 0.0,
+            "brightness": {"gain": 0.0, "bias": 0.0}
+        }
+    },
+    "weight_decay" : 1e-5
 }

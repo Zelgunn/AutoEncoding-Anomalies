@@ -1,7 +1,6 @@
 from keras.models import Model as KerasModel
-from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input
+from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input, Reshape, Concatenate
 from keras.layers import Conv3D, Deconv3D, MaxPooling3D, AveragePooling3D, UpSampling3D
-from keras.layers import Concatenate
 from keras.initializers import VarianceScaling
 from keras.regularizers import l2
 from keras.optimizers import Adam, RMSprop
@@ -24,6 +23,7 @@ from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
 from utils.test_utils import evaluate_model_anomaly_detection
 from callbacks import ImageCallback, AUCCallback, CallbackModel
+from data_preprocessors import DropoutNoiser, BrightnessShifter
 
 
 # region Containers
@@ -215,6 +215,9 @@ class AutoEncoderBaseModel(ABC):
         self.use_spectral_norm = False
         self.weight_decay_regularizer = None
 
+        self.train_data_preprocessors = None
+        self.test_data_preprocessors = None
+
     def load_config(self, config_file: str, alt_config_file: str or None):
         # region Open/Load json file(s)
         with open(config_file) as tmp_file:
@@ -282,6 +285,32 @@ class AutoEncoderBaseModel(ABC):
         inv_range = 1.0 / (self.output_range[1] - self.output_range[0])
         self._inv_output_range_constant = tf.constant(inv_range, name="inv_output_range")
         # endregion
+
+        self.train_data_preprocessors = self.get_data_preprocessors(True)
+        self.test_data_preprocessors = self.get_data_preprocessors(False)
+
+    # region Data Preprocessors
+    def get_data_preprocessors(self, train: bool):
+        data_preprocessors = []
+
+        section_name = "train" if train else "test"
+        section = self.config["data_generators"][section_name]
+
+        if "dropout_rate" in section:
+            dropout_noise_rate = section["dropout_rate"]
+            dropout_noiser = DropoutNoiser(inputs_dropout_rate=dropout_noise_rate)
+            data_preprocessors.append(dropout_noiser)
+
+        if "brightness" in section:
+            brightness_section = section["brightness"]
+            gain = brightness_section["gain"] if "gain" in brightness_section else None
+            bias = brightness_section["bias"] if "bias" in brightness_section else None
+            brightness_shifter = BrightnessShifter(inputs_gain=gain, inputs_bias=bias, values_range=self.output_range)
+            data_preprocessors.append(brightness_shifter)
+
+        return data_preprocessors
+
+    # endregion
 
     # endregion
 
@@ -462,9 +491,27 @@ class AutoEncoderBaseModel(ABC):
     def compile(self):
         raise NotImplementedError
 
-    @abstractmethod
     def compile_encoder(self):
-        raise NotImplementedError
+        input_layer = Input(self.input_shape)
+        layer = input_layer
+
+        for i in range(self.depth):
+            use_dropout = i > 0
+            layer = self.encoder_layers[i](layer, use_dropout)
+
+        # region Embeddings
+        with tf.name_scope("embeddings"):
+            if self.use_dense_embeddings:
+                layer = Reshape([-1])(layer)
+            layer = self.embeddings_layer(layer)
+            layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
+            if self.use_dense_embeddings:
+                layer = Reshape(self.compute_embeddings_output_shape())(layer)
+        # endregion
+
+        output_layer = layer
+
+        self._encoder = KerasModel(inputs=input_layer, outputs=output_layer, name="Encoder")
 
     def compile_decoder_half(self, input_layer, predictor_half):
         layer = input_layer

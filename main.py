@@ -11,7 +11,6 @@ import cv2
 
 from models import BasicAE, VAE, GAN, VAEGAN, AGE
 from datasets import UCSDDatabase, SubwayDatabase
-from data_preprocessors import DropoutNoiser
 
 # endregion
 
@@ -31,7 +30,7 @@ datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"
 
 # endregion
 
-model_used = "VAE"
+model_used = "VAEGAN"
 dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
 use_flow = False
@@ -59,7 +58,6 @@ auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
 auto_encoder.compile()
-exit()
 # endregion
 
 # region Print parameters
@@ -81,20 +79,13 @@ print("Run cProfile \t\t\t\t\t:", profile)
 print("===============================================")
 # endregion
 
-# region Preprocessors
-train_dropout_noise_rate = auto_encoder.config["data_generators"]["train"]["dropout_rate"]
-train_preprocessors = [DropoutNoiser(inputs_dropout_rate=train_dropout_noise_rate)]
-
-test_preprocessors = []
-# endregion
-
 # region Datasets
 print("===== Loading data =====")
 database = database_class(database_path=database_path,
                           input_sequence_length=None,
                           output_sequence_length=None,
-                          train_preprocessors=train_preprocessors,
-                          test_preprocessors=test_preprocessors)
+                          train_preprocessors=auto_encoder.train_data_preprocessors,
+                          test_preprocessors=auto_encoder.test_data_preprocessors)
 database.load()
 
 print("===== Resizing data to input_shape =====")
@@ -102,7 +93,7 @@ database = auto_encoder.resize_database(database)
 
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
-database.normalize(auto_encoder.output_range[0], auto_encoder.output_range[1])
+database.normalize(*auto_encoder.output_range)
 
 seed = 8
 database.test_dataset.epoch_length = 2
@@ -144,17 +135,11 @@ if profile:
 else:
     auto_encoder.train(database, epoch_length=500, epochs=75, batch_size=8)
 
-# TODO : Merge self.build_encoder
-# TODO : Rename .build() to .compile() ?
-# TODO : Prediction loss not just L2 (weighted)
-
 # TODO : Residual Scaling
 
 # TODO : config - for callbacks (batch_size, samples count, ...)
 
 # TODO : Make patches from images
 # TODO : Flow version
-
-# TODO : Load complete model
 
 # TODO : Update bibliography

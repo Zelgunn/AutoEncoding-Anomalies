@@ -1,12 +1,12 @@
 import tensorflow as tf
-from keras.layers import Dense, Lambda, Reshape
+from keras.layers import Dense, Lambda, Reshape, Input
 import keras.backend as K
 import numpy as np
 import cv2
 from abc import ABC
 from tqdm import tqdm
 
-from models import AutoEncoderBaseModel, conv_type
+from models import AutoEncoderBaseModel, conv_type, KerasModel
 from callbacks import CallbackModel, AUCCallback
 from datasets import Database, Dataset
 
@@ -19,6 +19,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         self._latent_mean = None
         self._latent_log_var = None
 
+    # region Build
     def build_layers(self):
         super(VariationalBaseModel, self).build_layers()
         self.latent_mean_layer = self.embeddings_layer
@@ -35,18 +36,6 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
         self.embeddings_layer = Lambda(function=sampling)
 
-    @property
-    def latent_mean(self):
-        if self._latent_mean is None:
-            self.compile()
-        return self._latent_mean
-
-    @property
-    def latent_log_var(self):
-        if self._latent_log_var is None:
-            self.compile()
-        return self._latent_log_var
-
     def compute_embeddings_output_shape(self):
         embeddings_shape = self.compute_embeddings_input_shape()
         if self.use_dense_embeddings:
@@ -61,6 +50,58 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             embeddings_shape = embeddings_shape[1:]
         return embeddings_shape
 
+    # endregion
+
+    # region Compile
+    def compile_encoder(self):
+        input_layer = Input(self.input_shape)
+        layer = input_layer
+
+        for i in range(self.depth):
+            use_dropout = i > 0
+            layer = self.encoder_layers[i](layer, use_dropout)
+
+        # region Embeddings
+        with tf.name_scope("embeddings"):
+            if self.use_dense_embeddings:
+                layer = Reshape([-1])(layer)
+
+            latent_mean = self.latent_mean_layer(layer)
+            latent_log_var = self.latent_log_var_layer(layer)
+
+            if not self.use_dense_embeddings:
+                latent_mean = Reshape([-1])(latent_mean)
+                latent_log_var = Reshape([-1])(latent_log_var)
+
+            layer = self.embeddings_layer([latent_mean, latent_log_var])
+            layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
+            layer = Reshape(self.compute_embeddings_output_shape())(layer)
+        # endregion
+
+        outputs = [layer, latent_mean, latent_log_var]
+        self._latent_mean = latent_mean
+        self._latent_log_var = latent_log_var
+        self._encoder = KerasModel(inputs=input_layer, outputs=outputs, name="Encoder")
+
+    # endregion
+
+    # region Models
+
+    @property
+    def latent_mean(self):
+        if self._latent_mean is None:
+            self.compile()
+        return self._latent_mean
+
+    @property
+    def latent_log_var(self):
+        if self._latent_log_var is None:
+            self.compile()
+        return self._latent_log_var
+
+    # endregion
+
+    # region Training
     def train(self,
               database: Database,
               epoch_length: int,
@@ -68,46 +109,9 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
               epochs: int = 1):
         super(VariationalBaseModel, self).train(database, epoch_length, batch_size, epochs)
         self.visualize_vae_interpolation(database.test_dataset)
+    # endregion
 
-    def build_anomaly_callbacks(self, database: Database):
-        database = self.resize_database(database)
-        test_dataset = database.test_dataset
-        anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
-
-        samples = test_dataset.sample(batch_size=64, seed=16, sampled_videos_count=16, return_labels=True)
-        videos, frame_labels, _ = samples
-        videos = test_dataset.divide_batch_io(videos)
-
-        n_predictions_model = self.n_predictions(n=32)
-
-        vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
-                                       videos, frame_labels, plot_size=(128, 128), batch_size=1,
-                                       name="Variational_AUC", epoch_freq=10)
-
-        anomaly_callbacks.append(vae_auc_callback)
-        return anomaly_callbacks
-
-    def n_predictions(self, n):
-        with tf.name_scope("n_pred"):
-            encoder_input = self.encoder.get_input_at(0)
-            true_outputs = self.get_true_outputs_placeholder()
-            _, latent_mean, latent_log_var = self.encoder(encoder_input)
-
-            sampling_function = sampling_n(n)
-            layer = Lambda(function=sampling_function)([latent_mean, latent_log_var])
-
-            layer = VariationalBaseModel.get_activation(self.embeddings_activation)(layer)
-            encoded = Reshape(self.compute_embeddings_output_shape())(layer)
-
-            autoencoded = self.decoder(encoded)
-
-            autoencoded = tf.reshape(autoencoded, [-1, n, *self.output_shape])
-            true_outputs_expanded = tf.expand_dims(true_outputs, axis=1)
-            error = tf.abs(true_outputs_expanded - autoencoded)
-            predictions = tf.reduce_mean(error, axis=[1, -3, -2, -1])
-
-        return CallbackModel(inputs=[encoder_input, true_outputs], outputs=predictions)
-
+    # region Testing
     def visualize_vae_interpolation(self, dataset: Dataset):
         encoder_input = self.encoder.get_input_at(0)
         _, latent_mean, latent_log_var = self.encoder(encoder_input)
@@ -153,6 +157,49 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             j = (j + 1) % predicted_video_lenght
             if key != -1:
                 i = (i + 1) % interpolation_count
+    # endregion
+
+    # region Callbacks
+    def build_anomaly_callbacks(self, database: Database):
+        database = self.resize_database(database)
+        test_dataset = database.test_dataset
+        anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
+
+        samples = test_dataset.sample(batch_size=64, seed=16, sampled_videos_count=16, return_labels=True)
+        videos, frame_labels, _ = samples
+        videos = test_dataset.divide_batch_io(videos)
+
+        n_predictions_model = self.n_predictions(n=32)
+
+        vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
+                                       videos, frame_labels, plot_size=(128, 128), batch_size=1,
+                                       name="Variational_AUC", epoch_freq=10)
+
+        anomaly_callbacks.append(vae_auc_callback)
+        return anomaly_callbacks
+
+    def n_predictions(self, n):
+        with tf.name_scope("n_pred"):
+            encoder_input = self.encoder.get_input_at(0)
+            true_outputs = self.get_true_outputs_placeholder()
+            _, latent_mean, latent_log_var = self.encoder(encoder_input)
+
+            sampling_function = sampling_n(n)
+            layer = Lambda(function=sampling_function)([latent_mean, latent_log_var])
+
+            layer = VariationalBaseModel.get_activation(self.embeddings_activation)(layer)
+            encoded = Reshape(self.compute_embeddings_output_shape())(layer)
+
+            autoencoded = self.decoder(encoded)
+
+            autoencoded = tf.reshape(autoencoded, [-1, n, *self.output_shape])
+            true_outputs_expanded = tf.expand_dims(true_outputs, axis=1)
+            error = tf.abs(true_outputs_expanded - autoencoded)
+            predictions = tf.reduce_mean(error, axis=[1, -3, -2, -1])
+
+        return CallbackModel(inputs=[encoder_input, true_outputs], outputs=predictions)
+
+    # endregion
 
 
 # region Utils

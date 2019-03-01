@@ -4,7 +4,8 @@ from data_preprocessors import DataPreprocessor
 
 
 class BrightnessShifter(DataPreprocessor):
-    def __init__(self, inputs_gain, inputs_bias, outputs_gain, outputs_bias, values_range=(0.0, 1.0)):
+    def __init__(self, inputs_gain=None, inputs_bias=None, outputs_gain=None, outputs_bias=None,
+                 values_range=(0.0, 1.0)):
         super(BrightnessShifter, self).__init__()
         self.inputs_gain = inputs_gain
         self.inputs_bias = inputs_bias
@@ -16,26 +17,26 @@ class BrightnessShifter(DataPreprocessor):
         inputs_size = [len(inputs)] + [1] * (inputs.ndim - 1)
         outputs_size = [len(outputs)] + [1] * (inputs.ndim - 1)
 
-        if self.inputs_gain > 0.0:
+        if self.inputs_gain is not None:
             gain = random_range_value(self.inputs_gain, size=inputs_size)
             inputs = inputs * gain
 
-        if self.inputs_bias > 0.0:
+        if self.inputs_bias is not None:
             bias = random_range_value(self.inputs_bias, center=0.0, size=inputs_size)
             inputs = inputs + bias
 
-        if self.inputs_gain > 0.0 or self.inputs_bias > 0.0:
+        if (self.inputs_gain is not None) or (self.inputs_bias is not None):
             inputs = np.clip(inputs, self.values_range[0], self.values_range[1])
 
-        if self.outputs_gain > 0.0:
+        if self.outputs_gain is not None:
             gain = random_range_value(self.outputs_gain, size=outputs_size)
             outputs = outputs * gain
 
-        if self.outputs_bias > 0.0:
+        if self.outputs_bias is not None:
             bias = random_range_value(self.outputs_bias, center=0.0, size=outputs_size)
             outputs = outputs + bias
 
-        if self.outputs_gain > 0.0 or self.outputs_bias > 0.0:
+        if (self.outputs_gain is not None) or (self.outputs_bias is not None):
             outputs = np.clip(outputs, self.values_range[0], self.values_range[1])
 
         return inputs, outputs

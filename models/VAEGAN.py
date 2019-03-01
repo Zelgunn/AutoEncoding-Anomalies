@@ -6,36 +6,9 @@ from models.VAE import kullback_leibler_divergence_mean0_var1
 
 
 class VAEGAN(GAN, VariationalBaseModel):
-    # region Model building
+    # region Compile
     def compile_encoder(self):
-        input_layer = Input(self.input_shape)
-        layer = input_layer
-
-        for i in range(self.depth):
-            use_dropout = i > 0
-            layer = self.encoder_layers[i](layer, use_dropout)
-
-        # region Embeddings
-        with tf.name_scope("embeddings"):
-            if self.use_dense_embeddings:
-                layer = Reshape([-1])(layer)
-
-            latent_mean = self.latent_mean_layer(layer)
-            latent_log_var = self.latent_log_var_layer(layer)
-
-            if not self.use_dense_embeddings:
-                latent_mean = Reshape([-1])(latent_mean)
-                latent_log_var = Reshape([-1])(latent_log_var)
-
-            layer = self.embeddings_layer([latent_mean, latent_log_var])
-            layer = GAN.get_activation(self.embeddings_activation)(layer)
-            layer = Reshape(self.compute_embeddings_output_shape())(layer)
-        # endregion
-
-        outputs = [layer, latent_mean, latent_log_var]
-        self._latent_mean = latent_mean
-        self._latent_log_var = latent_log_var
-        self._encoder = KerasModel(inputs=input_layer, outputs=outputs, name="Encoder")
+        VariationalBaseModel.compile_encoder(self)
 
     def compile(self):
         with tf.name_scope("Autoencoder"):
