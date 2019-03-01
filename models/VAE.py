@@ -12,9 +12,9 @@ class VAE(VariationalBaseModel):
         autoencoded = self.decoder(encoded)
 
         def vae_loss(y_true, y_pred):
-            reconstruction_loss = metrics_dict[self.config["reconstruction_loss"]](y_true, y_pred)
+            reconstruction_loss_function = self.get_reconstruction_loss(self.config["reconstruction_loss"])
+            reconstruction_loss = reconstruction_loss_function(y_true, y_pred)
             divergence = kullback_leibler_divergence_mean0_var1(latent_mean, latent_log_var)
-            print(reconstruction_loss, divergence)
             return reconstruction_loss + divergence * 0.001
 
         autoencoder = KerasModel(inputs=input_layer, outputs=autoencoded, name="AutoEncoder")

@@ -59,6 +59,7 @@ auto_encoder.image_summaries_max_outputs = 8
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
 auto_encoder.compile()
+exit()
 # endregion
 
 # region Print parameters

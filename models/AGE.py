@@ -18,7 +18,7 @@ class AGE(AutoEncoderBaseModel):
         self._decoder_real_data_trainer: KerasModel = None
         self._decoder_fake_data_trainer: KerasModel = None
 
-    # region Model building
+    # region Compile
     def compile(self):
         encoder_decoder_input = Input(self.input_shape)
         real_data_latent = self.encoder(encoder_decoder_input)

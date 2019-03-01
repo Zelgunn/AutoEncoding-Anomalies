@@ -498,16 +498,23 @@ class AutoEncoderBaseModel(ABC):
         else:
             return Activation(activation_config["name"])
 
-    def apply_temporal_weights_to_loss(self, loss: tf.Tensor):
+    def get_reconstruction_loss(self, reconstruction_metric_name: str):
         if self.temporal_loss_weights is None:
             reconstruction_loss_weights = np.ones([self.input_sequence_length], dtype=np.float32)
             prediction_loss_weights = np.arange(start=1.0, stop=0.0, step=-1 / self.input_sequence_length,
                                                 dtype=np.float32)
-            prediction_loss_weights = np.square(prediction_loss_weights)
             loss_weights = np.concatenate([reconstruction_loss_weights, prediction_loss_weights])
             self.temporal_loss_weights = tf.constant(loss_weights)
 
-        return loss * self.temporal_loss_weights
+        def loss_function(y_true, y_pred):
+            metric_function = metrics_dict[reconstruction_metric_name]
+            reduction_axis = list(range(2, len(y_true.shape)))
+            loss = metric_function(y_true, y_pred, axis=reduction_axis)
+            loss = loss * self.temporal_loss_weights
+            loss = tf.reduce_mean(loss)
+            return loss
+
+        return loss_function
 
     # endregion
 
