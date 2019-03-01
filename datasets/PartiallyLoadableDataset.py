@@ -40,8 +40,7 @@ class PartiallyLoadableDataset(Dataset):
 
         video_labels = None
         if return_labels:
-            shard_labels_filepath = os.path.join(self.dataset_path, self.labels_filenames[video_index])
-            shard_labels = np.load(shard_labels_filepath, mmap_mode="r")
+            shard_labels = self.get_labels_hook(video_index)
             labels_indices = indices[:, -self.output_sequence_length:]
             video_labels = shard_labels[labels_indices]
 
@@ -54,19 +53,23 @@ class PartiallyLoadableDataset(Dataset):
         return samples * self.normalization_range[1] + self.normalization_range[0]
 
     def get_video_hook(self, video_index):
-        assert 0 <= video_index < self.videos_count
         video_shard_filepath = os.path.join(self.dataset_path, self.videos_filenames[video_index])
         return np.load(video_shard_filepath, mmap_mode="r")
 
+    def get_labels_hook(self, video_index):
+        shard_labels_filepath = os.path.join(self.dataset_path, self.labels_filenames[video_index])
+        return np.load(shard_labels_filepath, mmap_mode="r")
+
     def get_video_length(self, video_index):
-        assert 0 <= video_index < self.videos_count
         return len(self.get_video_hook(video_index))
 
     def get_video_frames(self, video_index, start, end):
-        assert 0 <= video_index < self.videos_count
         video_shard = self.get_video_hook(video_index)
-        assert 0 <= start < end < len(video_shard)
         return video_shard[start:end]
+
+    def get_video_frame_labels(self, video_index, start, end):
+        labels_shard = self.get_labels_hook(video_index)
+        return labels_shard[start:end]
 
     def shuffle(self):
         pass

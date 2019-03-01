@@ -8,7 +8,7 @@ from time import time
 from layers import ResBlock3D, DenseBlock3D, ResBlock3DTranspose
 from datasets import UCSDDatabase, SubwayDatabase
 from data_preprocessors import BrightnessShifter, DropoutNoiser
-from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection
+from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection_on_dataset
 
 
 def build_conv_encoder(input_layer):
@@ -216,7 +216,7 @@ def main():
     train_model(model, database, mode)
     visualize_model_errors(model, test_dataset)
     visualize_model_errors(model, train_dataset)
-    evaluate_model_anomaly_detection(model, test_dataset, 500, 8, evaluate_on_whole_video=True)
+    evaluate_model_anomaly_detection_on_dataset(model, test_dataset, 500, 8)
 
 
 if __name__ == "__main__":

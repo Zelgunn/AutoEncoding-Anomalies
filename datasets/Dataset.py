@@ -122,6 +122,10 @@ class Dataset(Sequence, ABC):
     def get_video_frames(self, video_index, start, end):
         raise NotImplementedError
 
+    @abstractmethod
+    def get_video_frame_labels(self, video_index, start, end):
+        raise NotImplementedError
+
     @property
     def total_sequence_length(self):
         return max(self.input_sequence_length, self.output_sequence_length)

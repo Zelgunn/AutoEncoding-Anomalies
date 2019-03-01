@@ -83,13 +83,14 @@ class FullyLoadableDataset(Dataset, ABC):
         return video, frame_labels, pixel_labels
 
     def get_video_length(self, video_index):
-        assert 0 <= video_index < self.videos_count
         return len(self.videos[video_index])
 
     def get_video_frames(self, video_index, start, end):
-        assert 0 <= video_index < self.videos_count
-        assert 0 <= start < end < self.get_video_length(video_index)
         return self.videos[video_index][start:end]
+
+    def get_video_frame_labels(self, video_index, start, end):
+        labels_array = self.frame_level_labels if self.has_pixel_level_anomaly_labels else self.anomaly_labels
+        return labels_array[video_index][start:end]
 
     def shuffle(self):
         if self.anomaly_labels is None:

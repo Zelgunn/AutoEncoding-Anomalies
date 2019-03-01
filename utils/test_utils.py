@@ -46,59 +46,81 @@ def visualize_model_errors(model: Model, dataset: Dataset, images_size=(512, 512
     cv2.destroyAllWindows()
 
 
-def evaluate_model_anomaly_detection(model: Model,
-                                     dataset: Dataset,
-                                     epoch_length: int,
-                                     batch_size: int,
-                                     evaluate_on_whole_video=True,
-                                     variational_resampling=0):
-    dataset.epoch_length = epoch_length
-    dataset.batch_size = batch_size
+def evaluate_model_anomaly_detection_on_dataset(model: Model,
+                                                dataset: Dataset,
+                                                stride=None,
+                                                variational_resampling=0):
+    roc_values, pr_values, anomaly_percentages = [], [], []
+    for i in range(dataset.videos_count):
+        roc, pr, anomaly_percentage = evaluate_model_anomaly_detection_one_video(model, dataset, i, stride,
+                                                                                 variational_resampling)
+        roc_values.append(roc)
+        pr_values.append(pr)
+        anomaly_percentages.append(anomaly_percentage)
 
+        print("{} => ROC : {} | PR : {} | Anomaly percentage in samples : {}".format(i, roc, pr, anomaly_percentage))
+
+    roc = np.mean(roc_values)
+    pr = np.mean(pr_values)
+    anomaly_percentage = np.mean(anomaly_percentages)
+    print("Global => ROC : {} | PR : {} | Anomaly percentage in samples : {}".format(roc, pr, anomaly_percentage))
+
+
+def evaluate_model_anomaly_detection_one_video(model: Model,
+                                               dataset,
+                                               video_index: int,
+                                               stride=None,
+                                               variational_resampling=0):
+    input_sequence_length = model.input_shape[1]
+    output_sequence_length = model.output_shape[1]
+    if stride is None:
+        stride = input_sequence_length
+
+    # region Prediction graph
     input_layer = model.input
     pred_output = model.output
     true_output = tf.placeholder(dtype=tf.float32, shape=model.output_shape)
-    error_op = tf.square(pred_output - true_output)
+    predictions_op = tf.square(pred_output - true_output)
+    predictions_op = tf.reduce_sum(predictions_op, axis=[2, 3, 4])
+    # endregion
 
-    if evaluate_on_whole_video:
-        error_op = tf.reduce_sum(error_op, axis=[1, 2, 3, 4])
-        predictions_shape = [epoch_length * batch_size]
-    else:
-        error_op = tf.reduce_sum(error_op, axis=[2, 3, 4])
-        predictions_shape = [epoch_length * batch_size, dataset.output_sequence_length]
+    steps_count = (dataset.get_video_length(video_index) - output_sequence_length) // stride
+    predictions_shape = [steps_count * output_sequence_length, dataset.output_sequence_length]
 
-    errors = np.zeros(shape=predictions_shape)
+    predictions = np.zeros(shape=predictions_shape)
     labels = np.zeros(shape=predictions_shape, dtype=np.bool)
     session = K.get_session()
-    for i in tqdm(range(dataset.epoch_length), desc="Computing errors..."):
-        videos, step_labels, _ = dataset.sample(return_labels=True)
+    for i in tqdm(range(steps_count), desc="Computing errors..."):
+        start = i * stride
+        end = start + output_sequence_length
+        videos = dataset.get_video_frames(video_index, start, end)
+        videos = np.expand_dims(videos, axis=0)
+        step_labels = dataset.get_video_frame_labels(video_index, start, end)
+
         x, y_true = dataset.divide_batch_io(videos)
-        x, y_true = dataset.apply_preprocess(x, y_true)
 
         feed_dict = {input_layer: x, true_output: y_true}
-        step_error = session.run(error_op, feed_dict)
+        step_predictions = session.run(predictions_op, feed_dict)
         if variational_resampling > 0:
             for _ in range(variational_resampling):
-                step_error += session.run(error_op, feed_dict)
-            step_error /= (variational_resampling + 1)
+                step_predictions += session.run(predictions_op, feed_dict)
+            step_predictions /= (variational_resampling + 1)
 
-        indices = np.arange(i * dataset.batch_size, (i + 1) * dataset.batch_size)
-        errors[indices] = step_error
-        if evaluate_on_whole_video:
-            labels[indices] = np.any(step_labels, axis=1)
-        else:
-            labels[indices] = step_labels
+        indices = np.arange(i * output_sequence_length, (i + 1) * output_sequence_length)
+        predictions[indices] = step_predictions
+        labels[indices] = step_labels
 
-    errors = (errors - errors.min()) / (errors.max() - errors.min())
+    predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
     anomaly_percentage = np.mean(labels.astype(np.float32))
 
+    # region AUC (ROC & PR) graph
     labels = tf.constant(labels)
-    errors = tf.constant(errors)
-    roc_ops = tf.metrics.auc(labels, errors, summation_method="careful_interpolation")
-    pr_ops = tf.metrics.auc(labels, errors, curve="PR", summation_method="careful_interpolation")
+    predictions = tf.constant(predictions)
+    roc_ops = tf.metrics.auc(labels, predictions, summation_method="careful_interpolation")
+    pr_ops = tf.metrics.auc(labels, predictions, curve="PR", summation_method="careful_interpolation")
     auc_ops = roc_ops + pr_ops
+    # endregion
 
     session.run(tf.local_variables_initializer())
     _, roc, _, pr = session.run(auc_ops)
-    print("ROC : {} | PR : {} | Anomaly percentage in samples : {}".format(roc, pr, anomaly_percentage))
-    return roc, pr
+    return roc, pr, anomaly_percentage
