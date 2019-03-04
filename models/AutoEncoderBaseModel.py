@@ -1,5 +1,5 @@
 from keras.models import Model as KerasModel
-from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input, Reshape, Concatenate
+from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input, Reshape, Concatenate, BatchNormalization
 from keras.layers import Conv3D, Deconv3D, MaxPooling3D, AveragePooling3D, UpSampling3D
 from keras.initializers import VarianceScaling
 from keras.regularizers import l2
@@ -15,7 +15,7 @@ import os
 import json
 import copy
 from tqdm import tqdm
-from typing import List, Any
+from typing import List, Any, Tuple
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from datasets import Database, Dataset
@@ -34,7 +34,8 @@ class LayerBlock(object):
                  upsampling_layer: Layer,
                  activation_layer: Layer,
                  dropout_layer: Dropout,
-                 is_transpose: bool):
+                 is_transpose: bool,
+                 add_batch_normalization=False):
         self.conv = conv_layer
         self.pooling = pool_layer
         self.upsampling_layer = upsampling_layer
@@ -42,6 +43,7 @@ class LayerBlock(object):
         self.dropout = dropout_layer
 
         self.is_transpose = is_transpose
+        self.add_batch_normalization = add_batch_normalization
 
     def __call__(self, input_layer, use_dropout):
         with tf.name_scope("block"):
@@ -56,6 +58,9 @@ class LayerBlock(object):
                 layer = self.upsampling_layer(layer)
 
             layer = self.conv(layer)
+
+            if self.add_batch_normalization:
+                layer = BatchNormalization()(layer)
 
             if self.activation is not None:
                 layer = self.activation(layer)
@@ -146,7 +151,7 @@ metrics_dict = {"L1": absolute_error,
 
 # endregion
 
-# region Dynamic choice between Conv2D/Deconv2D and Conv3D/Deconv3D
+# region Dynamic choice between Conv/ResBlock/DenseBlock/MaxPooling/...
 types_with_transpose = ["conv_block", "residual_block"]
 
 conv_type = {"conv_block": {False: Conv3D, True: Deconv3D},
@@ -421,8 +426,10 @@ class AutoEncoderBaseModel(ABC):
 
             if self.block_type_name == "residual_block":
                 conv_layer_kwargs["use_batch_normalization"] = self.use_batch_normalization
+                add_batch_normalization = False
             else:
                 conv_layer_kwargs["padding"] = stack_info["padding"] if "padding" in stack_info else "same"
+                add_batch_normalization = self.use_batch_normalization
 
             conv_block_type = self.get_block_type(transpose)
             conv_layer = conv_block_type(**conv_layer_kwargs)
@@ -436,7 +443,8 @@ class AutoEncoderBaseModel(ABC):
             activation = AutoEncoderBaseModel.get_activation(self.default_activation)
             dropout = Dropout(rate=stack_info["dropout"]) if "dropout" in stack_info else None
 
-            layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose)
+            layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose,
+                                     add_batch_normalization=add_batch_normalization)
             stack.add_layer(layer_block)
 
         return stack
@@ -775,54 +783,67 @@ class AutoEncoderBaseModel(ABC):
         return raw_predictions_model
 
     def predict_anomalies(self,
-                          dataset: Dataset,
-                          video_index: int,
+                          database: Database,
                           include_predictor: bool,
-                          stride=1):
-        video_length = dataset.get_video_length(video_index)
-        window_length = self.output_sequence_length if include_predictor else self.input_sequence_length
-        steps_count = 1 + (video_length - window_length) // stride
+                          stride=1,
+                          normalize_predictions=True):
 
-        predictions = np.zeros(shape=[video_length])
-        labels = np.zeros(shape=[video_length], dtype=np.bool)
+        dataset = database.test_dataset
+        predictions, labels = [], []
+        for video_index in range(dataset.videos_count):
+            video_length = dataset.get_video_length(video_index)
+            window_length = self.output_sequence_length if include_predictor else self.input_sequence_length
+            steps_count = 1 + (video_length - window_length) // stride
 
-        raw_predictions_model = self.get_anomalies_raw_predictions_model(include_predictor)
+            video_predictions = np.zeros(shape=[video_length])
+            video_labels = np.zeros(shape=[video_length], dtype=np.bool)
 
-        for i in range(steps_count):
-            start = i * stride
-            end = start + window_length
+            raw_predictions_model = self.get_anomalies_raw_predictions_model(include_predictor)
 
-            step_video = dataset.get_video_frames(video_index, start, end)
+            for i in range(steps_count):
+                start = i * stride
+                end = start + window_length
 
-            step_video = np.expand_dims(step_video, axis=0)
-            step_labels = dataset.get_video_frame_labels(video_index, start, end)
+                step_video = dataset.get_video_frames(video_index, start, end)
+
+                step_video = np.expand_dims(step_video, axis=0)
+                step_labels = dataset.get_video_frame_labels(video_index, start, end)
+
+                if include_predictor:
+                    input_video, output_video = dataset.divide_batch_io(step_video)
+                else:
+                    input_video = output_video = step_video
+
+                step_predictions = raw_predictions_model.predict(x=[input_video, output_video], batch_size=1)
+                step_predictions = np.squeeze(step_predictions)
+
+                video_predictions[start:end] += step_predictions
+                if i == 0:
+                    video_labels[start:end] = step_labels
+                else:
+                    video_labels[end - 1] = step_labels[-1]
+
+            predictions_counts = np.ones(shape=[video_length + (1 - window_length) * 2]) * window_length
+            predictions_counts = np.concatenate([np.arange(1, window_length),
+                                                 predictions_counts,
+                                                 np.arange(window_length - 1, 0, -1)])
+            video_predictions = video_predictions / predictions_counts
 
             if include_predictor:
-                input_video, output_video = dataset.divide_batch_io(step_video)
-            else:
-                input_video = output_video = step_video
+                delta = self.input_sequence_length - self.output_sequence_length
+                video_predictions = video_predictions[:delta]
+                video_labels = video_labels[:delta]
 
-            step_predictions = raw_predictions_model.predict(x=[input_video, output_video], batch_size=1)
-            step_predictions = np.squeeze(step_predictions)
+            predictions.append(video_predictions)
+            labels.append(video_labels)
 
-            predictions[start:end] += step_predictions
-            labels[start:end] |= step_labels
+        predictions = np.concatenate(predictions)
+        labels = np.concatenate(labels)
 
-        predictions_counts = np.ones(shape=[video_length + (1 - window_length) * 2]) * window_length
-        predictions_counts = np.concatenate([np.arange(1, window_length),
-                                             predictions_counts,
-                                             np.arange(window_length - 1, 0, -1)])
-        # [1, 2, 3, ..., window_length, window_length, window_length, ..., 3, 2, 1]
-        predictions = predictions / predictions_counts
-        if include_predictor:
-            predictions = predictions[:self.input_sequence_length - self.output_sequence_length]
+        if normalize_predictions:
+            predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
 
-        predictions_min = predictions.min()
-        predictions = (predictions - predictions_min) / (predictions.max() - predictions_min)
-
-        import matplotlib.pyplot as plt
-        plt.plot(predictions)
-        plt.plot(labels.astype(np.float32))
+        return predictions, labels
 
     # endregion
 
