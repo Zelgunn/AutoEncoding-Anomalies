@@ -10,18 +10,18 @@ from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
 from abc import ABC, abstractmethod
 import os
 import json
 import copy
 from tqdm import tqdm
-from typing import List, Any, Tuple
+from typing import List, Any
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
-from utils.test_utils import evaluate_model_anomaly_detection_on_dataset
 from callbacks import ImageCallback, AUCCallback, CallbackModel
 from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper
 
@@ -194,7 +194,10 @@ class AutoEncoderBaseModel(ABC):
         self.embeddings_size = None
         self.use_dense_embeddings = None
 
-        self._true_outputs_placeholder = None
+        self._true_outputs_placeholder: tf.Tensor = None
+        self._auc_predictions_placeholder: tf.Tensor = None
+        self._auc_labels_placeholder: tf.Tensor = None
+        self._auc_ops: List[tf.Tensor, tf.Tensor] = None
 
         self.default_activation = None
         self.embeddings_activation = None
@@ -667,9 +670,8 @@ class AutoEncoderBaseModel(ABC):
         self.save_weights()
         print("======================= Done ! =======================")
 
-        # visualize_model_errors(self.autoencoder, database.test_dataset)
-        evaluate_model_anomaly_detection_on_dataset(self.autoencoder, database.test_dataset, stride=None,
-                                                    variational_resampling=9)
+        predictions, labels = self.predict_anomalies(database, False)
+        self.evaluate_predictions(predictions, labels, os.path.join(self.log_dir, "anomaly_score.png"))
 
     def resize_database(self, database: Database) -> Database:
         database = database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
@@ -858,6 +860,32 @@ class AutoEncoderBaseModel(ABC):
             predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
 
         return predictions, labels
+
+    def evaluate_predictions(self,
+                             predictions: np.ndarray,
+                             labels: np.ndarray,
+                             output_figure_filepath: str = None):
+        if output_figure_filepath is not None:
+            plt.plot(predictions)
+            plt.plot(labels)
+            plt.savefig(output_figure_filepath)
+
+        if self._auc_predictions_placeholder is None:
+            placeholder_shape = [None, *predictions.shape[1:]]
+            self._auc_predictions_placeholder = tf.placeholder(dtype=tf.float32, shape=placeholder_shape)
+            self._auc_labels_placeholder = tf.placeholder(dtype=tf.bool, shape=placeholder_shape)
+            roc_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, "ROC",
+                                    summation_method="careful_interpolation")
+            pr_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, "PR",
+                                   summation_method="careful_interpolation")
+            self._auc_ops = [roc_op, pr_op]
+
+        session: tf.Session = tf.get_default_session()
+        session.run(tf.local_variables_initializer())
+        (_, roc), (_, pr) = session.run(self._auc_ops, feed_dict={self._auc_predictions_placeholder: predictions,
+                                                                  self._auc_labels_placeholder: labels})
+        print("ROC : {} | PR : {}".format(roc, pr))
+        return roc, pr
 
     # endregion
 
