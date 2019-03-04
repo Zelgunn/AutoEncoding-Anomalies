@@ -10,6 +10,7 @@
       <w>imshow</w>
       <w>lenght</w>
       <w>lstm</w>
+      <w>matplotlib</w>
       <w>resampling</w>
       <w>softmax</w>
       <w>tqdm</w>

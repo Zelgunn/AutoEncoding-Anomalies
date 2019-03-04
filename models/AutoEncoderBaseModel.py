@@ -300,9 +300,9 @@ class AutoEncoderBaseModel(ABC):
             brightness_section = section["brightness"]
             gain = brightness_section["gain"] if "gain" in brightness_section else None
             bias = brightness_section["bias"] if "bias" in brightness_section else None
-            norm_method = brightness_section["normalization_method"] if "normalization_method" in brightness_section\
+            norm_method = brightness_section["normalization_method"] if "normalization_method" in brightness_section \
                 else "clip"
-            brightness_shifter = BrightnessShifter(inputs_gain=gain, inputs_bias=bias, values_range=self.output_range,
+            brightness_shifter = BrightnessShifter(gain=gain, bias=bias, values_range=self.output_range,
                                                    normalization_method=norm_method)
             data_preprocessors.append(brightness_shifter)
 
@@ -652,7 +652,7 @@ class AutoEncoderBaseModel(ABC):
         print("======================= Done ! =======================")
 
         # visualize_model_errors(self.autoencoder, database.test_dataset)
-        evaluate_model_anomaly_detection_on_dataset(self.autoencoder, database.train_dataset, stride=None,
+        evaluate_model_anomaly_detection_on_dataset(self.autoencoder, database.test_dataset, stride=None,
                                                     variational_resampling=9)
 
     def resize_database(self, database: Database) -> Database:
@@ -732,7 +732,11 @@ class AutoEncoderBaseModel(ABC):
 
     # region Testing
 
-    def autoencode_video(self, dataset: Dataset, video_index: int, output_video_filepath: str, fps=25.0):
+    def autoencode_video(self,
+                         dataset: Dataset,
+                         video_index: int,
+                         output_video_filepath: str,
+                         fps=25.0):
         video_length = dataset.get_video_length(video_index)
         window_length = self.input_sequence_length
 
@@ -751,6 +755,74 @@ class AutoEncoderBaseModel(ABC):
             video_writer.write(output_frame)
 
         video_writer.release()
+
+    def get_anomalies_raw_predictions_model(self,
+                                            include_predictor: bool,
+                                            reduction_axis=(2, 3, 4)) -> CallbackModel:
+        pred_output: tf.Tensor = self.autoencoder.get_output_at(0)
+        if not include_predictor:
+            pred_output = pred_output[:, :self.input_sequence_length, ...]
+        true_output = tf.placeholder(dtype=pred_output.dtype, shape=pred_output.shape)
+        predictions_op = tf.square(pred_output - true_output)
+        predictions_op = tf.reduce_sum(predictions_op, axis=reduction_axis)
+
+        if include_predictor:
+            predictions_op = self.temporal_loss_weights * predictions_op
+
+        inputs = [self.autoencoder.get_input_at(0), true_output]
+        outputs = [predictions_op]
+        raw_predictions_model = CallbackModel(inputs, outputs)
+        return raw_predictions_model
+
+    def predict_anomalies(self,
+                          dataset: Dataset,
+                          video_index: int,
+                          include_predictor: bool,
+                          stride=1):
+        video_length = dataset.get_video_length(video_index)
+        window_length = self.output_sequence_length if include_predictor else self.input_sequence_length
+        steps_count = 1 + (video_length - window_length) // stride
+
+        predictions = np.zeros(shape=[video_length])
+        labels = np.zeros(shape=[video_length], dtype=np.bool)
+
+        raw_predictions_model = self.get_anomalies_raw_predictions_model(include_predictor)
+
+        for i in range(steps_count):
+            start = i * stride
+            end = start + window_length
+
+            step_video = dataset.get_video_frames(video_index, start, end)
+
+            step_video = np.expand_dims(step_video, axis=0)
+            step_labels = dataset.get_video_frame_labels(video_index, start, end)
+
+            if include_predictor:
+                input_video, output_video = dataset.divide_batch_io(step_video)
+            else:
+                input_video = output_video = step_video
+
+            step_predictions = raw_predictions_model.predict(x=[input_video, output_video], batch_size=1)
+            step_predictions = np.squeeze(step_predictions)
+
+            predictions[start:end] += step_predictions
+            labels[start:end] |= step_labels
+
+        predictions_counts = np.ones(shape=[video_length + (1 - window_length) * 2]) * window_length
+        predictions_counts = np.concatenate([np.arange(1, window_length),
+                                             predictions_counts,
+                                             np.arange(window_length - 1, 0, -1)])
+        # [1, 2, 3, ..., window_length, window_length, window_length, ..., 3, 2, 1]
+        predictions = predictions / predictions_counts
+        if include_predictor:
+            predictions = predictions[:self.input_sequence_length - self.output_sequence_length]
+
+        predictions_min = predictions.min()
+        predictions = (predictions - predictions_min) / (predictions.max() - predictions_min)
+
+        import matplotlib.pyplot as plt
+        plt.plot(predictions)
+        plt.plot(labels.astype(np.float32))
 
     # endregion
 

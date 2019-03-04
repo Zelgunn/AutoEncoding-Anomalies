@@ -93,11 +93,11 @@ def evaluate_model_anomaly_detection_one_video(model: Model,
     for i in tqdm(range(steps_count), desc="Computing errors..."):
         start = i * stride
         end = start + output_sequence_length
-        videos = dataset.get_video_frames(video_index, start, end)
-        videos = np.expand_dims(videos, axis=0)
+        step_video = dataset.get_video_frames(video_index, start, end)
+        step_video = np.expand_dims(step_video, axis=0)
         step_labels = dataset.get_video_frame_labels(video_index, start, end)
 
-        x, y_true = dataset.divide_batch_io(videos)
+        x, y_true = dataset.divide_batch_io(step_video)
 
         feed_dict = {input_layer: x, true_output: y_true}
         step_predictions = session.run(predictions_op, feed_dict)
@@ -106,9 +106,8 @@ def evaluate_model_anomaly_detection_one_video(model: Model,
                 step_predictions += session.run(predictions_op, feed_dict)
             step_predictions /= (variational_resampling + 1)
 
-        indices = np.arange(i * output_sequence_length, (i + 1) * output_sequence_length)
-        predictions[indices] = step_predictions
-        labels[indices] = step_labels
+        predictions[start:end] = step_predictions
+        labels[start:end] = step_labels
 
     predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
     anomaly_percentage = np.mean(labels.astype(np.float32))

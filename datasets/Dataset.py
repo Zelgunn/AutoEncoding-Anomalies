@@ -46,6 +46,8 @@ class Dataset(Sequence, ABC):
         self._normalization_range = [target_min, target_max]
 
     def apply_preprocess(self, inputs, outputs):
+        inputs = np.copy(inputs)
+        outputs = np.copy(outputs)
         for data_preprocessor in self.data_preprocessors:
             inputs, outputs = data_preprocessor.process(inputs, outputs)
         return inputs, outputs
@@ -145,12 +147,6 @@ class Dataset(Sequence, ABC):
     def divide_batch_io(self, videos):
         inputs = videos[:, :self.input_sequence_length]
         outputs = videos[:, -self.output_sequence_length:]
-
-        if self.input_sequence_length < self.output_sequence_length:
-            inputs = np.copy(inputs)
-        else:
-            outputs = np.copy(outputs)
-
         return inputs, outputs
 
     def sample_input_videos(self, batch_size=None, seed=None, max_shard_count=1):
