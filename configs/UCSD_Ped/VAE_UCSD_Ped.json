@@ -29,7 +29,7 @@
     "data_generators": {
         "train": {
             "dropout_rate": 0.05,
-            "brightness": {"gain": 0.5, "bias": 0.1, "normalization_method": "clip"}
+            "brightness": {"gain": 0.2, "bias": 0.4, "normalization_method": "mod"}
         },
         "test": {
             "dropout_rate": 0.0,
