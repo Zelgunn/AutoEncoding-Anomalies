@@ -23,7 +23,7 @@ from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
 from utils.test_utils import evaluate_model_anomaly_detection_on_dataset
 from callbacks import ImageCallback, AUCCallback, CallbackModel
-from data_preprocessors import DropoutNoiser, BrightnessShifter
+from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper
 
 
 # region Containers
@@ -300,6 +300,14 @@ class AutoEncoderBaseModel(ABC):
 
         section_name = "train" if train else "test"
         section = self.config["data_generators"][section_name]
+
+        if "cropping" in section:
+            cropping_section = section["cropping"]
+            width_range = cropping_section["width_range"]
+            height_range = cropping_section["height_range"] if "height_range" in cropping_section else None
+            keep_ratio = (cropping_section["keep_ratio"] == "True") if "keep_ratio" in cropping_section else True
+            random_cropper = RandomCropper(width_range, height_range, keep_ratio)
+            data_preprocessors.append(random_cropper)
 
         if "brightness" in section:
             brightness_section = section["brightness"]
@@ -684,19 +692,25 @@ class AutoEncoderBaseModel(ABC):
         for batch_index in range(epoch_length):
             x, y = database.train_dataset[0]
 
-            batch_logs = {"batch": batch_index, "size": x.shape[0]}
-            callbacks.on_batch_begin(batch_index, batch_logs)
+            for k in range(len(y)):
+                for l in range(len(y[0])):
+                    cv2.imshow("y", y[k][l])
+                    cv2.imshow("x", x[k][l % 16])
+                    cv2.waitKey(50)
 
-            results = self.autoencoder.train_on_batch(x=x, y=y)
+            # batch_logs = {"batch": batch_index, "size": x.shape[0]}
+            # callbacks.on_batch_begin(batch_index, batch_logs)
 
-            if "metrics" in self.config:
-                batch_logs["loss"] = results[0]
-                for metric_name, result in zip(self.config["metrics"], results[1:]):
-                    batch_logs[metric_name] = result
-            else:
-                batch_logs["loss"] = results
-
-            callbacks.on_batch_end(batch_index, batch_logs)
+            # results = self.autoencoder.train_on_batch(x=x, y=y)
+            #
+            # if "metrics" in self.config:
+            #     batch_logs["loss"] = results[0]
+            #     for metric_name, result in zip(self.config["metrics"], results[1:]):
+            #         batch_logs[metric_name] = result
+            # else:
+            #     batch_logs["loss"] = results
+            #
+            # callbacks.on_batch_end(batch_index, batch_logs)
 
         self.on_epoch_end(database, callbacks)
 
