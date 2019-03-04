@@ -11,7 +11,7 @@ class DropoutNoiser(DataPreprocessor):
         self.outputs_dropout_rate = outputs_dropout_rate
         super(DropoutNoiser, self).__init__()
 
-    def process(self, inputs, outputs):
+    def process(self, inputs: np.ndarray, outputs: np.ndarray):
         if self.inputs_dropout_rate > 0.0:
             inputs = add_dropout_noise_to(inputs, self.inputs_dropout_rate)
         if self.outputs_dropout_rate > 0.0:
@@ -19,7 +19,7 @@ class DropoutNoiser(DataPreprocessor):
         return inputs, outputs
 
 
-def add_dropout_noise_to(images, dropout_rate):
+def add_dropout_noise_to(images: np.ndarray, dropout_rate: float):
     noisy_images = images
     if dropout_rate > 0.0:
         noisy_images = np.copy(noisy_images)
