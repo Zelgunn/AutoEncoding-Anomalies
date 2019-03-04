@@ -46,7 +46,7 @@ class RandomCropper(DataPreprocessor):
             for j in range(outputs_length):
                 outputs[i][j] = crop_and_resize_frame(outputs[i][j], x_start, x_end, y_start, y_end)
 
-        return outputs, inputs
+        return inputs, outputs
 
 
 def crop_and_resize_frame(frame: np.ndarray, x_start: int, x_end: int, y_start: int, y_end: int):

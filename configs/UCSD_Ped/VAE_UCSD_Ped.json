@@ -20,7 +20,7 @@
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
     "output_activation": {"name": "sigmoid"},
-    "weights_initializer": {"mode": "fan_in", "scale": 0.1, "distribution": "normal"},
+    "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "normal"},
     "residual_scaling": "1.0",
     "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",

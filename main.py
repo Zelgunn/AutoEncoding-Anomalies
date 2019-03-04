@@ -36,7 +36,7 @@ alt_config_suffix_used = None
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551688750"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551713548"
 
 # region Config/Database selection
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
@@ -113,7 +113,6 @@ if preview_tensorboard_test_images:
     cv2.waitKey(120000)
     cv2.destroyAllWindows()
     exit()
-
 # endregion
 
 # region Session initialization
@@ -126,32 +125,7 @@ K.set_session(session)
 if previous_weights_to_load is not None:
     print("=> Loading weights from :", previous_weights_to_load)
     auto_encoder.load_weights(previous_weights_to_load)
-
-
 # endregion
-
-
-# def show_preds(predictions, labels):
-#     import matplotlib.pyplot as plt
-#     plt.plot(predictions)
-#     plt.plot(labels)
-#     plt.show()
-#
-#     predictions = tf.constant(predictions)
-#     labels = tf.constant(labels)
-#     roc_op = tf.metrics.auc(labels, predictions, summation_method="careful_interpolation")
-#     pr_op = tf.metrics.auc(labels, predictions, summation_method="careful_interpolation", curve="PR")
-#     session.run(tf.local_variables_initializer())
-#
-#     roc, pr = session.run([roc_op, pr_op])
-#     print(roc, pr)
-#
-#
-# predictions_0, labels_0 = auto_encoder.predict_anomalies(database, False)
-# predictions_1, labels_1 = auto_encoder.predict_anomalies(database, True)
-# show_preds(predictions_0, labels_0)
-# show_preds(predictions_1, labels_1)
-# exit()
 
 if profile:
     import cProfile
