@@ -18,32 +18,28 @@ class BrightnessShifter(DataPreprocessor):
         self.apply_on_outputs = apply_on_outputs
 
     def process(self, inputs: np.ndarray, outputs: np.ndarray):
-        if self.apply_on_outputs:
-            inputs_len = inputs.shape[1]
-            array = np.concatenate([inputs, outputs], axis=1)
-            array = self.process_one(array)
-            inputs = array[:, :inputs_len]
-            outputs = array[:, inputs_len:]
-        else:
-            inputs = self.process_one(inputs)
-
-        return inputs, outputs
-
-    def process_one(self, array: np.ndarray):
-        size = [len(array)] + [1] * (array.ndim - 1)
+        size = [len(inputs)] + [1] * (inputs.ndim - 1)
         if self.gain is not None:
             gain = random_range_value(self.gain, size=size)
-            array = array * gain
+            inputs = inputs * gain
+            if self.apply_on_outputs:
+                outputs = outputs * gain
 
         if self.bias is not None:
             bias = random_range_value(self.bias, center=0.0, size=size)
-            array = array + bias
+            inputs = inputs + bias
+            if self.apply_on_outputs:
+                outputs = outputs + bias
 
         if (self.gain is not None) or (self.bias is not None):
             if self.normalization_method == "clip":
-                array = np.clip(array, self.values_range[0], self.values_range[1])
+                inputs = np.clip(inputs, self.values_range[0], self.values_range[1])
+                if self.apply_on_outputs:
+                    outputs = np.clip(outputs, self.values_range[0], self.values_range[1])
             elif self.normalization_method == "mod":
                 mod_range = self.values_range[1] - self.values_range[0]
-                array = np.mod(array, mod_range) + self.values_range[0]
+                inputs = np.mod(inputs, mod_range) + self.values_range[0]
+                if self.apply_on_outputs:
+                    outputs = np.mod(outputs, mod_range) + self.values_range[0]
 
-        return array
+        return inputs, outputs

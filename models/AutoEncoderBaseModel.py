@@ -5,7 +5,7 @@ from keras.initializers import VarianceScaling
 from keras.regularizers import l2
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
-from keras.backend import binary_crossentropy
+from keras.backend import binary_crossentropy, get_session
 from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
@@ -570,7 +570,9 @@ class AutoEncoderBaseModel(ABC):
     def get_reconstruction_loss(self, reconstruction_metric_name: str):
         if self.temporal_loss_weights is None:
             reconstruction_loss_weights = np.ones([self.input_sequence_length], dtype=np.float32)
-            prediction_loss_weights = np.arange(start=1.0, stop=0.0, step=-1 / self.input_sequence_length,
+            stop = 0.2
+            step = (stop - 1) / self.input_sequence_length
+            prediction_loss_weights = np.arange(start=1.0, stop=stop, step=step,
                                                 dtype=np.float32)
             loss_weights = np.concatenate([reconstruction_loss_weights, prediction_loss_weights])
             self.temporal_loss_weights = tf.constant(loss_weights)
@@ -874,13 +876,13 @@ class AutoEncoderBaseModel(ABC):
             placeholder_shape = [None, *predictions.shape[1:]]
             self._auc_predictions_placeholder = tf.placeholder(dtype=tf.float32, shape=placeholder_shape)
             self._auc_labels_placeholder = tf.placeholder(dtype=tf.bool, shape=placeholder_shape)
-            roc_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, "ROC",
+            roc_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, curve="ROC",
                                     summation_method="careful_interpolation")
-            pr_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, "PR",
+            pr_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, curve="PR",
                                    summation_method="careful_interpolation")
             self._auc_ops = [roc_op, pr_op]
 
-        session: tf.Session = tf.get_default_session()
+        session: tf.Session = get_session()
         session.run(tf.local_variables_initializer())
         (_, roc), (_, pr) = session.run(self._auc_ops, feed_dict={self._auc_predictions_placeholder: predictions,
                                                                   self._auc_labels_placeholder: labels})

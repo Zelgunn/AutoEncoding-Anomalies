@@ -101,16 +101,6 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
     # endregion
 
-    # region Training
-    def train(self,
-              database: Database,
-              epoch_length: int,
-              batch_size: int = 64,
-              epochs: int = 1):
-        super(VariationalBaseModel, self).train(database, epoch_length, batch_size, epochs)
-        self.visualize_vae_interpolation(database.test_dataset)
-    # endregion
-
     # region Testing
     def visualize_vae_interpolation(self, dataset: Dataset):
         encoder_input = self.encoder.get_input_at(0)

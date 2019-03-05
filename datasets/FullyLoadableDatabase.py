@@ -35,6 +35,13 @@ class FullyLoadableDatabase(Database, ABC):
                 current_min = min(current_min, video_min)
                 current_max = max(current_max, video_max)
 
+        for i in range(self.test_dataset.videos_count):
+            video_min = self.test_dataset.videos[i].min()
+            video_max = self.test_dataset.videos[i].max()
+
+            current_min = min(current_min, video_min)
+            current_max = max(current_max, video_max)
+
         self.train_dataset.normalize(current_min, current_max, target_min, target_max)
         self.test_dataset.normalize(current_min, current_max, target_min, target_max)
 

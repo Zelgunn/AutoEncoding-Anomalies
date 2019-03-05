@@ -61,7 +61,8 @@ class FullyLoadableDataset(Dataset, ABC):
     def normalize(self, current_min, current_max, target_min=0.0, target_max=1.0):
         super(FullyLoadableDataset, self).normalize(current_min, current_max, target_min, target_max)
         multiplier = (target_max - target_min) / (current_max - current_min)
-        self.videos = (self.videos - current_min) * multiplier + target_min
+        for i in range(self.videos_count):
+            self.videos[i] = (self.videos[i] - current_min) * multiplier + target_min
 
     def sample_single_video(self, video_index, shard_size, sequence_length, return_labels):
         video = self.videos[video_index]
@@ -148,7 +149,7 @@ class FullyLoadableDataset(Dataset, ABC):
 
     @property
     def images_size(self):
-        return self.videos.shape[2:4]
+        return self.videos[0].shape[1:3]
 
     @property
     def frame_level_labels(self):

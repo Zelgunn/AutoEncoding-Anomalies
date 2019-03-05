@@ -12,10 +12,10 @@
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1}
     ],
-    "block_type": "conv_block",
+    "block_type": "residual_block",
     "pooling": "max",
     "upsampling": "upsampling",
-    "use_batch_normalization": "False",
+    "use_batch_normalization": "True",
     "use_spectral_norm": "False",
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
@@ -28,7 +28,7 @@
     "pixel_level_labels_size": [8, 16],
     "data_generators": {
         "train": {
-            "cropping": {"width_range": 0.5},
+            "cropping": {"width_range": 0.2},
             "brightness": {"gain": 0.2, "bias": 0.2, "normalization_method": "clip"},
             "dropout_rate": 0.05
         },

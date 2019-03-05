@@ -48,7 +48,7 @@ else:
         model=model_used, dataset=database_config_alias, suffix=alt_config_suffix_used)
 # endregion
 
-preview_tensorboard_test_images = False
+preview_test_dataset = False
 allow_gpu_growth = False
 profile = False
 
@@ -75,7 +75,7 @@ print("Database config alias \t\t\t\t:", database_config_alias)
 print("Config used \t\t\t\t\t:", config_used)
 print("Blocks used \t\t\t\t\t:", auto_encoder.block_type_name)
 print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
-print("Preview tensorboard test images \t\t:", preview_tensorboard_test_images)
+print("Preview tensorboard test images \t\t:", preview_test_dataset)
 print("Allow GPU growth \t\t\t\t:", allow_gpu_growth)
 print("Run cProfile \t\t\t\t\t:", profile)
 print("===============================================")
@@ -103,14 +103,12 @@ database.test_dataset.epoch_length = 2
 # endregion
 
 # region Test dataset preview
-if preview_tensorboard_test_images:
-    preview_count = auto_encoder.image_summaries_max_outputs
-    previewed_image = database.test_dataset.sample_input_videos(preview_count, seed=0,
-                                                                max_shard_count=preview_count)
-    previewed_image = (previewed_image - previewed_image.min()) / (previewed_image.max() - previewed_image.min())
-    for i in range(preview_count):
-        cv2.imshow("preview_{0} (seed={1})".format(i, seed), previewed_image[i])
-    cv2.waitKey(120000)
+if preview_test_dataset:
+    _, videos = database.test_dataset.get_batch(8, seed=1, apply_preprocess_step=False, max_shard_count=8)
+    for video in videos:
+        for frame in video:
+            cv2.imshow("frame", frame)
+            cv2.waitKey(30)
     cv2.destroyAllWindows()
     exit()
 # endregion
@@ -131,9 +129,9 @@ if profile:
     import cProfile
 
     print("===== Profiling activated ... =====")
-    cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=100, batch_size=32)", sort="cumulative")
+    cProfile.run("auto_encoder.train(database, epoch_length=200, epochs=2, batch_size=8)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=500, epochs=75, batch_size=8)
+    auto_encoder.train(database, epoch_length=500, epochs=75, batch_size=6)
 
 # TODO : Residual Scaling
 
