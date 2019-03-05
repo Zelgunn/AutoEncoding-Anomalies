@@ -23,7 +23,7 @@ from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
 from callbacks import ImageCallback, AUCCallback, CallbackModel
-from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper
+from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper, GaussianBlurrer
 
 
 # region Containers
@@ -312,14 +312,16 @@ class AutoEncoderBaseModel(ABC):
             random_cropper = RandomCropper(width_range, height_range, keep_ratio)
             data_preprocessors.append(random_cropper)
 
+        if "blurring" in section:
+            max_sigma = section["blurring"]["max_sigma"]
+            random_blurrer = GaussianBlurrer(max_sigma)
+            data_preprocessors.append(random_blurrer)
+
         if "brightness" in section:
             brightness_section = section["brightness"]
             gain = brightness_section["gain"] if "gain" in brightness_section else None
             bias = brightness_section["bias"] if "bias" in brightness_section else None
-            norm_method = brightness_section["normalization_method"] if "normalization_method" in brightness_section \
-                else "clip"
-            brightness_shifter = BrightnessShifter(gain=gain, bias=bias, values_range=self.output_range,
-                                                   normalization_method=norm_method)
+            brightness_shifter = BrightnessShifter(gain=gain, bias=bias, values_range=self.output_range)
             data_preprocessors.append(brightness_shifter)
 
         if "dropout_rate" in section:
@@ -930,7 +932,7 @@ class AutoEncoderBaseModel(ABC):
         frame_predictions_model = self.build_frame_level_error_callback_model()
         frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
                                          videos, frame_labels,
-                                         plot_size=(128, 128), batch_size=32,
+                                         plot_size=(128, 128), batch_size=8,
                                          name="Frame_Level_Error_AUC", epoch_freq=5)
         # endregion
 
@@ -941,7 +943,7 @@ class AutoEncoderBaseModel(ABC):
         # if pixel_labels is not None:
         #     pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
         #                                      videos, pixel_labels,
-        #                                      plot_size=(128, 128), batch_size=32,
+        #                                      plot_size=(128, 128), batch_size=8,
         #                                      num_thresholds=20, name="Pixel_Level_Error_AUC", epoch_freq=5)
         #     anomaly_callbacks.append(pixel_auc_callback)
         # endregion

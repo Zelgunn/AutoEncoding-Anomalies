@@ -159,7 +159,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         videos, frame_labels, _ = samples
         videos = test_dataset.divide_batch_io(videos)
 
-        n_predictions_model = self.n_predictions(n=32)
+        n_predictions_model = self.n_predictions(n=24)
 
         vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
                                        videos, frame_labels, plot_size=(128, 128), batch_size=1,

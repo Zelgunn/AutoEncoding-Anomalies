@@ -4,12 +4,12 @@ import cv2
 from data_preprocessors import DataPreprocessor
 
 
-class RandomBlurrer(DataPreprocessor):
+class GaussianBlurrer(DataPreprocessor):
     def __init__(self,
                  max_sigma,
                  kernel_size=(5, 5),
                  apply_on_outputs=True):
-        super(RandomBlurrer, self).__init__()
+        super(GaussianBlurrer, self).__init__()
         self.max_sigma = max_sigma
         self.kernel_size = kernel_size
         self.apply_on_outputs = apply_on_outputs
