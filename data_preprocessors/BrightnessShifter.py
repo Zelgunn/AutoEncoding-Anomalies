@@ -8,13 +8,11 @@ class BrightnessShifter(DataPreprocessor):
                  gain=None,
                  bias=None,
                  values_range=(0.0, 1.0),
-                 normalization_method="clip",
                  apply_on_outputs=True):
         super(BrightnessShifter, self).__init__()
         self.gain = gain
         self.bias = bias
         self.values_range = values_range
-        self.normalization_method = normalization_method
         self.apply_on_outputs = apply_on_outputs
 
     def process(self, inputs: np.ndarray, outputs: np.ndarray):
@@ -32,17 +30,8 @@ class BrightnessShifter(DataPreprocessor):
                 outputs += bias
 
         if (self.gain is not None) or (self.bias is not None):
-            if self.normalization_method == "clip":
-                inputs.clip(self.values_range[0], self.values_range[1], out=inputs)
-                if self.apply_on_outputs:
-                    outputs.clip(self.values_range[0], self.values_range[1], out=outputs)
-
-            elif self.normalization_method == "mod":
-                mod_range = self.values_range[1] - self.values_range[0]
-                np.mod(inputs, mod_range, out=inputs)
-                inputs += self.values_range[0]
-                if self.apply_on_outputs:
-                    np.mod(outputs, mod_range, out=outputs)
-                    outputs += self.values_range[0]
+            inputs.clip(self.values_range[0], self.values_range[1], out=inputs)
+            if self.apply_on_outputs:
+                outputs.clip(self.values_range[0], self.values_range[1], out=outputs)
 
         return inputs, outputs
