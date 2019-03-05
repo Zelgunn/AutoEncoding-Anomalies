@@ -14,19 +14,20 @@ class DropoutNoiser(DataPreprocessor):
     def process(self, inputs: np.ndarray, outputs: np.ndarray):
         if self.inputs_dropout_rate > 0.0:
             inputs = add_dropout_noise_to(inputs, self.inputs_dropout_rate)
+
         if self.outputs_dropout_rate > 0.0:
             outputs = add_dropout_noise_to(outputs, self.outputs_dropout_rate)
+
         return inputs, outputs
 
 
 def add_dropout_noise_to(images: np.ndarray, dropout_rate: float):
-    noisy_images = images
+    original_shape = images.shape
     if dropout_rate > 0.0:
-        noisy_images = np.copy(noisy_images)
-        noisy_images = np.reshape(noisy_images, [images.shape[0], -1])
-        dropout_count = int(np.ceil(dropout_rate * noisy_images.shape[-1]))
-        for i in range(images.shape[0]):
-            dropout_indices = np.random.permutation(np.arange(noisy_images.shape[-1]))[:dropout_count]
-            noisy_images[i][dropout_indices] = 0.0
-        noisy_images = np.reshape(noisy_images, images.shape)
-    return noisy_images
+        images = np.reshape(images, [original_shape[0], -1])
+        dropout_count = int(np.ceil(dropout_rate * images.shape[-1]))
+        for i in range(original_shape[0]):
+            dropout_indices = np.random.permutation(np.arange(images.shape[-1]))[:dropout_count]
+            images[i][dropout_indices] = 0.0
+        images = np.reshape(images, original_shape)
+    return images

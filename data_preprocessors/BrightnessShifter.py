@@ -21,25 +21,28 @@ class BrightnessShifter(DataPreprocessor):
         size = [len(inputs)] + [1] * (inputs.ndim - 1)
         if self.gain is not None:
             gain = random_range_value(self.gain, size=size)
-            inputs = inputs * gain
+            inputs *= gain
             if self.apply_on_outputs:
-                outputs = outputs * gain
+                outputs *= gain
 
         if self.bias is not None:
             bias = random_range_value(self.bias, center=0.0, size=size)
-            inputs = inputs + bias
+            inputs += bias
             if self.apply_on_outputs:
-                outputs = outputs + bias
+                outputs += bias
 
         if (self.gain is not None) or (self.bias is not None):
             if self.normalization_method == "clip":
-                inputs = np.clip(inputs, self.values_range[0], self.values_range[1])
+                inputs.clip(self.values_range[0], self.values_range[1], out=inputs)
                 if self.apply_on_outputs:
-                    outputs = np.clip(outputs, self.values_range[0], self.values_range[1])
+                    outputs.clip(self.values_range[0], self.values_range[1], out=outputs)
+
             elif self.normalization_method == "mod":
                 mod_range = self.values_range[1] - self.values_range[0]
-                inputs = np.mod(inputs, mod_range) + self.values_range[0]
+                np.mod(inputs, mod_range, out=inputs)
+                inputs += self.values_range[0]
                 if self.apply_on_outputs:
-                    outputs = np.mod(outputs, mod_range) + self.values_range[0]
+                    np.mod(outputs, mod_range, out=outputs)
+                    outputs += self.values_range[0]
 
         return inputs, outputs
