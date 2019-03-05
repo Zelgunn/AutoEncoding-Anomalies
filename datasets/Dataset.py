@@ -82,6 +82,9 @@ class Dataset(Sequence, ABC):
         else:
             sampled_videos_count = min(sampled_videos_count, self.videos_count)
 
+        if batch_size < sampled_videos_count:
+            sampled_videos_count = batch_size
+
         with NumpySeedContext(seed):
             videos_indices = np.random.permutation(np.arange(self.videos_count))[:sampled_videos_count]
             sampled_videos, sampled_frame_labels, sampled_pixel_labels,  = [], [], None
