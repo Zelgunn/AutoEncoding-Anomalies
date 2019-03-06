@@ -35,8 +35,8 @@ dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
 use_flow = False
 use_patches = False
-previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551713548"
+# previous_weights_to_load = None
+previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551873252"
 
 # region Config/Database selection
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
@@ -90,6 +90,9 @@ database = database_class(database_path=database_path,
                           test_preprocessors=auto_encoder.test_data_preprocessors)
 database.load()
 
+print("===== Resizing data to input_shape =====")
+database = auto_encoder.resized_database(database)
+
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
 database.normalize(*auto_encoder.output_range)
@@ -119,7 +122,7 @@ K.set_session(session)
 
 if previous_weights_to_load is not None:
     print("=> Loading weights from :", previous_weights_to_load)
-    auto_encoder.load_weights(previous_weights_to_load)
+    auto_encoder.load_weights(previous_weights_to_load, epoch=None)
 # endregion
 
 if profile:

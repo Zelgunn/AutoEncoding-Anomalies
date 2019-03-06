@@ -16,9 +16,9 @@ import os
 import json
 import copy
 from tqdm import tqdm
-from typing import List, Any
+from typing import List, Union
 
-from layers import ResBasicBlock3D, ResBasicBlock3DTranspose, DenseBlock3D, SpectralNormalization
+from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
@@ -155,7 +155,7 @@ metrics_dict = {"L1": absolute_error,
 types_with_transpose = ["conv_block", "residual_block"]
 
 conv_type = {"conv_block": {False: Conv3D, True: Deconv3D},
-             "residual_block": {False: ResBasicBlock3D, True: ResBasicBlock3DTranspose},
+             "residual_block": {False: ResBlock3D, True: ResBlock3DTranspose},
              "dense_block": {False: DenseBlock3D}}
 
 pool_type = {"max": MaxPooling3D,
@@ -362,13 +362,52 @@ class AutoEncoderBaseModel(ABC):
     def build_conv_stack(self, stack_info: dict, transpose=False) -> LayerStack:
         if self.block_type_name == "dense_block":
             return self.build_dense_block(stack_info, transpose)
+        elif self.block_type_name == "residual_block":
+            return self.build_residual_block(stack_info, transpose)
         else:
             return self.build_layer_stack(stack_info, transpose)
 
     def build_deconv_stack(self, stack_info: dict) -> LayerStack:
         return self.build_conv_stack(stack_info, transpose=True)
 
-    def build_dense_block(self, stack_info: dict, transpose=False) -> LayerStack:
+    def build_residual_block(self, stack_info: dict, transpose):
+        depth: int = stack_info["depth"]
+        stack = LayerStack()
+
+        strides = stack_info["strides"]
+        upsampling_layer, pool_layer, conv_strides = None, None, 1
+        if self.pooling == "strides":
+            conv_strides = strides
+        elif transpose:
+            upsampling_layer = UpSampling3D(size=strides)
+        else:
+            pool_layer = pool_type[self.pooling](pool_size=strides)
+
+        conv_block_type = self.get_block_type(transpose)
+
+        conv_layer = conv_block_type(filters=stack_info["filters"],
+                                     basic_block_count=depth,
+                                     basic_block_depth=2,
+                                     kernel_size=stack_info["kernel_size"],
+                                     strides=conv_strides,
+                                     use_bias=True,
+                                     kernel_initializer=self.weights_initializer,
+                                     kernel_regularizer=self.weight_decay_regularizer,
+                                     bias_regularizer=self.weight_decay_regularizer
+                                     )
+
+        if self.use_spectral_norm:
+            conv_layer = SpectralNormalization(conv_layer)
+
+        activation = AutoEncoderBaseModel.get_activation(self.default_activation)
+        dropout = Dropout(rate=stack_info["dropout"]) if "dropout" in stack_info else None
+
+        layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose)
+        stack.add_layer(layer_block)
+
+        return stack
+
+    def build_dense_block(self, stack_info: dict, transpose) -> LayerStack:
         depth: int = stack_info["depth"]
         stack = LayerStack()
 
@@ -609,10 +648,8 @@ class AutoEncoderBaseModel(ABC):
                 for layer in model.layers:
                     if isinstance(layer, Conv3D):
                         depth += 1
-                    elif isinstance(layer, ResBasicBlock3D) or isinstance(layer, ResBasicBlock3DTranspose):
-                        depth += len(layer.conv_layers)
-                        if layer.projection_layer is not None:
-                            depth += 1
+                    elif isinstance(layer, ResBlock3D) or isinstance(layer, ResBlock3DTranspose):
+                        depth += layer.basic_block_count * layer.basic_block_depth
                     elif isinstance(layer, DenseBlock3D):
                         depth += layer.depth
                         if layer.transition_layer is not None:
@@ -682,9 +719,16 @@ class AutoEncoderBaseModel(ABC):
         print("======================= Done ! =======================")
 
         predictions, labels = self.predict_anomalies(database, False)
-        roc, pr = self.evaluate_predictions(predictions, labels, os.path.join(self.log_dir, "anomaly_score.png"))
+        rec_graph_filepath = os.path.join(self.log_dir, "anomaly_score_rec.png")
+        rec_roc, rec_pr = self.evaluate_predictions(predictions, labels, rec_graph_filepath)
+
+        predictions, labels = self.predict_anomalies(database, True)
+        rec_graph_filepath = os.path.join(self.log_dir, "anomaly_score_rec.png")
+        pred_roc, pred_pr = self.evaluate_predictions(predictions, labels, rec_graph_filepath)
+
         with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
-            results_file.write("ROC : {}\nPR  : {}".format(roc, pr))
+            results_file.write("Reconstructor only : ROC = {}|PR  = {}\n".format(rec_roc, rec_pr))
+            results_file.write("With Predictor     : ROC = {}|PR  = {}\n".format(pred_roc, pred_pr))
 
     def train_loop(self, database: Database, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
         database = self.resized_database(database)
@@ -743,7 +787,6 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     # region Testing
-
     def autoencode_video(self,
                          dataset: Dataset,
                          video_index: int,
@@ -885,11 +928,13 @@ class AutoEncoderBaseModel(ABC):
     def _save_model_weights(self,
                             model: KerasModel,
                             name: str,
-                            epoch: int):
+                            epoch: Union[int, None]):
         filepath = AutoEncoderBaseModel.get_model_weights_base_filepath(self.log_dir, name, epoch)
         model.save_weights(filepath)
 
-    def load_weights(self, base_filepath: str, epoch: int):
+    def load_weights(self,
+                     base_filepath: str,
+                     epoch: Union[int, None]):
         for model_name, model in self.saved_models.items():
             self._load_model_weights(model, base_filepath, model_name, epoch)
 
@@ -951,7 +996,7 @@ class AutoEncoderBaseModel(ABC):
         frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
                                          videos, frame_labels,
                                          plot_size=(128, 128), batch_size=8,
-                                         name="Frame_Level_Error_AUC", epoch_freq=5)
+                                         name="Frame_Level_Error_AUC", epoch_freq=2)
         # endregion
 
         anomaly_callbacks = [train_image_callback, test_image_callback, frame_auc_callback]
