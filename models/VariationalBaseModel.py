@@ -151,7 +151,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
     # region Callbacks
     def build_anomaly_callbacks(self, database: Database):
-        database = self.resize_database(database)
+        database = self.resized_database(database)
         test_dataset = database.test_dataset
         anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
 

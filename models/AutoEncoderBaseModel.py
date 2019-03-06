@@ -22,7 +22,7 @@ from layers import ResBasicBlock3D, ResBasicBlock3DTranspose, DenseBlock3D, Spec
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
-from callbacks import ImageCallback, AUCCallback, CallbackModel
+from callbacks import ImageCallback, AUCCallback, CallbackModel, MultipleModelsCheckpoint
 from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper, GaussianBlurrer
 
 
@@ -637,6 +637,14 @@ class AutoEncoderBaseModel(ABC):
             self.compile_decoder()
         return self._decoder
 
+    @property
+    def saved_models(self):
+        return {"encoder": self.encoder,
+                "decoder": self.decoder}
+
+    def resized_database(self, database: Database) -> Database:
+        return database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
+
     # endregion
 
     # region Training
@@ -678,12 +686,8 @@ class AutoEncoderBaseModel(ABC):
         with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
             results_file.write("ROC : {}\nPR  : {}".format(roc, pr))
 
-    def resize_database(self, database: Database) -> Database:
-        database = database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
-        return database
-
     def train_loop(self, database: Database, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
-        database = self.resize_database(database)
+        database = self.resized_database(database)
         database.train_dataset.epoch_length = epoch_length
         database.train_dataset.batch_size = batch_size
         database.test_dataset.batch_size = batch_size
@@ -736,24 +740,6 @@ class AutoEncoderBaseModel(ABC):
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
         self.epochs_seen += 1
-
-    def save_weights(self):
-        self._save_model_weights(self.encoder, "encoder")
-        self._save_model_weights(self.decoder, "decoder")
-
-    def _save_model_weights(self, model: KerasModel, name):
-        filepath = "{}/weights_{}.h5".format(self.log_dir, name)
-        model.save_weights(filepath)
-
-    def load_weights(self, base_filepath):
-        AutoEncoderBaseModel._load_model_weights(self.encoder, base_filepath, "encoder")
-        AutoEncoderBaseModel._load_model_weights(self.decoder, base_filepath, "decoder")
-
-    @staticmethod
-    def _load_model_weights(model: KerasModel, base_filepath, name):
-        filepath = "{}/weights_{}.h5".format(base_filepath, name)
-        model.load_weights(filepath)
-
     # endregion
 
     # region Testing
@@ -891,7 +877,40 @@ class AutoEncoderBaseModel(ABC):
 
     # endregion
 
+    # region Weights (Save|Load)
+    def save_weights(self):
+        for model_name, model in self.saved_models.items():
+            self._save_model_weights(model, model_name, self.epochs_seen)
+
+    def _save_model_weights(self,
+                            model: KerasModel,
+                            name: str,
+                            epoch: int):
+        filepath = AutoEncoderBaseModel.get_model_weights_base_filepath(self.log_dir, name, epoch)
+        model.save_weights(filepath)
+
+    def load_weights(self, base_filepath: str, epoch: int):
+        for model_name, model in self.saved_models.items():
+            self._load_model_weights(model, base_filepath, model_name, epoch)
+
+    @staticmethod
+    def _load_model_weights(model: KerasModel,
+                            base_filepath: str,
+                            name: str,
+                            epoch: int):
+        filepath = AutoEncoderBaseModel.get_model_weights_base_filepath(base_filepath, name, epoch)
+        model.load_weights(filepath)
+
+    @staticmethod
+    def get_model_weights_base_filepath(base_filepath: str, name: str, epoch: int = None):
+        if epoch is None:
+            return "{}/weights_{}.h5".format(base_filepath, name)
+        else:
+            return "{}/weights_{}_epoch_{}.h5".format(base_filepath, name, epoch)
+    # endregion
+
     # region Callbacks
+    # region Build callbacks
     def build_callbacks(self, database: Database):
         return self.build_common_callbacks() + self.build_anomaly_callbacks(database)
 
@@ -901,8 +920,9 @@ class AutoEncoderBaseModel(ABC):
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
+        model_checkpoint = MultipleModelsCheckpoint("{}/weights_{model}_epoch_{epoch}.h5", self.saved_models, period=5)
 
-        common_callbacks = [base_logger, self.tensorboard, progbar_logger]
+        common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
 
         if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
             lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule(), verbose=1)
@@ -912,7 +932,7 @@ class AutoEncoderBaseModel(ABC):
 
     def build_anomaly_callbacks(self, database: Database) -> List[Callback]:
         # region Getting database/datasets
-        database = self.resize_database(database)
+        database = self.resized_database(database)
         test_dataset = database.test_dataset
         train_dataset = database.train_dataset
         # endregion
@@ -948,37 +968,12 @@ class AutoEncoderBaseModel(ABC):
 
         return anomaly_callbacks
 
-    def setup_callbacks(self,
-                        callbacks: CallbackList or List[Callback],
-                        batch_size: int,
-                        epochs: int,
-                        epoch_length: int,
-                        samples_count: int) -> CallbackList:
-        callbacks = CallbackList(callbacks)
-        callbacks.set_model(self.autoencoder)
-        callbacks.set_params({
-            'batch_size': batch_size,
-            'epochs': epochs,
-            'steps': epoch_length,
-            'samples': samples_count,
-            'verbose': 1,
-            'do_validation': True,
-            'metrics': self.callback_metrics(),
-        })
-        return callbacks
-
-    def callback_metrics(self):
-        metrics_names = self.autoencoder.metrics_names
-        validation_callbacks = ["val_{0}".format(name) for name in metrics_names]
-        callback_metrics = copy.copy(metrics_names) + validation_callbacks
-        return callback_metrics
-
+    # region Image|Video callbacks
     def build_auto_encoding_callback(self,
                                      dataset: Dataset,
                                      name: str,
                                      tensorboard: TensorBoard,
                                      frequency="epoch") -> ImageCallback:
-
         videos = dataset.get_batch(self.image_summaries_max_outputs, seed=1, apply_preprocess_step=False,
                                    max_shard_count=self.image_summaries_max_outputs)
 
@@ -1036,15 +1031,7 @@ class AutoEncoderBaseModel(ABC):
         frame_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], average_error)
 
         return frame_predictions_model
-
-    @staticmethod
-    def update_callbacks_param(callbacks: CallbackList,
-                               param_name: str,
-                               param_value: Any):
-        for callback in callbacks:
-            callback.params[param_name] = param_value
-            if hasattr(callback, param_name):
-                setattr(callback, param_name, param_value)
+    # endregion
 
     def get_learning_rate_schedule(self):
         lr_drop_epochs = self.config["lr_drop_epochs"]
@@ -1056,7 +1043,34 @@ class AutoEncoderBaseModel(ABC):
                 return learning_rate
 
         return schedule
+    # endregion
 
+    # region Setup callbacks
+    def setup_callbacks(self,
+                        callbacks: CallbackList or List[Callback],
+                        batch_size: int,
+                        epochs: int,
+                        epoch_length: int,
+                        samples_count: int) -> CallbackList:
+        callbacks = CallbackList(callbacks)
+        callbacks.set_model(self.autoencoder)
+        callbacks.set_params({
+            'batch_size': batch_size,
+            'epochs': epochs,
+            'steps': epoch_length,
+            'samples': samples_count,
+            'verbose': 1,
+            'do_validation': True,
+            'metrics': self.callback_metrics(),
+        })
+        return callbacks
+
+    def callback_metrics(self):
+        metrics_names = self.autoencoder.metrics_names
+        validation_callbacks = ["val_{0}".format(name) for name in metrics_names]
+        callback_metrics = copy.copy(metrics_names) + validation_callbacks
+        return callback_metrics
+    # endregion
     # endregion
 
     # region Log dir

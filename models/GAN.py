@@ -91,6 +91,12 @@ class GAN(AutoEncoderBaseModel):
             self.compile()
         return self._adversarial_generator
 
+    @property
+    def saved_models(self):
+        return {"encoder": self.encoder,
+                "decoder": self.decoder,
+                "discriminator": self.discriminator}
+
     # region Training
     def train_epoch(self, database: Database, callbacks: CallbackList = None):
         # region Variables initialization
@@ -164,16 +170,6 @@ class GAN(AutoEncoderBaseModel):
             # endregion
 
         self.on_epoch_end(database, callbacks)
-
-    def save_weights(self):
-        super(GAN, self).save_weights()
-
-        self._save_model_weights(self._discriminator, "discriminator")
-
-    def load_weights(self, base_filepath):
-        super(GAN, self).load_weights(base_filepath)
-
-        AutoEncoderBaseModel._load_model_weights(self._discriminator, base_filepath, "discriminator")
 
     # endregion
 
