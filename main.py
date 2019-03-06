@@ -131,7 +131,7 @@ if profile:
     print("===== Profiling activated ... =====")
     cProfile.run("auto_encoder.train(database, epoch_length=200, epochs=2, batch_size=8)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=500, epochs=75, batch_size=6)
+    auto_encoder.train(database, epoch_length=500, epochs=100, batch_size=6)
 
 # TODO : Residual Scaling
 

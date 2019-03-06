@@ -28,9 +28,12 @@
     "pixel_level_labels_size": [8, 16],
     "data_generators": {
         "train": {
-            "brightness": {"bias": 0.2},
-            "dropout_rate": 0.05
+            "_blurring" : {"max_sigma" : 3.0},
+            "_cropping" : {"width_range" : 0.1},
+            "_brightness" : {"bias" : 0.1},
+            "_dropout_rate": 0.1
         },
         "test": {}
-    }
+    },
+    "weight_decay": 1e-5
 }

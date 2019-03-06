@@ -5,7 +5,7 @@ from keras.initializers import VarianceScaling
 from keras.regularizers import l2
 from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
-from keras.backend import binary_crossentropy, get_session
+from keras.backend import binary_crossentropy, get_session, set_learning_phase
 from keras.utils.generic_utils import to_list
 import tensorflow as tf
 import numpy as np
@@ -574,10 +574,9 @@ class AutoEncoderBaseModel(ABC):
             reconstruction_loss_weights = np.ones([self.input_sequence_length], dtype=np.float32)
             stop = 0.2
             step = (stop - 1) / self.input_sequence_length
-            prediction_loss_weights = np.arange(start=1.0, stop=stop, step=step,
-                                                dtype=np.float32)
+            prediction_loss_weights = np.arange(start=1.0, stop=stop, step=step, dtype=np.float32)
             loss_weights = np.concatenate([reconstruction_loss_weights, prediction_loss_weights])
-            self.temporal_loss_weights = tf.constant(loss_weights)
+            self.temporal_loss_weights = tf.constant(loss_weights, name="temporal_loss_weights")
 
         def loss_function(y_true, y_pred):
             metric_function = metrics_dict[reconstruction_metric_name]
@@ -675,7 +674,9 @@ class AutoEncoderBaseModel(ABC):
         print("======================= Done ! =======================")
 
         predictions, labels = self.predict_anomalies(database, False)
-        self.evaluate_predictions(predictions, labels, os.path.join(self.log_dir, "anomaly_score.png"))
+        roc, pr = self.evaluate_predictions(predictions, labels, os.path.join(self.log_dir, "anomaly_score.png"))
+        with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
+            results_file.write("ROC : {}\nPR  : {}".format(roc, pr))
 
     def resize_database(self, database: Database) -> Database:
         database = database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
@@ -693,16 +694,11 @@ class AutoEncoderBaseModel(ABC):
     def train_epoch(self, database: Database, callbacks: CallbackList = None):
         epoch_length = len(database.train_dataset)
 
+        set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
 
         for batch_index in range(epoch_length):
             x, y = database.train_dataset[0]
-
-            # for k in range(len(y)):
-            #     for l in range(len(y[0])):
-            #         cv2.imshow("y", y[k][l])
-            #         cv2.imshow("x", x[k][l % 16])
-            #         cv2.waitKey(50)
 
             batch_logs = {"batch": batch_index, "size": x.shape[0]}
             callbacks.on_batch_begin(batch_index, batch_logs)
@@ -724,6 +720,8 @@ class AutoEncoderBaseModel(ABC):
                      database: Database,
                      callbacks: CallbackList = None,
                      epoch_logs: dict = None):
+
+        set_learning_phase(0)
         if epoch_logs is None:
             epoch_logs = {}
 
@@ -899,7 +897,7 @@ class AutoEncoderBaseModel(ABC):
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
-        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq=128)
+        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq=512)
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
