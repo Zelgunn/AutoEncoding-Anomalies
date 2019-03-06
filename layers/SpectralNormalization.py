@@ -5,7 +5,7 @@ from typing import List
 import keras.backend as K
 import tensorflow as tf
 
-from layers import ResBlock1D, ResBlock2D, ResBlock3D, ResBlock2DTranspose, ResBlock3DTranspose
+from layers import ResBasicBlock1D, ResBasicBlock2D, ResBasicBlock3D, ResBasicBlock2DTranspose, ResBasicBlock3DTranspose
 
 
 class WeightsInfo(object):
@@ -21,11 +21,11 @@ KNOWN_WEIGHTS_NAMES = {Dense: "kernel",
                        Conv3D: "kernel",
                        Deconv2D: "kernel",
                        Deconv3D: "kernel",
-                       ResBlock1D: "kernels",
-                       ResBlock2D: "kernels",
-                       ResBlock3D: "kernels",
-                       ResBlock2DTranspose: "kernels",
-                       ResBlock3DTranspose: "kernels"}
+                       ResBasicBlock1D: "kernels",
+                       ResBasicBlock2D: "kernels",
+                       ResBasicBlock3D: "kernels",
+                       ResBasicBlock2DTranspose: "kernels",
+                       ResBasicBlock3DTranspose: "kernels"}
 
 
 class SpectralNormalization(Wrapper):

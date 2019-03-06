@@ -90,9 +90,6 @@ database = database_class(database_path=database_path,
                           test_preprocessors=auto_encoder.test_data_preprocessors)
 database.load()
 
-print("===== Resizing data to input_shape =====")
-database = auto_encoder.resize_database(database)
-
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
 database.normalize(*auto_encoder.output_range)
@@ -139,5 +136,3 @@ else:
 
 # TODO : Make patches from images
 # TODO : Flow version
-
-# TODO : Update bibliography

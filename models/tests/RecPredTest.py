@@ -5,7 +5,7 @@ from keras.callbacks import TensorBoard
 import os
 from time import time
 
-from layers import ResBlock3D, DenseBlock3D, ResBlock3DTranspose
+from layers import ResBasicBlock3D, DenseBlock3D, ResBasicBlock3DTranspose
 from datasets import UCSDDatabase, SubwayDatabase
 from data_preprocessors import BrightnessShifter, DropoutNoiser
 from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection_on_dataset
@@ -39,16 +39,16 @@ def build_conv_encoder(input_layer):
 def build_residual_block_encoder(input_layer):
     layer = input_layer
 
-    layer = ResBlock3D(kernel_size=3, filters=32, kernel_initializer="he_normal")(layer)
+    layer = ResBasicBlock3D(kernel_size=3, filters=32, kernel_initializer="he_normal")(layer)
     layer = MaxPooling3D(pool_size=2, strides=2)(layer)
 
-    layer = ResBlock3D(kernel_size=3, filters=48, kernel_initializer="he_normal")(layer)
+    layer = ResBasicBlock3D(kernel_size=3, filters=48, kernel_initializer="he_normal")(layer)
     layer = MaxPooling3D(pool_size=2, strides=2)(layer)
 
-    layer = ResBlock3D(kernel_size=3, filters=64, kernel_initializer="he_normal")(layer)
+    layer = ResBasicBlock3D(kernel_size=3, filters=64, kernel_initializer="he_normal")(layer)
     layer = MaxPooling3D(pool_size=2, strides=2)(layer)
 
-    layer = ResBlock3D(kernel_size=3, filters=64, kernel_initializer="he_normal")(layer)
+    layer = ResBasicBlock3D(kernel_size=3, filters=64, kernel_initializer="he_normal")(layer)
 
     return layer
 
@@ -93,9 +93,9 @@ def build_conv_decoder(input_layer):
 def build_residual_block_decoder(input_layer):
     layer = input_layer
 
-    layer = ResBlock3DTranspose(kernel_size=3, filters=48, kernel_initializer="he_normal", strides=2)(layer)
-    layer = ResBlock3DTranspose(kernel_size=3, filters=32, kernel_initializer="he_normal", strides=2)(layer)
-    layer = ResBlock3DTranspose(kernel_size=3, filters=32, kernel_initializer="he_normal", strides=2)(layer)
+    layer = ResBasicBlock3DTranspose(kernel_size=3, filters=48, kernel_initializer="he_normal", strides=2)(layer)
+    layer = ResBasicBlock3DTranspose(kernel_size=3, filters=32, kernel_initializer="he_normal", strides=2)(layer)
+    layer = ResBasicBlock3DTranspose(kernel_size=3, filters=32, kernel_initializer="he_normal", strides=2)(layer)
 
     layer = Conv3D(kernel_size=1, filters=1, kernel_initializer="he_normal", activation="sigmoid")(layer)
 

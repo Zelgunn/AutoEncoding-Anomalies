@@ -18,7 +18,7 @@ import copy
 from tqdm import tqdm
 from typing import List, Any
 
-from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
+from layers import ResBasicBlock3D, ResBasicBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
@@ -155,7 +155,7 @@ metrics_dict = {"L1": absolute_error,
 types_with_transpose = ["conv_block", "residual_block"]
 
 conv_type = {"conv_block": {False: Conv3D, True: Deconv3D},
-             "residual_block": {False: ResBlock3D, True: ResBlock3DTranspose},
+             "residual_block": {False: ResBasicBlock3D, True: ResBasicBlock3DTranspose},
              "dense_block": {False: DenseBlock3D}}
 
 pool_type = {"max": MaxPooling3D,
@@ -609,7 +609,7 @@ class AutoEncoderBaseModel(ABC):
                 for layer in model.layers:
                     if isinstance(layer, Conv3D):
                         depth += 1
-                    elif isinstance(layer, ResBlock3D) or isinstance(layer, ResBlock3DTranspose):
+                    elif isinstance(layer, ResBasicBlock3D) or isinstance(layer, ResBasicBlock3DTranspose):
                         depth += len(layer.conv_layers)
                         if layer.projection_layer is not None:
                             depth += 1

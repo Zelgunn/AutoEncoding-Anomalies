@@ -3,7 +3,10 @@ from keras.models import Model
 from keras.datasets import cifar10
 from keras.utils.np_utils import to_categorical
 from keras.preprocessing.image import ImageDataGenerator
+from keras.callbacks import TensorBoard
 import numpy as np
+import os
+from time import time
 
 from layers import ResBlock2D
 
@@ -11,20 +14,20 @@ from layers import ResBlock2D
 def evaluate_on_cifar10():
     total_depth = 36
     n_blocks = 3
-    depth = total_depth // n_blocks
+    basic_block_count = total_depth // n_blocks
 
     # region Model
     input_layer = Input(shape=[32, 32, 3])
     layer = input_layer
 
     for k in range(n_blocks):
-        for i in range(depth):
-            layer = ResBlock2D(filters=16*(2**k), kernel_size=3, use_batch_normalization=False)(layer)
+        strides = 2 if k < (n_blocks - 1) else 1
+        layer = ResBlock2D(filters=16 * (2 ** k), basic_block_count=basic_block_count, strides=strides)(layer)
 
-        if k < (n_blocks - 1):
-            layer = AveragePooling2D(pool_size=2, strides=2)(layer)
-        else:
+        if k == (n_blocks - 1):
             layer = AveragePooling2D(pool_size=8)(layer)
+        # else:
+        #     layer = AveragePooling2D(pool_size=2, strides=2)(layer)
 
     layer = Reshape([-1])(layer)
     layer = Dense(units=10, activation="softmax")(layer)
@@ -49,9 +52,13 @@ def evaluate_on_cifar10():
     generator.fit(x_train, seed=0)
     # endregion
 
+    log_dir = "../logs/tests/res_block_cifar10/{}".format(int(time()))
+    log_dir = os.path.normpath(log_dir)
+    tensorboard = TensorBoard(log_dir=log_dir)
+
     model.fit_generator(generator.flow(x_train, y_train, batch_size=100),
                         steps_per_epoch=100, epochs=300, validation_data=(x_test, y_test),
-                        validation_steps=100, verbose=1)
+                        validation_steps=100, verbose=1, callbacks=[tensorboard])
 
 
 if __name__ == "__main__":
