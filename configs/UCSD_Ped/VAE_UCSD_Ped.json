@@ -3,14 +3,14 @@
     "embeddings_size": 64,
     "use_dense_embeddings": "False",
     "encoder": [
-        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1}
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 4},
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 4},
+        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 4}
     ],
     "decoder": [
-        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1}
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 4},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 4},
+        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 4}
     ],
     "block_type": "residual_block",
     "pooling": "max",
