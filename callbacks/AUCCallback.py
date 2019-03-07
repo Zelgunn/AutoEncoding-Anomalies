@@ -62,6 +62,7 @@ class AUCCallback(TensorBoardPlugin):
         self.session.run(tf.variables_initializer(self.auc_variables))
 
         predictions = self.predictions_model.predict(self.images, self.batch_size)
+        predictions = np.array(predictions)
         predictions = self.reformat_predictions(predictions)
 
         pred_min = predictions.min()

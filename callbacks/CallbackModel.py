@@ -31,17 +31,19 @@ class CallbackModel(object):
         total_size = len(x[0])
         batch_count = int(np.ceil(total_size / batch_size))
 
-        results = [None] * batch_count
+        batches_results = [None] * batch_count
 
         for i in range(batch_count):
             start, end = i * batch_size, (i + 1) * batch_size
             values = [array[start:end] for array in x]
             feed_dict = dict(zip(self.inputs, values))
-            results[i] = session.run(self.outputs, feed_dict)
+            batches_results[i] = session.run(self.outputs, feed_dict)
 
-        transpose_axes = [1, 0] + list(range(2, len(np.shape(results))))
-        results = np.transpose(results, axes=transpose_axes)
-        results = np.reshape(results, newshape=[len(self.outputs), total_size, *results.shape[3:]])
+        results = []
+        for i in range(len(self.outputs)):
+            ith_output_results = [batch_results[i] for batch_results in batches_results]
+            ith_output_results = np.concatenate(ith_output_results, axis=0)
+            results.append(ith_output_results)
 
         return results
 

@@ -16,7 +16,7 @@ import os
 import json
 import copy
 from tqdm import tqdm
-from typing import List, Union
+from typing import List, Union, Dict, Tuple
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from datasets import Database, Dataset
@@ -179,6 +179,7 @@ class AutoEncoderBaseModel(ABC):
         self._encoder: KerasModel = None
         self._decoder: KerasModel = None
         self._autoencoder: KerasModel = None
+        self._raw_predictions_models: Dict[Tuple, CallbackModel] = {}
 
         self.decoder_input_layer = None
         self.reconstructor_output = None
@@ -693,15 +694,7 @@ class AutoEncoderBaseModel(ABC):
         assert isinstance(batch_size, int) or isinstance(batch_size, list)
         assert isinstance(epochs, int) or isinstance(epochs, list)
 
-        if not self.layers_built:
-            self.build_layers()
-
-        if self.log_dir is not None:
-            return
-        self.log_dir = self.__class__.make_log_dir(database)
-        print("Logs directory : '{}'".format(self.log_dir))
-
-        self.save_models_info(self.log_dir)
+        self.on_train_begin(database)
 
         callbacks = self.build_callbacks(database)
         samples_count = database.train_dataset.samples_count
@@ -714,21 +707,7 @@ class AutoEncoderBaseModel(ABC):
             print("\n==== Training was stopped by a Keyboard Interrupt ====\n")
         callbacks.on_train_end()
 
-        print("============== Saving models weights... ==============")
-        self.save_weights()
-        print("======================= Done ! =======================")
-
-        predictions, labels = self.predict_anomalies(database, False)
-        rec_graph_filepath = os.path.join(self.log_dir, "anomaly_score_rec.png")
-        rec_roc, rec_pr = self.evaluate_predictions(predictions, labels, rec_graph_filepath)
-
-        predictions, labels = self.predict_anomalies(database, True)
-        rec_graph_filepath = os.path.join(self.log_dir, "anomaly_score_rec.png")
-        pred_roc, pred_pr = self.evaluate_predictions(predictions, labels, rec_graph_filepath)
-
-        with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
-            results_file.write("Reconstructor only : ROC = {}|PR  = {}\n".format(rec_roc, rec_pr))
-            results_file.write("With Predictor     : ROC = {}|PR  = {}\n".format(pred_roc, pred_pr))
+        self.on_train_end(database)
 
     def train_loop(self, database: Database, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
         database = self.resized_database(database)
@@ -784,6 +763,29 @@ class AutoEncoderBaseModel(ABC):
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
         self.epochs_seen += 1
+
+    def on_train_begin(self, database: Database):
+        if not self.layers_built:
+            self.build_layers()
+
+        if self.log_dir is not None:
+            return
+        self.log_dir = self.__class__.make_log_dir(database)
+        print("Logs directory : '{}'".format(self.log_dir))
+
+        self.save_models_info(self.log_dir)
+
+    def on_train_end(self, database: Database):
+        print("============== Saving models weights... ==============")
+        self.save_weights()
+        print("======================= Done ! =======================")
+
+        results = self.predict_and_evaluate(database)
+        with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
+            results_file.write("Reconstructor only   : ROC = {}|PR  = {}\n".format(*results[0]))
+            results_file.write("Unweighted Predictor : ROC = {}|PR  = {}\n".format(*results[1]))
+            results_file.write("Weighted Predictor   : ROC = {}|PR  = {}\n".format(*results[2]))
+
     # endregion
 
     # region Testing
@@ -811,86 +813,126 @@ class AutoEncoderBaseModel(ABC):
 
         video_writer.release()
 
-    def get_anomalies_raw_predictions_model(self,
-                                            include_predictor: bool,
-                                            reduction_axis=(2, 3, 4)) -> CallbackModel:
-        pred_output: tf.Tensor = self.autoencoder.get_output_at(0)
-        if not include_predictor:
-            pred_output = pred_output[:, :self.input_sequence_length, ...]
-        true_output = tf.placeholder(dtype=pred_output.dtype, shape=pred_output.shape)
-        predictions_op = tf.square(pred_output - true_output)
-        predictions_op = tf.reduce_sum(predictions_op, axis=reduction_axis)
+    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4)) -> CallbackModel:
+        if reduction_axis not in self._raw_predictions_models:
+            pred_output: tf.Tensor = self.autoencoder.get_output_at(0)
+            true_output = tf.placeholder(dtype=pred_output.dtype, shape=pred_output.shape)
 
-        if include_predictor:
-            predictions_op = self.temporal_loss_weights * predictions_op
+            error = tf.square(pred_output - true_output)
+            error = tf.reduce_sum(error, axis=reduction_axis)
 
-        inputs = [self.autoencoder.get_input_at(0), true_output]
-        outputs = [predictions_op]
-        raw_predictions_model = CallbackModel(inputs, outputs)
-        return raw_predictions_model
+            unweighted_predictor_error = error
+            weighted_predictor_error = unweighted_predictor_error * self.temporal_loss_weights
+
+            inputs = [self.autoencoder.get_input_at(0), true_output]
+            outputs = [unweighted_predictor_error, weighted_predictor_error]
+            raw_predictions_model = CallbackModel(inputs, outputs)
+
+            self._raw_predictions_models[reduction_axis] = raw_predictions_model
+
+        return self._raw_predictions_models[reduction_axis]
 
     def predict_anomalies(self,
                           database: Database,
-                          include_predictor: bool,
                           stride=1,
                           normalize_predictions=True):
 
-        dataset = database.test_dataset
+        predictions, labels = self.predict_anomalies_on_dataset(database.test_dataset, stride)
+
+        # train_predictions, train_labels = self.predict_anomalies_on_dataset(database.train_dataset, stride)
+        # predictions += train_predictions
+        # labels += train_labels
+
+        # region Concatenate predictions of different videos
+        tmp = []
+        for score_index in range(3):
+            scores = [video_predictions[score_index] for video_predictions in predictions]
+            scores = np.concatenate(scores)
+            if normalize_predictions:
+                print(scores.min(), scores.max(), scores.mean(), scores.std())
+                scores = (scores - scores.min()) / (scores.max() - scores.min())
+            tmp.append(scores)
+        predictions = tmp
+
+        labels = np.concatenate(labels)
+        # endregion
+
+        return predictions, labels
+
+    def predict_anomalies_on_dataset(self, dataset: Dataset, stride: int):
         predictions, labels = [], []
+
         for video_index in range(dataset.videos_count):
-            video_length = dataset.get_video_length(video_index)
-            window_length = self.output_sequence_length if include_predictor else self.input_sequence_length
-            steps_count = 1 + (video_length - window_length) // stride
-
-            video_predictions = np.zeros(shape=[video_length])
-            video_labels = np.zeros(shape=[video_length], dtype=np.bool)
-
-            raw_predictions_model = self.get_anomalies_raw_predictions_model(include_predictor)
-
-            for i in range(steps_count):
-                start = i * stride
-                end = start + window_length
-
-                step_video = dataset.get_video_frames(video_index, start, end)
-
-                step_video = np.expand_dims(step_video, axis=0)
-                step_labels = dataset.get_video_frame_labels(video_index, start, end)
-
-                if include_predictor:
-                    input_video, output_video = dataset.divide_batch_io(step_video)
-                else:
-                    input_video = output_video = step_video
-
-                step_predictions = raw_predictions_model.predict(x=[input_video, output_video], batch_size=1)
-                step_predictions = np.squeeze(step_predictions)
-
-                video_predictions[start:end] += step_predictions
-                if i == 0:
-                    video_labels[start:end] = step_labels
-                else:
-                    video_labels[end - 1] = step_labels[-1]
-
-            predictions_counts = np.ones(shape=[video_length + (1 - window_length) * 2]) * window_length
-            predictions_counts = np.concatenate([np.arange(1, window_length),
-                                                 predictions_counts,
-                                                 np.arange(window_length - 1, 0, -1)])
-            video_predictions = video_predictions / predictions_counts
-
-            if include_predictor:
-                delta = self.input_sequence_length - self.output_sequence_length
-                video_predictions = video_predictions[:delta]
-                video_labels = video_labels[:delta]
+            video_predictions, video_labels = self.predict_anomalies_on_video(dataset, video_index, stride)
 
             predictions.append(video_predictions)
             labels.append(video_labels)
 
-        predictions = np.concatenate(predictions)
-        labels = np.concatenate(labels)
-
-        if normalize_predictions:
-            predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
-
         return predictions, labels
+
+    def predict_anomalies_on_video(self, dataset: Dataset, video_index: int, stride: int):
+        raw_predictions_model = self.get_anomalies_raw_predictions_model()
+
+        video_length = dataset.get_video_length(video_index)
+        steps_count = 1 + (video_length - self.output_sequence_length) // stride
+        length_delta = self.output_sequence_length - self.input_sequence_length
+
+        # region Scores arrays
+        reconstructor_scores = np.zeros(shape=[video_length])
+        unweighted_predictor_scores = np.zeros(shape=[video_length])
+        weighted_predictor_scores = np.zeros(shape=[video_length])
+
+        if dataset.has_labels:
+            video_labels = dataset.get_video_frame_labels(video_index, 0, video_length)
+        else:
+            video_labels = np.zeros(shape=[video_length], dtype=np.bool)
+        # endregion
+
+        # region Compute scores for video
+        for i in range(steps_count):
+            start = i * stride
+            end = start + self.output_sequence_length
+
+            # region Inputs
+            step_video = dataset.get_video_frames(video_index, start, end)
+            step_video = np.expand_dims(step_video, axis=0)
+            input_video, output_video = dataset.divide_batch_io(step_video)
+            # endregion
+
+            step_predictions = raw_predictions_model.predict(x=[input_video, output_video], batch_size=1)
+            step_predictions = np.squeeze(step_predictions)
+
+            # region Add step predictions
+            step_unweighted_predictor_scores, step_weighted_predictor_scores = step_predictions
+            step_reconstructor_score = step_unweighted_predictor_scores[:self.input_sequence_length]
+
+            unweighted_predictor_scores[start:end] += step_unweighted_predictor_scores
+            weighted_predictor_scores[start:end] += step_weighted_predictor_scores
+            reconstructor_scores[start: end - length_delta] = step_reconstructor_score
+            # endregion
+
+        # endregion
+
+        # region Normalize scores by counts
+        def normalize_by_counts(array, max_count):
+            counts = np.ones(shape=[len(array) + (1 - max_count) * 2]) * max_count
+            counts = np.concatenate([np.arange(1, max_count), counts, np.arange(max_count - 1, 0, -1)])
+            return array / counts
+
+        unweighted_predictor_scores = normalize_by_counts(unweighted_predictor_scores, self.output_sequence_length)
+        weighted_predictor_scores = normalize_by_counts(weighted_predictor_scores, self.output_sequence_length)
+        reconstructor_scores = normalize_by_counts(reconstructor_scores, self.input_sequence_length)
+        # endregion
+
+        # region Cut last scores
+        unweighted_predictor_scores = unweighted_predictor_scores[:-length_delta]
+        weighted_predictor_scores = weighted_predictor_scores[:-length_delta]
+        reconstructor_scores = reconstructor_scores[:-length_delta]
+        video_labels = video_labels[:-length_delta]
+        # endregion
+
+        video_predictions = (unweighted_predictor_scores, weighted_predictor_scores, reconstructor_scores)
+        return video_predictions, video_labels
 
     def evaluate_predictions(self,
                              predictions: np.ndarray,
@@ -900,6 +942,7 @@ class AutoEncoderBaseModel(ABC):
             plt.plot(predictions)
             plt.plot(labels)
             plt.savefig(output_figure_filepath)
+            plt.clf()  # clf = clear figure...
 
         if self._auc_predictions_placeholder is None:
             placeholder_shape = [None, *predictions.shape[1:]]
@@ -915,8 +958,20 @@ class AutoEncoderBaseModel(ABC):
         session.run(tf.local_variables_initializer())
         (_, roc), (_, pr) = session.run(self._auc_ops, feed_dict={self._auc_predictions_placeholder: predictions,
                                                                   self._auc_labels_placeholder: labels})
-        print("ROC : {} | PR : {}".format(roc, pr))
         return roc, pr
+
+    def predict_and_evaluate(self,
+                             database: Database,
+                             stride=1):
+        predictions, labels = self.predict_anomalies(database, stride=stride, normalize_predictions=True)
+        graph_names = ["Reconstructor_results", "Unweighted_predictor_results", "Weighted_predictor_results"]
+        results = []
+        for i in range(len(predictions)):
+            graph_filepath = os.path.join(self.log_dir, graph_names[i] + ".png")
+            roc_and_pr = self.evaluate_predictions(predictions[i], labels, graph_filepath)
+            print("{} : ROC = {} | PR = {}".format(graph_names[i], *roc_and_pr))
+            results.append(roc_and_pr)
+        return results
 
     # endregion
 
@@ -952,6 +1007,7 @@ class AutoEncoderBaseModel(ABC):
             return "{}/weights_{}.h5".format(base_filepath, name)
         else:
             return "{}/weights_{}_epoch_{}.h5".format(base_filepath, name, epoch)
+
     # endregion
 
     # region Callbacks
@@ -965,9 +1021,11 @@ class AutoEncoderBaseModel(ABC):
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
-        model_checkpoint = MultipleModelsCheckpoint("{}/weights_{model}_epoch_{epoch}.h5", self.saved_models, period=5)
+        # model_checkpoint = MultipleModelsCheckpoint("{}/weights_{model}_epoch_{epoch}.h5", self.saved_model
+        # s, period=5)
 
-        common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
+        common_callbacks = [base_logger, self.tensorboard, progbar_logger]
+        # common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
 
         if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
             lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule(), verbose=1)
@@ -996,7 +1054,7 @@ class AutoEncoderBaseModel(ABC):
         frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
                                          videos, frame_labels,
                                          plot_size=(128, 128), batch_size=8,
-                                         name="Frame_Level_Error_AUC", epoch_freq=2)
+                                         name="Frame_Level_Error_AUC", epoch_freq=5)
         # endregion
 
         anomaly_callbacks = [train_image_callback, test_image_callback, frame_auc_callback]
@@ -1076,6 +1134,7 @@ class AutoEncoderBaseModel(ABC):
         frame_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], average_error)
 
         return frame_predictions_model
+
     # endregion
 
     def get_learning_rate_schedule(self):
@@ -1088,6 +1147,7 @@ class AutoEncoderBaseModel(ABC):
                 return learning_rate
 
         return schedule
+
     # endregion
 
     # region Setup callbacks
@@ -1115,6 +1175,7 @@ class AutoEncoderBaseModel(ABC):
         validation_callbacks = ["val_{0}".format(name) for name in metrics_names]
         callback_metrics = copy.copy(metrics_names) + validation_callbacks
         return callback_metrics
+
     # endregion
     # endregion
 

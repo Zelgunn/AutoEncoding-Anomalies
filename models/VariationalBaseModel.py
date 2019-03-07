@@ -150,23 +150,23 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     # endregion
 
     # region Callbacks
-    def build_anomaly_callbacks(self, database: Database):
-        database = self.resized_database(database)
-        test_dataset = database.test_dataset
-        anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
-
-        samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=16, return_labels=True)
-        videos, frame_labels, _ = samples
-        videos = test_dataset.divide_batch_io(videos)
-
-        n_predictions_model = self.n_predictions(n=24)
-
-        vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
-                                       videos, frame_labels, plot_size=(128, 128), batch_size=1,
-                                       name="Variational_AUC", epoch_freq=10)
-
-        anomaly_callbacks.append(vae_auc_callback)
-        return anomaly_callbacks
+    # def build_anomaly_callbacks(self, database: Database):
+    #     database = self.resized_database(database)
+    #     test_dataset = database.test_dataset
+    #     anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
+    #
+    #     samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=16, return_labels=True)
+    #     videos, frame_labels, _ = samples
+    #     videos = test_dataset.divide_batch_io(videos)
+    #
+    #     n_predictions_model = self.n_predictions(n=24)
+    #
+    #     vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
+    #                                    videos, frame_labels, plot_size=(128, 128), batch_size=1,
+    #                                    name="Variational_AUC", epoch_freq=10)
+    #
+    #     anomaly_callbacks.append(vae_auc_callback)
+    #     return anomaly_callbacks
 
     def n_predictions(self, n):
         with tf.name_scope("n_pred"):

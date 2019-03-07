@@ -12,12 +12,11 @@ class MultipleModelsCheckpoint(Callback):
         self.models = models
         self.period = period
         if "{model}" not in base_filepath:
-            base_filepath = base_filepath + "{model}"
+            base_filepath = base_filepath + "_{model}"
         self.base_filepath = base_filepath
 
     def on_epoch_end(self, epoch, logs=None):
         if ((epoch + 1) % self.period) == 0:
-            for model_name in self.models:
-                model = self.models[model_name]
+            for model_name, model in self.models.items():
                 filepath = self.base_filepath.format(model=model_name, epoch=epoch + 1, **logs)
                 model.save_weights(filepath, overwrite=True)

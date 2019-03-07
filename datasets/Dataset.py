@@ -172,5 +172,10 @@ class Dataset(Sequence, ABC):
         raise NotImplementedError
 
     @property
+    @abstractmethod
+    def has_labels(self):
+        raise NotImplementedError
+
+    @property
     def has_pixel_level_anomaly_labels(self):
         return False

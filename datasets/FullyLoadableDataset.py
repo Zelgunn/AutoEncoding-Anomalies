@@ -152,8 +152,12 @@ class FullyLoadableDataset(Dataset, ABC):
         return self.videos[0].shape[1:3]
 
     @property
+    def has_labels(self):
+        return self.anomaly_labels is not None
+
+    @property
     def frame_level_labels(self):
-        assert self.anomaly_labels is not None
+        assert self.has_labels
 
         if not self.has_pixel_level_anomaly_labels:
             return self.anomaly_labels

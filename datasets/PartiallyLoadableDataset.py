@@ -111,6 +111,10 @@ class PartiallyLoadableDataset(Dataset):
         return self.sub_config["images_size"]
 
     @property
+    def has_labels(self):
+        raise "labels_filenames" in self.sub_config["labels_filenames"]
+
+    @property
     def videos_filenames(self):
         return self.sub_config["videos_filenames"]
 
