@@ -35,8 +35,8 @@ dataset_used = "UCSD_Ped2"
 alt_config_suffix_used = None
 use_flow = False
 use_patches = False
-# previous_weights_to_load = None
-previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551878864"
+previous_weights_to_load = None
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551878864"
 
 # region Config/Database selection
 database_class, database_path, database_config_alias = datasets_dict[dataset_used]
@@ -131,7 +131,7 @@ if profile:
     print("===== Profiling activated ... =====")
     cProfile.run("auto_encoder.train(database, epoch_length=200, epochs=2, batch_size=8)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=500, epochs=100, batch_size=6)
+    auto_encoder.train(database, epoch_length=1, epochs=100, batch_size=6)
 
 # TODO : Residual Scaling
 

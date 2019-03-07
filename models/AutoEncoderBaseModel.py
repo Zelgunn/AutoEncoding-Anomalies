@@ -1021,11 +1021,11 @@ class AutoEncoderBaseModel(ABC):
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
-        # model_checkpoint = MultipleModelsCheckpoint("{}/weights_{model}_epoch_{epoch}.h5", self.saved_model
-        # s, period=5)
+        base_filepath = self.log_dir + "/weights_{model_name}_epoch_{epoch}.h5"
+        model_checkpoint = MultipleModelsCheckpoint(base_filepath, self.saved_models, period=1)
 
-        common_callbacks = [base_logger, self.tensorboard, progbar_logger]
-        # common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
+        # common_callbacks = [base_logger, self.tensorboard, progbar_logger]
+        common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
 
         if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
             lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule(), verbose=1)
