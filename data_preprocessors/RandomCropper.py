@@ -41,10 +41,12 @@ class RandomCropper(DataPreprocessor):
             x_start, x_end = width_offsets[i], width_offsets[i] + widths[i]
 
             for j in range(inputs_length):
-                crop_and_resize_frame(inputs[i][j], x_start, x_end, y_start, y_end, dst=inputs[i][j])
+                frame = crop_and_resize_frame(inputs[i][j], x_start, x_end, y_start, y_end)
+                inputs[i][j] = np.expand_dims(frame, axis=-1)
 
             for j in range(outputs_length):
-                crop_and_resize_frame(outputs[i][j], x_start, x_end, y_start, y_end, dst=outputs[i][j])
+                frame = crop_and_resize_frame(outputs[i][j], x_start, x_end, y_start, y_end)
+                outputs[i][j] = np.expand_dims(frame, axis=-1)
 
         return inputs, outputs
 

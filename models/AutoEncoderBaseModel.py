@@ -315,7 +315,7 @@ class AutoEncoderBaseModel(ABC):
 
         if "blurring" in section:
             max_sigma = section["blurring"]["max_sigma"]
-            random_blurrer = GaussianBlurrer(max_sigma)
+            random_blurrer = GaussianBlurrer(max_sigma, kernel_size=(5, 5), apply_on_outputs=False)
             data_preprocessors.append(random_blurrer)
 
         if "brightness" in section:
@@ -454,19 +454,22 @@ class AutoEncoderBaseModel(ABC):
                 conv_layer_strides = 1
                 pool_layer = None
                 upsampling_layer = None
-            elif self.pooling == "strides":
-                conv_layer_strides = stack_info["strides"]
+            elif transpose:
                 pool_layer = None
-                upsampling_layer = None
-            else:
-                conv_layer_strides = 1
-                size = stack_info["strides"]
-                if transpose:
-                    pool_layer = None
-                    upsampling_layer = UpSampling3D(size=size)
-                else:
-                    pool_layer = pool_type[self.pooling](pool_size=size)
+                if self.upsampling == "strides":
+                    conv_layer_strides = stack_info["strides"]
                     upsampling_layer = None
+                else:
+                    conv_layer_strides = 1
+                    upsampling_layer = UpSampling3D(size=stack_info["strides"])
+            else:
+                upsampling_layer = None
+                if self.pooling == "strides":
+                    conv_layer_strides = stack_info["strides"]
+                    pool_layer = None
+                else:
+                    conv_layer_strides = 1
+                    pool_layer = pool_type[self.pooling](pool_size=stack_info["strides"])
             # endregion
 
             # region Convolutional layer
@@ -727,19 +730,29 @@ class AutoEncoderBaseModel(ABC):
         for batch_index in range(epoch_length):
             x, y = database.train_dataset[0]
 
-            batch_logs = {"batch": batch_index, "size": x.shape[0]}
-            callbacks.on_batch_begin(batch_index, batch_logs)
+            for i in range(len(y)):
+                for j in range(len(y[i])):
+                    x_frame = x[i][j % 16]
+                    y_frame = y[i][j]
+                    cv2.imshow("x_frame", x_frame)
+                    cv2.imshow("y_frame", y_frame)
+                    cv2.imshow("x_frame_r", cv2.resize(x_frame, dsize=(512, 512), interpolation=cv2.INTER_NEAREST))
+                    cv2.imshow("y_frame_r", cv2.resize(y_frame, dsize=(512, 512), interpolation=cv2.INTER_NEAREST))
+                    cv2.waitKey(50)
 
-            results = self.autoencoder.train_on_batch(x=x, y=y)
-
-            if "metrics" in self.config:
-                batch_logs["loss"] = results[0]
-                for metric_name, result in zip(self.config["metrics"], results[1:]):
-                    batch_logs[metric_name] = result
-            else:
-                batch_logs["loss"] = results
-
-            callbacks.on_batch_end(batch_index, batch_logs)
+            # batch_logs = {"batch": batch_index, "size": x.shape[0]}
+            # callbacks.on_batch_begin(batch_index, batch_logs)
+            #
+            # results = self.autoencoder.train_on_batch(x=x, y=y)
+            #
+            # if "metrics" in self.config:
+            #     batch_logs["loss"] = results[0]
+            #     for metric_name, result in zip(self.config["metrics"], results[1:]):
+            #         batch_logs[metric_name] = result
+            # else:
+            #     batch_logs["loss"] = results
+            #
+            # callbacks.on_batch_end(batch_index, batch_logs)
 
         self.on_epoch_end(database, callbacks)
 
@@ -1017,12 +1030,12 @@ class AutoEncoderBaseModel(ABC):
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
-        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq=512)
+        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq="epoch")
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
         base_filepath = self.log_dir + "/weights_{model_name}_epoch_{epoch}.h5"
-        model_checkpoint = MultipleModelsCheckpoint(base_filepath, self.saved_models, period=1)
+        model_checkpoint = MultipleModelsCheckpoint(base_filepath, self.saved_models, period=5)
 
         # common_callbacks = [base_logger, self.tensorboard, progbar_logger]
         common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]

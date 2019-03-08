@@ -71,9 +71,6 @@ class PartiallyLoadableDataset(Dataset):
         labels_shard = self.get_labels_hook(video_index)
         return labels_shard[start:end]
 
-    def shuffle(self):
-        pass
-
     def resized(self, size, input_sequence_length, output_sequence_length):
         target_height, target_width = size
         target_index = None

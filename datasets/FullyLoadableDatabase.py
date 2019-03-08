@@ -46,10 +46,10 @@ class FullyLoadableDatabase(Database, ABC):
         self.test_dataset.normalize(current_min, current_max, target_min, target_max)
 
     def visualize_test_dataset(self):
-        labels = self.test_dataset.anomaly_labels
+        pixel_labels = self.test_dataset.pixel_labels
 
-        for i in range(len(labels)):
-            tmp: np.ndarray = self.test_dataset.anomaly_labels[i]
+        for i in range(len(pixel_labels)):
+            tmp: np.ndarray = self.test_dataset.pixel_labels[i]
             tmp = tmp.astype(np.float32)
             inv_tmp = 1.0 - tmp
             tmp = self.test_dataset.videos[i] * tmp

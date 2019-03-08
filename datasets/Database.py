@@ -34,11 +34,6 @@ class Database(ABC):
         self.train_dataset.on_epoch_end()
         self.test_dataset.on_epoch_end()
 
-    def shuffle(self, seed=None):
-        with NumpySeedContext(seed):
-            self.train_dataset.shuffle()
-            self.test_dataset.shuffle()
-
     @property
     def images_size(self):
         return self.train_dataset.images_size

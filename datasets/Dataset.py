@@ -56,10 +56,6 @@ class Dataset(Sequence, ABC):
         pass
 
     @abstractmethod
-    def shuffle(self):
-        raise NotImplementedError
-
-    @abstractmethod
     def resized(self, size, input_sequence_length, output_sequence_length):
         raise NotImplementedError
 
@@ -177,5 +173,5 @@ class Dataset(Sequence, ABC):
         raise NotImplementedError
 
     @property
-    def has_pixel_level_anomaly_labels(self):
+    def has_pixel_labels(self):
         return False

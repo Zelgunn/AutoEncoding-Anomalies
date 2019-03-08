@@ -21,8 +21,8 @@ class FullyLoadableDataset(Dataset, ABC):
                  **kwargs):
         self.dataset_path = dataset_path
         self.videos = None
-        self.anomaly_labels = None
-        self._frame_level_labels = None
+        self.pixel_labels = None
+        self._frame_labels = None
         super(FullyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
                                                    output_sequence_length=output_sequence_length,
                                                    data_preprocessors=data_preprocessors,
@@ -47,13 +47,13 @@ class FullyLoadableDataset(Dataset, ABC):
         other._normalization_range = copy.copy(self._normalization_range)
 
         other.videos = np.copy(self.videos) if copy_inputs else self.videos
-        if self.anomaly_labels is not None:
-            if copy_labels:
-                other.anomaly_labels = np.copy(self.anomaly_labels)
-                other._frame_level_labels = np.copy(self.frame_level_labels)
-            else:
-                other.anomaly_labels = self.anomaly_labels
-                other._frame_level_labels = self.frame_level_labels
+        if copy_labels:
+            if self.pixel_labels is not None:
+                other.pixel_labels = np.copy(self.pixel_labels)
+            other._frame_labels = np.copy(self.frame_labels)
+        else:
+            other.pixel_labels = self.pixel_labels
+            other._frame_labels = self.frame_labels
         return other
 
     # endregion
@@ -73,13 +73,10 @@ class FullyLoadableDataset(Dataset, ABC):
         frame_labels = pixel_labels = None
         if return_labels:
             labels_indices = indices[:, -self.output_sequence_length:]
-            labels = self.anomaly_labels[video_index][labels_indices]
 
-            if self.has_pixel_level_anomaly_labels:
-                pixel_labels = labels
-                frame_labels = self.frame_level_labels[video_index][labels_indices]
-            else:
-                frame_labels = labels
+            frame_labels = self.frame_labels[video_index][labels_indices]
+            if self.has_pixel_labels:
+                pixel_labels = self.pixel_labels[video_index][labels_indices]
 
         return video, frame_labels, pixel_labels
 
@@ -90,49 +87,43 @@ class FullyLoadableDataset(Dataset, ABC):
         return self.videos[video_index][start:end]
 
     def get_video_frame_labels(self, video_index, start, end):
-        labels_array = self.frame_level_labels if self.has_pixel_level_anomaly_labels else self.anomaly_labels
-        return labels_array[video_index][start:end]
+        return self.frame_labels[video_index][start:end]
 
-    def shuffle(self):
-        if self.anomaly_labels is None:
-            np.random.shuffle(self.videos)
-        else:
-            shuffle_indices = np.random.permutation(np.arange(self.videos_count))
-            self.videos = self.videos[shuffle_indices]
-            self.anomaly_labels = self.anomaly_labels[shuffle_indices]
+    def get_video_pixel_labels(self, video_index, start, end):
+        return self.pixel_labels[video_index][start:end]
 
     # region Resizing
     def resized(self, size, input_sequence_length, output_sequence_length):
-        videos = self.resized_videos(size)
-        anomaly_labels = self.resized_anomaly_labels(size)
-
-        dataset = self.make_copy()
-        dataset.videos = videos
+        dataset = self.make_copy(copy_inputs=False, copy_labels=False)
+        dataset.videos = self.resized_videos(size)
         dataset.input_sequence_length = input_sequence_length
         dataset.output_sequence_length = output_sequence_length
 
-        if dataset.anomaly_labels is not None:
-            dataset.anomaly_labels = anomaly_labels
-            dataset._frame_level_labels = np.copy(self.frame_level_labels)
+        if self._frame_labels is not None:
+            dataset._frame_labels = np.copy(self._frame_labels)
+
+        if self.pixel_labels is not None:
+            dataset.pixel_labels = self.resized_pixel_labels(size)
+
         return dataset
 
     def resized_videos(self, size):
         return resize_videos(self.videos, size)
 
-    def resized_anomaly_labels(self, size):
-        if self.anomaly_labels is None:
-            anomaly_labels = None
+    def resized_pixel_labels(self, size):
+        if self.pixel_labels is None:
+            pixel_labels = None
         else:
-            anomaly_labels = []
-            for i in range(len(self.anomaly_labels)):
-                video_labels = self.anomaly_labels[i]
+            pixel_labels = []
+            for i in range(len(self.pixel_labels)):
+                video_labels = self.pixel_labels[i]
                 video_labels = video_labels.astype(np.float32)
                 video_labels = resize_images(video_labels, size)
                 video_labels = video_labels.astype(np.bool)
-                anomaly_labels.append(video_labels)
-            anomaly_labels = np.array(anomaly_labels)
+                pixel_labels.append(video_labels)
+            pixel_labels = np.array(pixel_labels)
 
-        return anomaly_labels
+        return pixel_labels
 
     # endregion
 
@@ -153,24 +144,22 @@ class FullyLoadableDataset(Dataset, ABC):
 
     @property
     def has_labels(self):
-        return self.anomaly_labels is not None
+        return (self.pixel_labels is not None) or (self._frame_labels is not None)
 
     @property
-    def frame_level_labels(self):
-        assert self.has_labels
+    def frame_labels(self):
+        if not self.has_labels:
+            return None
 
-        if not self.has_pixel_level_anomaly_labels:
-            return self.anomaly_labels
-
-        if self._frame_level_labels is None:
-            self._frame_level_labels = []
-            for i in range(len(self.anomaly_labels)):
-                pixel_labels: np.ndarray = self.anomaly_labels[i]
+        if self._frame_labels is None:
+            self._frame_labels = []
+            for i in range(len(self.pixel_labels)):
+                pixel_labels: np.ndarray = self.pixel_labels[i]
                 frame_labels = np.any(pixel_labels, axis=(1, 2, 3))
-                self._frame_level_labels.append(frame_labels)
-            self._frame_level_labels = np.array(self.frame_level_labels)
+                self._frame_labels.append(frame_labels)
+            self._frame_labels = np.array(self.frame_labels)
 
-        return self._frame_level_labels
+        return self._frame_labels
     # endregion
 
 

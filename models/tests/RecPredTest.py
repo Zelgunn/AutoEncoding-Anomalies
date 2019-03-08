@@ -120,7 +120,7 @@ def build_dense_block_decoder(input_layer):
 
 
 def get_model(mode):
-    input_layer = Input([16, 96, 128, 1])
+    input_layer = Input([16, 128, 128, 1])
 
     if mode == "residual_block":
         encoder_output_layer = build_residual_block_encoder(input_layer)
@@ -139,13 +139,14 @@ def get_model(mode):
 
     model = Model(inputs=input_layer, outputs=output_layer)
     model.summary(line_length=200)
+    exit()
     return model
 
 
 def get_ucsd_database(shift_brightness, dropout_noise):
     train_preprocessors = []
     if shift_brightness:
-        train_preprocessors.append(BrightnessShifter(0.25, 0.25, 0.0, 0.0))
+        train_preprocessors.append(BrightnessShifter(bias=0.2))
     if dropout_noise:
         train_preprocessors.append(DropoutNoiser(0.2, 0.0))
 
@@ -169,7 +170,7 @@ def get_ucsd_database(shift_brightness, dropout_noise):
 def get_subway_database(shift_brightness, dropout_noise):
     train_preprocessors = []
     if shift_brightness:
-        train_preprocessors.append(BrightnessShifter(0.25, 0.25, 0.0, 0.0))
+        train_preprocessors.append(BrightnessShifter(bias=0.2))
     if dropout_noise:
         train_preprocessors.append(DropoutNoiser(0.2, 0.0))
 
@@ -202,16 +203,16 @@ def train_model(model, database, mode):
 
 
 def main():
-    mode = "residual_block"
+    mode = "conv_block"
     model = get_model(mode)
 
-    database = get_subway_database(True, False)
+    database = get_ucsd_database(True, False)
     train_dataset = database.train_dataset
     test_dataset = database.test_dataset
 
-    model.compile(optimizer=Adam(lr=2.5e-5), loss="mse", metrics=["mse", "mae"])
+    model.compile(optimizer=Adam(lr=1e-3), loss="mse", metrics=["mse"])
 
-    model.load_weights("../logs/tests/conv3d_rec_pred/{}/1551190470/weights.h5".format(mode))
+    # model.load_weights("../logs/tests/conv3d_rec_pred/{}/1551190470/weights.h5".format(mode))
 
     train_model(model, database, mode)
     visualize_model_errors(model, test_dataset)
