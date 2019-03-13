@@ -57,6 +57,8 @@ class ResBasicBlockND(CompositeLayer):
 
         self.conv_layers = []
         self.projection_layer = None
+        self.residual_multiplier = None
+        self.residual_bias = None
 
         self.input_spec = InputSpec(ndim=self.rank + 2)
 
@@ -112,6 +114,11 @@ class ResBasicBlockND(CompositeLayer):
             if self.projection_layer is not None:
                 self.build_sub_layer(self.projection_layer, input_shape)
 
+            self.residual_multiplier = self.add_weight(name="residual_multiplier", shape=[], dtype=K.floatx(),
+                                                       initializer=K.ones, trainable=True)
+            self.residual_bias = self.add_weight(name="residual_bias", shape=[], dtype=K.floatx(),
+                                                 initializer=K.zeros, trainable=False)
+
         self.input_spec = InputSpec(ndim=self.rank + 2, axes={self.channel_axis: input_shape[self.channel_axis]})
         super(ResBasicBlockND, self).build(input_shape)
 
@@ -126,8 +133,9 @@ class ResBasicBlockND(CompositeLayer):
             if self.use_projection(K.int_shape(inputs)):
                 inputs = self.projection_layer(inputs)
 
-        # x_k+1 = x_k + f(x_k)
-        outputs = K.sum([outputs, inputs], axis=0)
+        # x_k+1 = x_k + a*f(x_k) + b
+        outputs = outputs * self.residual_multiplier + self.residual_bias
+        outputs = inputs + outputs
         return outputs
 
     def use_projection(self, input_shape):
