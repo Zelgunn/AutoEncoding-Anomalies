@@ -58,6 +58,8 @@ class ResBasicBlockND(CompositeLayer):
         self.conv_layers = []
         self.projection_layer = None
         self.residual_multiplier = None
+        self.conv_biases = []
+        self.activation_biases = []
         self.residual_bias = None
 
         self.input_spec = InputSpec(ndim=self.rank + 2)
@@ -69,17 +71,16 @@ class ResBasicBlockND(CompositeLayer):
         conv_layer_type = self.get_conv_layer_type()
         for i in range(self.depth):
             strides = self.strides if (i == 0) else 1
+            kernel_initializer = self.kernel_initializer if (i == 0) else K.zeros
             conv_layer = conv_layer_type(filters=self.filters,
                                          kernel_size=self.kernel_size,
                                          strides=strides,
                                          padding="same",
                                          data_format=self.data_format,
                                          dilation_rate=self.dilation_rate,
-                                         use_bias=self.use_bias,
-                                         kernel_initializer=self.kernel_initializer,
-                                         bias_initializer=self.bias_initializer,
+                                         use_bias=False,
+                                         kernel_initializer=kernel_initializer,
                                          kernel_regularizer=self.kernel_regularizer,
-                                         bias_regularizer=self.bias_regularizer,
                                          activity_regularizer=self.activity_regularizer,
                                          kernel_constraint=self.kernel_constraint,
                                          bias_constraint=self.bias_constraint)
@@ -95,9 +96,7 @@ class ResBasicBlockND(CompositeLayer):
                                                     dilation_rate=self.dilation_rate,
                                                     use_bias=False,
                                                     kernel_initializer=self.kernel_initializer,
-                                                    bias_initializer=self.bias_initializer,
                                                     kernel_regularizer=self.kernel_regularizer,
-                                                    bias_regularizer=self.bias_regularizer,
                                                     activity_regularizer=self.activity_regularizer,
                                                     kernel_constraint=self.kernel_constraint,
                                                     bias_constraint=self.bias_constraint)
@@ -115,27 +114,46 @@ class ResBasicBlockND(CompositeLayer):
                 self.build_sub_layer(self.projection_layer, input_shape)
 
             self.residual_multiplier = self.add_weight(name="residual_multiplier", shape=[], dtype=K.floatx(),
-                                                       initializer=K.ones, trainable=True)
-            self.residual_bias = self.add_weight(name="residual_bias", shape=[], dtype=K.floatx(),
-                                                 initializer=K.zeros, trainable=False)
+                                                       initializer=K.ones)
+            if self.use_bias:
+                for i in range(self.depth):
+                    conv_bias = self.add_weight(name="conv_bias", shape=[], dtype=K.floatx(), initializer=K.zeros)
+                    self.conv_biases.append(conv_bias)
+
+                    if i < (self.depth - 1):
+                        activation_bias = self.add_weight(name="activation_bias", shape=[], dtype=K.floatx(),
+                                                          initializer=K.zeros)
+                        self.activation_biases.append(activation_bias)
+
+                self.residual_bias = self.add_weight(name="residual_bias", shape=[], dtype=K.floatx(),
+                                                     initializer=K.zeros)
 
         self.input_spec = InputSpec(ndim=self.rank + 2, axes={self.channel_axis: input_shape[self.channel_axis]})
         super(ResBasicBlockND, self).build(input_shape)
 
     def call(self, inputs, **kwargs):
         outputs = inputs
-        with K.name_scope("residual_basic_block"):
-            for i in range(self.depth):
-                if self.activation is not None:
-                    outputs = self.activation(outputs)
-                outputs = self.conv_layers[i](outputs)
+        for i in range(self.depth):
+            if self.use_bias:
+                outputs = outputs + self.conv_biases[i]
+            outputs = self.conv_layers[i](outputs)
 
-            if self.use_projection(K.int_shape(inputs)):
-                inputs = self.projection_layer(inputs)
+            if i < (self.depth - 1):
+                if self.activation is not None:
+                    if self.use_bias:
+                        outputs = outputs + self.activation_biases[i]
+                    outputs = self.activation(outputs)
+
+        if self.use_projection(K.int_shape(inputs)):
+            inputs = self.projection_layer(inputs)
 
         # x_k+1 = x_k + a*f(x_k) + b
-        outputs = outputs * self.residual_multiplier + self.residual_bias
+        outputs = outputs * self.residual_multiplier
+        if self.use_bias:
+            outputs = outputs + self.residual_bias
         outputs = inputs + outputs
+
+        outputs = self.activation(outputs)
         return outputs
 
     def use_projection(self, input_shape):

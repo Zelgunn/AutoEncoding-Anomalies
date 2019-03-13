@@ -20,12 +20,12 @@ def evaluate_on_cifar10():
     # region Model
     input_layer = Input(shape=[32, 32, 3])
     layer = input_layer
-    kernel_initializer = VarianceScaling(scale=0.1, mode="fan_in", distribution="normal")
+    kernel_initializer = VarianceScaling(scale=2.0 / np.sqrt(total_depth), mode="fan_in", distribution="normal")
 
     for k in range(n_blocks):
         strides = 2 if k < (n_blocks - 1) else 1
         layer = ResBlock2D(filters=16 * (2 ** k), basic_block_count=basic_block_count, strides=strides,
-                           kernel_initializer=kernel_initializer)(layer)
+                           kernel_initializer=kernel_initializer, use_bias=True)(layer)
 
         if k == (n_blocks - 1):
             layer = AveragePooling2D(pool_size=8)(layer)
