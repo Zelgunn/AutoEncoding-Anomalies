@@ -34,7 +34,7 @@
         {
             "blurring" : {"max_sigma" : 3.0},
             "cropping" : {"width_range" : 0.1},
-            "brightness" : {"bias" : 0.1},
+            "brightness" : {"bias" : 0.2},
             "dropout_rate": 0.1
         },
         "test":
@@ -42,5 +42,6 @@
 
         }
     },
-    "weight_decay": 1e-5
+    "weight_decay": 1e-5,
+    "lr_drop_epochs" : 8
 }

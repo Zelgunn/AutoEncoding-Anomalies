@@ -46,31 +46,30 @@ class LayerBlock(object):
         self.add_batch_normalization = add_batch_normalization
 
     def __call__(self, input_layer, use_dropout):
-        with tf.name_scope("block"):
-            use_dropout &= self.dropout is not None
-            layer = input_layer
+        use_dropout &= self.dropout is not None
+        layer = input_layer
 
-            if use_dropout and self.is_transpose:
-                layer = self.dropout(layer)
+        if use_dropout and self.is_transpose:
+            layer = self.dropout(layer)
 
-            if self.upsampling_layer is not None:
-                assert self.is_transpose
-                layer = self.upsampling_layer(layer)
+        if self.upsampling_layer is not None:
+            assert self.is_transpose
+            layer = self.upsampling_layer(layer)
 
-            layer = self.conv(layer)
+        layer = self.conv(layer)
 
-            if self.add_batch_normalization:
-                layer = BatchNormalization()(layer)
+        if self.add_batch_normalization:
+            layer = BatchNormalization()(layer)
 
-            if self.activation is not None:
-                layer = self.activation(layer)
+        if self.activation is not None:
+            layer = self.activation(layer)
 
-            if self.pooling is not None:
-                assert not self.is_transpose
-                layer = self.pooling(layer)
+        if self.pooling is not None:
+            assert not self.is_transpose
+            layer = self.pooling(layer)
 
-            if use_dropout and not self.is_transpose:
-                layer = self.dropout(layer)
+        if use_dropout and not self.is_transpose:
+            layer = self.dropout(layer)
 
         return layer
 
@@ -211,7 +210,7 @@ class AutoEncoderBaseModel(ABC):
         self.upsampling = None
         self.use_batch_normalization = None
 
-        self.temporal_loss_weights = None
+        self._temporal_loss_weights = None
         self.optimizer = None
 
         self.log_dir = None
@@ -612,15 +611,18 @@ class AutoEncoderBaseModel(ABC):
         else:
             return Activation(activation_config["name"])
 
-    def get_reconstruction_loss(self, reconstruction_metric_name: str):
-        if self.temporal_loss_weights is None:
+    @property
+    def temporal_loss_weights(self):
+        if self._temporal_loss_weights is None:
             reconstruction_loss_weights = np.ones([self.input_sequence_length], dtype=np.float32)
             stop = 0.2
             step = (stop - 1) / self.input_sequence_length
             prediction_loss_weights = np.arange(start=1.0, stop=stop, step=step, dtype=np.float32)
             loss_weights = np.concatenate([reconstruction_loss_weights, prediction_loss_weights])
-            self.temporal_loss_weights = tf.constant(loss_weights, name="temporal_loss_weights")
+            self._temporal_loss_weights = tf.constant(loss_weights, name="temporal_loss_weights")
+        return self._temporal_loss_weights
 
+    def get_reconstruction_loss(self, reconstruction_metric_name: str):
         def loss_function(y_true, y_pred):
             metric_function = metrics_dict[reconstruction_metric_name]
             reduction_axis = list(range(2, len(y_true.shape)))
@@ -730,29 +732,19 @@ class AutoEncoderBaseModel(ABC):
         for batch_index in range(epoch_length):
             x, y = database.train_dataset[0]
 
-            for i in range(len(y)):
-                for j in range(len(y[i])):
-                    x_frame = x[i][j % 16]
-                    y_frame = y[i][j]
-                    cv2.imshow("x_frame", x_frame)
-                    cv2.imshow("y_frame", y_frame)
-                    cv2.imshow("x_frame_r", cv2.resize(x_frame, dsize=(512, 512), interpolation=cv2.INTER_NEAREST))
-                    cv2.imshow("y_frame_r", cv2.resize(y_frame, dsize=(512, 512), interpolation=cv2.INTER_NEAREST))
-                    cv2.waitKey(50)
+            batch_logs = {"batch": batch_index, "size": x.shape[0]}
+            callbacks.on_batch_begin(batch_index, batch_logs)
 
-            # batch_logs = {"batch": batch_index, "size": x.shape[0]}
-            # callbacks.on_batch_begin(batch_index, batch_logs)
-            #
-            # results = self.autoencoder.train_on_batch(x=x, y=y)
-            #
-            # if "metrics" in self.config:
-            #     batch_logs["loss"] = results[0]
-            #     for metric_name, result in zip(self.config["metrics"], results[1:]):
-            #         batch_logs[metric_name] = result
-            # else:
-            #     batch_logs["loss"] = results
-            #
-            # callbacks.on_batch_end(batch_index, batch_logs)
+            results = self.autoencoder.train_on_batch(x=x, y=y)
+
+            if "metrics" in self.config:
+                batch_logs["loss"] = results[0]
+                for metric_name, result in zip(self.config["metrics"], results[1:]):
+                    batch_logs[metric_name] = result
+            else:
+                batch_logs["loss"] = results
+
+            callbacks.on_batch_end(batch_index, batch_logs)
 
         self.on_epoch_end(database, callbacks)
 
@@ -793,11 +785,9 @@ class AutoEncoderBaseModel(ABC):
         self.save_weights()
         print("======================= Done ! =======================")
 
-        results = self.predict_and_evaluate(database)
+        roc_and_pr = self.predict_and_evaluate(database, stride=1)
         with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
-            results_file.write("Reconstructor only   : ROC = {}|PR  = {}\n".format(*results[0]))
-            results_file.write("Unweighted Predictor : ROC = {}|PR  = {}\n".format(*results[1]))
-            results_file.write("Weighted Predictor   : ROC = {}|PR  = {}\n".format(*results[2]))
+            results_file.write("ROC = {}|PR  = {}\n".format(*roc_and_pr))
 
     # endregion
 
@@ -828,17 +818,19 @@ class AutoEncoderBaseModel(ABC):
 
     def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4)) -> CallbackModel:
         if reduction_axis not in self._raw_predictions_models:
-            pred_output: tf.Tensor = self.autoencoder.get_output_at(0)
+            reconstructor = KerasModel(inputs=self.decoder_input_layer, outputs=self.reconstructor_output,
+                                       name="Reconstructor")
+            encoder_output = self.encoder(self.encoder.get_input_at(0))
+            if isinstance(encoder_output, list):
+                encoder_output = encoder_output[0]
+            pred_output = reconstructor(encoder_output)
             true_output = tf.placeholder(dtype=pred_output.dtype, shape=pred_output.shape)
 
             error = tf.square(pred_output - true_output)
             error = tf.reduce_sum(error, axis=reduction_axis)
 
-            unweighted_predictor_error = error
-            weighted_predictor_error = unweighted_predictor_error * self.temporal_loss_weights
-
-            inputs = [self.autoencoder.get_input_at(0), true_output]
-            outputs = [unweighted_predictor_error, weighted_predictor_error]
+            inputs = [self.encoder.get_input_at(0), true_output]
+            outputs = [error]
             raw_predictions_model = CallbackModel(inputs, outputs)
 
             self._raw_predictions_models[reduction_axis] = raw_predictions_model
@@ -856,105 +848,90 @@ class AutoEncoderBaseModel(ABC):
         # predictions += train_predictions
         # labels += train_labels
 
-        # region Concatenate predictions of different videos
-        tmp = []
-        for score_index in range(3):
-            scores = [video_predictions[score_index] for video_predictions in predictions]
-            scores = np.concatenate(scores)
-            if normalize_predictions:
-                print(scores.min(), scores.max(), scores.mean(), scores.std())
-                scores = (scores - scores.min()) / (scores.max() - scores.min())
-            tmp.append(scores)
-        predictions = tmp
+        lengths = np.empty(shape=[len(labels)], dtype=np.int32)
+        for i in range(len(labels)):
+            lengths[i] = len(labels[i])
+            if i > 0:
+                lengths[i] += lengths[i - 1]
 
+        predictions = np.concatenate(predictions)
         labels = np.concatenate(labels)
-        # endregion
 
-        return predictions, labels
+        if normalize_predictions:
+            predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
+
+        return predictions, labels, lengths
 
     def predict_anomalies_on_dataset(self, dataset: Dataset, stride: int):
         predictions, labels = [], []
 
         for video_index in range(dataset.videos_count):
-            video_predictions, video_labels = self.predict_anomalies_on_video(dataset, video_index, stride)
+            video_predictions, video_labels = self.predict_anomalies_on_video(dataset, video_index, stride,
+                                                                              normalize_predictions=True)
 
             predictions.append(video_predictions)
             labels.append(video_labels)
 
         return predictions, labels
 
-    def predict_anomalies_on_video(self, dataset: Dataset, video_index: int, stride: int):
+    def predict_anomalies_on_video(self,
+                                   dataset: Dataset,
+                                   video_index: int,
+                                   stride: int,
+                                   normalize_predictions=False):
         raw_predictions_model = self.get_anomalies_raw_predictions_model()
 
         video_length = dataset.get_video_length(video_index)
-        steps_count = 1 + (video_length - self.output_sequence_length) // stride
-        length_delta = self.output_sequence_length - self.input_sequence_length
+        steps_count = 1 + (video_length - self.input_sequence_length) // stride
+        # video_length = steps_count * stride
 
         # region Scores arrays
-        reconstructor_scores = np.zeros(shape=[video_length])
-        unweighted_predictor_scores = np.zeros(shape=[video_length])
-        weighted_predictor_scores = np.zeros(shape=[video_length])
+        predictions = np.zeros(shape=[video_length])
 
         if dataset.has_labels:
             video_labels = dataset.get_video_frame_labels(video_index, 0, video_length)
         else:
             video_labels = np.zeros(shape=[video_length], dtype=np.bool)
+
+        counts = np.zeros(shape=[video_length], dtype=np.int32)
         # endregion
 
         # region Compute scores for video
         for i in range(steps_count):
             start = i * stride
-            end = start + self.output_sequence_length
+            end = start + self.input_sequence_length
 
-            # region Inputs
             step_video = dataset.get_video_frames(video_index, start, end)
             step_video = np.expand_dims(step_video, axis=0)
-            input_video, output_video = dataset.divide_batch_io(step_video)
-            # endregion
 
-            step_predictions = raw_predictions_model.predict(x=[input_video, output_video], batch_size=1)
+            step_predictions = raw_predictions_model.predict(x=[step_video, step_video], batch_size=1)
             step_predictions = np.squeeze(step_predictions)
 
-            # region Add step predictions
-            step_unweighted_predictor_scores, step_weighted_predictor_scores = step_predictions
-            step_reconstructor_score = step_unweighted_predictor_scores[:self.input_sequence_length]
-
-            unweighted_predictor_scores[start:end] += step_unweighted_predictor_scores
-            weighted_predictor_scores[start:end] += step_weighted_predictor_scores
-            reconstructor_scores[start: end - length_delta] = step_reconstructor_score
-            # endregion
-
+            predictions[start: end] += step_predictions
+            counts[start:end] += 1
         # endregion
 
-        # region Normalize scores by counts
-        def normalize_by_counts(array, max_count):
-            counts = np.ones(shape=[len(array) + (1 - max_count) * 2]) * max_count
-            counts = np.concatenate([np.arange(1, max_count), counts, np.arange(max_count - 1, 0, -1)])
-            return array / counts
+        predictions = predictions / counts
 
-        unweighted_predictor_scores = normalize_by_counts(unweighted_predictor_scores, self.output_sequence_length)
-        weighted_predictor_scores = normalize_by_counts(weighted_predictor_scores, self.output_sequence_length)
-        reconstructor_scores = normalize_by_counts(reconstructor_scores, self.input_sequence_length)
-        # endregion
+        if normalize_predictions:
+            predictions = (predictions - predictions.min()) / predictions.max()
+            # predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
 
-        # region Cut last scores
-        unweighted_predictor_scores = unweighted_predictor_scores[:-length_delta]
-        weighted_predictor_scores = weighted_predictor_scores[:-length_delta]
-        reconstructor_scores = reconstructor_scores[:-length_delta]
-        video_labels = video_labels[:-length_delta]
-        # endregion
-
-        video_predictions = (unweighted_predictor_scores, weighted_predictor_scores, reconstructor_scores)
-        return video_predictions, video_labels
+        return predictions, video_labels
 
     def evaluate_predictions(self,
                              predictions: np.ndarray,
                              labels: np.ndarray,
+                             lengths: np.ndarray = None,
                              output_figure_filepath: str = None):
         if output_figure_filepath is not None:
-            plt.plot(predictions)
-            plt.plot(labels)
-            plt.savefig(output_figure_filepath)
+            plt.plot(predictions, linewidth=0.5)
+            plt.plot(labels, alpha=0.75, linewidth=0.5)
+            if lengths is not None:
+                lengths_splits = np.zeros(shape=predictions.shape, dtype=np.float32)
+                lengths_splits[lengths - 1] = 1.0
+                plt.plot(lengths_splits, alpha=0.5, linewidth=0.2)
+            plt.savefig(output_figure_filepath, dpi=500)
             plt.clf()  # clf = clear figure...
 
         if self._auc_predictions_placeholder is None:
@@ -976,15 +953,11 @@ class AutoEncoderBaseModel(ABC):
     def predict_and_evaluate(self,
                              database: Database,
                              stride=1):
-        predictions, labels = self.predict_anomalies(database, stride=stride, normalize_predictions=True)
-        graph_names = ["Reconstructor_results", "Unweighted_predictor_results", "Weighted_predictor_results"]
-        results = []
-        for i in range(len(predictions)):
-            graph_filepath = os.path.join(self.log_dir, graph_names[i] + ".png")
-            roc_and_pr = self.evaluate_predictions(predictions[i], labels, graph_filepath)
-            print("{} : ROC = {} | PR = {}".format(graph_names[i], *roc_and_pr))
-            results.append(roc_and_pr)
-        return results
+        predictions, labels, lengths = self.predict_anomalies(database, stride=stride, normalize_predictions=True)
+        graph_filepath = os.path.join(self.log_dir, "Anomaly_score.png")
+        roc_and_pr = self.evaluate_predictions(predictions, labels, lengths, graph_filepath)
+        print("Anomaly_score : ROC = {} | PR = {}".format(*roc_and_pr))
+        return roc_and_pr
 
     # endregion
 

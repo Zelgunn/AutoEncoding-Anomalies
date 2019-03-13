@@ -23,22 +23,23 @@
     "embeddings_activation": {"name": "leaky_relu", "alpha": 0.3},
     "output_activation": {"name": "sigmoid"},
     "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "normal"},
-    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
+    "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",
-    "metrics": ["mean_squared_error", "mean_absolute_error"],
+    "metrics": ["mean_squared_error"],
     "pixel_level_labels_size": [8, 16],
     "data_generators":
     {
         "train":
         {
-            "blurring" : {"max_sigma" : 2.0},
+            "blurring" : {"max_sigma" : 3.0},
             "cropping" : {"width_range" : 0.1},
             "brightness" : {"bias" : 0.2},
-            "dropout_rate": 0.1
+            "_dropout_rate": 0.1
         },
         "test":
         {
             "dropout_rate": 0.0
         }
-    }
+    },
+    "lr_drop_epochs" : 8
 }
