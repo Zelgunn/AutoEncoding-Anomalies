@@ -136,7 +136,11 @@ class Dataset(Sequence, ABC):
             sequence_length = self.total_sequence_length
 
         indices = np.arange(indices_range - sequence_length + 1)
-        indices = np.random.permutation(indices)[:batch_size]
+        if len(indices) < batch_size:
+            tmp = np.random.randint(low=0, high=len(indices), size=batch_size)
+            indices = indices[tmp]
+        else:
+            indices = np.random.permutation(indices)[:batch_size]
         indices = np.repeat(indices, sequence_length)
         indices = np.reshape(indices, [batch_size, sequence_length])
         indices = indices + np.arange(sequence_length)
