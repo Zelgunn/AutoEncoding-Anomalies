@@ -31,15 +31,15 @@
     {
         "train":
         {
-            "blurring" : {"max_sigma" : 3.0},
-            "cropping" : {"width_range" : 0.1},
-            "brightness" : {"bias" : 0.2},
-            "_dropout_rate": 0.1
+            "blurring" : {"max_sigma" : 5.0, "kernel_size" : [3, 3]},
+            "cropping" : {"width_range" : 0.75},
+            "brightness" : {"bias" : 0.5},
+            "dropout_rate": 0.05
         },
         "test":
         {
             "dropout_rate": 0.0
         }
     },
-    "lr_drop_epochs" : 8
+    "lr_schedule": {"drop_epochs": 32, "drop_factor": 0.25}
 }

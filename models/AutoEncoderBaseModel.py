@@ -7,6 +7,8 @@ from keras.optimizers import Adam, RMSprop
 from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
 from keras.backend import binary_crossentropy, get_session, set_learning_phase
 from keras.utils.generic_utils import to_list
+from tensorboard.plugins.pr_curve import summary as pr_summary
+
 import tensorflow as tf
 import numpy as np
 import cv2
@@ -198,6 +200,7 @@ class AutoEncoderBaseModel(ABC):
         self._auc_predictions_placeholder: tf.Tensor = None
         self._auc_labels_placeholder: tf.Tensor = None
         self._auc_ops: List[tf.Tensor, tf.Tensor] = None
+        self._auc_summary_ops = None
 
         self.default_activation = None
         self.embeddings_activation = None
@@ -313,8 +316,10 @@ class AutoEncoderBaseModel(ABC):
             data_preprocessors.append(random_cropper)
 
         if "blurring" in section:
-            max_sigma = section["blurring"]["max_sigma"]
-            random_blurrer = GaussianBlurrer(max_sigma, kernel_size=(5, 5), apply_on_outputs=False)
+            blurring_section = section["blurring"]
+            max_sigma = blurring_section["max_sigma"] if "max_sigma" in blurring_section else 5.0
+            kernel_size = tuple(blurring_section["kernel_size"]) if "kernel_size" in blurring_section else (3, 3)
+            random_blurrer = GaussianBlurrer(max_sigma, kernel_size, apply_on_outputs=False)
             data_preprocessors.append(random_blurrer)
 
         if "brightness" in section:
@@ -767,7 +772,13 @@ class AutoEncoderBaseModel(ABC):
 
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
+
         self.epochs_seen += 1
+
+        if self.epochs_seen % 1 == 0:
+            predictions, labels, lengths = self.predict_anomalies(database)
+            roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
+            print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
 
     def on_train_begin(self, database: Database):
         if not self.layers_built:
@@ -923,7 +934,8 @@ class AutoEncoderBaseModel(ABC):
                              predictions: np.ndarray,
                              labels: np.ndarray,
                              lengths: np.ndarray = None,
-                             output_figure_filepath: str = None):
+                             output_figure_filepath: str = None,
+                             log_in_tensorboard=False):
         if output_figure_filepath is not None:
             plt.plot(predictions, linewidth=0.5)
             plt.plot(labels, alpha=0.75, linewidth=0.5)
@@ -938,16 +950,31 @@ class AutoEncoderBaseModel(ABC):
             placeholder_shape = [None, *predictions.shape[1:]]
             self._auc_predictions_placeholder = tf.placeholder(dtype=tf.float32, shape=placeholder_shape)
             self._auc_labels_placeholder = tf.placeholder(dtype=tf.bool, shape=placeholder_shape)
+
             roc_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, curve="ROC",
                                     summation_method="careful_interpolation")
             pr_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, curve="PR",
                                    summation_method="careful_interpolation")
             self._auc_ops = [roc_op, pr_op]
 
+            roc_summary_op = tf.summary.scalar("Video_ROC_AUC", roc_op[1])
+            pr_scalar_summary_op = tf.summary.scalar("Video_PR_AUC", pr_op[1])
+            pr_curve_summary_op = pr_summary.op("Video_PR", self._auc_labels_placeholder,
+                                                self._auc_predictions_placeholder)
+
+            self._auc_summary_ops = tf.summary.merge([roc_summary_op, pr_scalar_summary_op, pr_curve_summary_op])
+
         session: tf.Session = get_session()
         session.run(tf.local_variables_initializer())
-        (_, roc), (_, pr) = session.run(self._auc_ops, feed_dict={self._auc_predictions_placeholder: predictions,
-                                                                  self._auc_labels_placeholder: labels})
+
+        eval_ops = [self._auc_ops, self._auc_summary_ops] if log_in_tensorboard else [self._auc_ops]
+        eval_results = session.run(eval_ops, feed_dict={self._auc_predictions_placeholder: predictions,
+                                                        self._auc_labels_placeholder: labels})
+
+        (_, roc), (_, pr) = eval_results[0]
+        if log_in_tensorboard:
+            self.tensorboard.writer.add_summary(eval_results[1], self.epochs_seen)
+
         return roc, pr
 
     def predict_and_evaluate(self,
@@ -955,9 +982,9 @@ class AutoEncoderBaseModel(ABC):
                              stride=1):
         predictions, labels, lengths = self.predict_anomalies(database, stride=stride, normalize_predictions=True)
         graph_filepath = os.path.join(self.log_dir, "Anomaly_score.png")
-        roc_and_pr = self.evaluate_predictions(predictions, labels, lengths, graph_filepath)
-        print("Anomaly_score : ROC = {} | PR = {}".format(*roc_and_pr))
-        return roc_and_pr
+        roc, pr = self.evaluate_predictions(predictions, labels, lengths, graph_filepath)
+        print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))
+        return roc, pr
 
     # endregion
 
@@ -1013,7 +1040,7 @@ class AutoEncoderBaseModel(ABC):
         # common_callbacks = [base_logger, self.tensorboard, progbar_logger]
         common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
 
-        if ("lr_drop_epochs" in self.config) and (self.config["lr_drop_epochs"] > 0):
+        if "lr_schedule" in self.config:
             lr_scheduler = LearningRateScheduler(self.get_learning_rate_schedule(), verbose=1)
             common_callbacks.append(lr_scheduler)
 
@@ -1029,21 +1056,19 @@ class AutoEncoderBaseModel(ABC):
         train_image_callback = self.build_auto_encoding_callback(train_dataset, "train", self.tensorboard)
         test_image_callback = self.build_auto_encoding_callback(test_dataset, "test", self.tensorboard)
 
-        # region Getting samples used for AUC callbacks
-        samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=8, return_labels=True)
-        videos, frame_labels, pixel_labels = samples
-        videos = test_dataset.divide_batch_io(videos)
-        # endregion
+        anomaly_callbacks = [train_image_callback, test_image_callback]
 
-        # region Frame level error AUC (ROC)
-        frame_predictions_model = self.build_frame_level_error_callback_model()
-        frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
-                                         videos, frame_labels,
-                                         plot_size=(128, 128), batch_size=8,
-                                         name="Frame_Level_Error_AUC", epoch_freq=5)
-        # endregion
+        # region AUC callbacks
+        # samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=8, return_labels=True)
+        # videos, frame_labels, pixel_labels = samples
+        # videos = test_dataset.divide_batch_io(videos)
 
-        anomaly_callbacks = [train_image_callback, test_image_callback, frame_auc_callback]
+        # frame_predictions_model = self.build_frame_level_error_callback_model()
+        # frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
+        #                                  videos, frame_labels,
+        #                                  plot_size=(128, 128), batch_size=8,
+        #                                  name="Frame_Level_Error_AUC", epoch_freq=5)
+        # anomaly_callbacks.append(frame_auc_callback)
 
         # region Pixel level error AUC (ROC)
         # TODO : Check labels size in UCSDDatabase
@@ -1053,6 +1078,8 @@ class AutoEncoderBaseModel(ABC):
         #                                      plot_size=(128, 128), batch_size=8,
         #                                      num_thresholds=20, name="Pixel_Level_Error_AUC", epoch_freq=5)
         #     anomaly_callbacks.append(pixel_auc_callback)
+        # endregion
+
         # endregion
 
         return anomaly_callbacks
@@ -1124,11 +1151,12 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     def get_learning_rate_schedule(self):
-        lr_drop_epochs = self.config["lr_drop_epochs"]
+        lr_drop_epochs = self.config["lr_schedule"]["drop_epochs"]
+        lr_drop_factor = self.config["lr_schedule"]["drop_factor"]
 
         def schedule(epoch, learning_rate):
             if (epoch % lr_drop_epochs) == (lr_drop_epochs - 1):
-                return learning_rate * 0.5
+                return learning_rate * (1.0 - lr_drop_factor)
             else:
                 return learning_rate
 

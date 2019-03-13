@@ -36,7 +36,7 @@ alt_config_suffix_used = None
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/BasicAE/log_1552050156"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/BasicAE/log_1552395491"
 # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551958674"
 
 # region Config/Database selection
@@ -122,17 +122,18 @@ session = tf.Session(config=config)
 K.set_session(session)
 
 if previous_weights_to_load is not None:
+    previous_weights_to_load: str = previous_weights_to_load
     print("=> Loading weights from :", previous_weights_to_load)
-    auto_encoder.load_weights(previous_weights_to_load, epoch=38)
+    auto_encoder.load_weights(previous_weights_to_load, epoch=25)
 # endregion
 
 if profile:
     import cProfile
 
     print("===== Profiling activated ... =====")
-    cProfile.run("auto_encoder.train(database, epoch_length=200, epochs=2, batch_size=8)", sort="cumulative")
+    cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=0, batch_size=6)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=500, epochs=200, batch_size=6)
+    auto_encoder.train(database, epoch_length=500, epochs=30, batch_size=6)
 
 # TODO : Residual Scaling
 
