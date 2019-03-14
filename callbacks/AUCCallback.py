@@ -5,13 +5,13 @@ from tensorboard.plugins.pr_curve import summary as pr_summary
 import cv2
 from typing import Tuple
 
-from callbacks import TensorBoardPlugin, CallbackModel
+from callbacks import TensorBoardPlugin, RunModel
 from utils.plot_utils import plot_line2d_to_array
 
 
 class AUCCallback(TensorBoardPlugin):
     def __init__(self,
-                 predictions_model: CallbackModel,
+                 predictions_model: RunModel,
                  tensorboard: TensorBoard,
                  images: np.ndarray,
                  labels: np.ndarray,

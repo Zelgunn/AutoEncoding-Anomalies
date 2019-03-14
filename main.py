@@ -57,7 +57,7 @@ profile = False
 # region Model
 auto_encoder_class = models_dict[model_used]
 auto_encoder = auto_encoder_class()
-auto_encoder.image_summaries_max_outputs = 8
+auto_encoder.image_summaries_max_outputs = 4
 auto_encoder.load_config(config_used, alt_config_used)
 auto_encoder.build_layers()
 auto_encoder.compile()
@@ -133,7 +133,7 @@ if profile:
     print("===== Profiling activated ... =====")
     cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=0, batch_size=6)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=500, epochs=30, batch_size=6)
+    auto_encoder.train(database, epoch_length=500, epochs=100, batch_size=6)
 
 # TODO : Residual Scaling
 

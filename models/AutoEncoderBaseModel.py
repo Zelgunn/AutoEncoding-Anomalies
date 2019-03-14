@@ -24,7 +24,7 @@ from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormal
 from datasets import Database, Dataset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
-from callbacks import ImageCallback, AUCCallback, CallbackModel, MultipleModelsCheckpoint
+from callbacks import ImageCallback, AUCCallback, RunModel, MultipleModelsCheckpoint
 from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper, GaussianBlurrer
 
 
@@ -180,7 +180,7 @@ class AutoEncoderBaseModel(ABC):
         self._encoder: KerasModel = None
         self._decoder: KerasModel = None
         self._autoencoder: KerasModel = None
-        self._raw_predictions_models: Dict[Tuple, CallbackModel] = {}
+        self._raw_predictions_models: Dict[Tuple, RunModel] = {}
 
         self.decoder_input_layer = None
         self.reconstructor_output = None
@@ -775,7 +775,7 @@ class AutoEncoderBaseModel(ABC):
 
         self.epochs_seen += 1
 
-        if self.epochs_seen % 1 == 0:
+        if self.epochs_seen % 1 == 0 or self.epochs_seen > 15:
             predictions, labels, lengths = self.predict_anomalies(database)
             roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
             print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
@@ -827,7 +827,7 @@ class AutoEncoderBaseModel(ABC):
 
         video_writer.release()
 
-    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4)) -> CallbackModel:
+    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4)) -> RunModel:
         if reduction_axis not in self._raw_predictions_models:
             reconstructor = KerasModel(inputs=self.decoder_input_layer, outputs=self.reconstructor_output,
                                        name="Reconstructor")
@@ -842,7 +842,7 @@ class AutoEncoderBaseModel(ABC):
 
             inputs = [self.encoder.get_input_at(0), true_output]
             outputs = [error]
-            raw_predictions_model = CallbackModel(inputs, outputs)
+            raw_predictions_model = RunModel(inputs, outputs)
 
             self._raw_predictions_models[reduction_axis] = raw_predictions_model
 
@@ -1037,7 +1037,6 @@ class AutoEncoderBaseModel(ABC):
         base_filepath = self.log_dir + "/weights_{model_name}_epoch_{epoch}.h5"
         model_checkpoint = MultipleModelsCheckpoint(base_filepath, self.saved_models, period=5)
 
-        # common_callbacks = [base_logger, self.tensorboard, progbar_logger]
         common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
 
         if "lr_schedule" in self.config:
@@ -1089,7 +1088,8 @@ class AutoEncoderBaseModel(ABC):
                                      dataset: Dataset,
                                      name: str,
                                      tensorboard: TensorBoard,
-                                     frequency="epoch") -> ImageCallback:
+                                     frequency="epoch",
+                                     include_composite=False) -> ImageCallback:
         videos = dataset.get_batch(self.image_summaries_max_outputs, seed=1, apply_preprocess_step=False,
                                    max_shard_count=self.image_summaries_max_outputs)
 
@@ -1101,27 +1101,30 @@ class AutoEncoderBaseModel(ABC):
 
         io_delta = (pred_outputs - true_outputs) * (tf.cast(pred_outputs < true_outputs, dtype=tf.uint8) * 254 + 1)
 
-        with tf.name_scope("composite_error_computation"):
-            error = tf.cast(io_delta, tf.float32) / 255.0
-            composite_hue = tf.multiply(1.0 - error, 0.25, name="composite_hue")
-            composite_saturation = tf.identity(error, name="composite_saturation")
-            composite_value = tf.cast(true_outputs, tf.float32) / 255.0
-            composite_value = tf.maximum(composite_value, error, name="composite_value")
-            composite_hsv = tf.concat([composite_hue, composite_saturation, composite_value], axis=-1,
-                                      name="composite_hsv")
-            composite_rgb = tf.image.hsv_to_rgb(composite_hsv)
-            composite_rgb = tf.cast(composite_rgb * 255.0, tf.uint8, name="composite_rgb")
-
         max_outputs = self.image_summaries_max_outputs
         one_shot_summaries = [image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=8)]
         repeated_summaries = [image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=8),
-                              image_summary(name + "_delta", io_delta, max_outputs, fps=8),
-                              image_summary(name + "_composite", composite_rgb, max_outputs, fps=8)]
+                              image_summary(name + "_delta", io_delta, max_outputs, fps=8)]
 
-        one_shot_summary_model = CallbackModel(summary_inputs, one_shot_summaries, output_is_summary=True)
-        repeated_summary_model = CallbackModel(summary_inputs, repeated_summaries, output_is_summary=True)
+        if include_composite:
+            with tf.name_scope("composite_error_computation"):
+                error = tf.cast(io_delta, tf.float32) / 255.0
+                composite_hue = tf.multiply(1.0 - error, 0.25, name="composite_hue")
+                composite_saturation = tf.identity(error, name="composite_saturation")
+                composite_value = tf.cast(true_outputs, tf.float32) / 255.0
+                composite_value = tf.maximum(composite_value, error, name="composite_value")
+                composite_hsv = tf.concat([composite_hue, composite_saturation, composite_value], axis=-1,
+                                          name="composite_hsv")
+                composite_rgb = tf.image.hsv_to_rgb(composite_hsv)
+                composite_rgb = tf.cast(composite_rgb * 255.0, tf.uint8, name="composite_rgb")
+            composite_image_summary = image_summary(name + "_composite", composite_rgb, max_outputs, fps=8)
+            repeated_summaries.append(composite_image_summary)
 
-        return ImageCallback(one_shot_summary_model, repeated_summary_model, videos, tensorboard, frequency)
+        one_shot_summary_model = RunModel(summary_inputs, one_shot_summaries, output_is_summary=True)
+        repeated_summary_model = RunModel(summary_inputs, repeated_summaries, output_is_summary=True)
+
+        return ImageCallback(one_shot_summary_model, repeated_summary_model, videos, tensorboard, frequency,
+                             epoch_freq=2)
 
     def normalize_image_tensor(self, tensor: tf.Tensor) -> tf.Tensor:
         with tf.name_scope("normalize_image_tensor"):
@@ -1134,7 +1137,7 @@ class AutoEncoderBaseModel(ABC):
 
         error = tf.square(self.autoencoder.output - true_outputs)
 
-        pixel_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], error)
+        pixel_predictions_model = RunModel([self.autoencoder.input, true_outputs], error)
 
         return pixel_predictions_model
 
@@ -1144,7 +1147,7 @@ class AutoEncoderBaseModel(ABC):
         squared_delta = tf.square(self.autoencoder.output - true_outputs)
         average_error = tf.reduce_sum(squared_delta, axis=[2, 3, 4])
 
-        frame_predictions_model = CallbackModel([self.autoencoder.input, true_outputs], average_error)
+        frame_predictions_model = RunModel([self.autoencoder.input, true_outputs], average_error)
 
         return frame_predictions_model
 

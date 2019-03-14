@@ -5,7 +5,7 @@ import numpy as np
 from typing import List
 
 
-class CallbackModel(object):
+class RunModel(object):
     def __init__(self,
                  inputs: tf.Tensor or List,
                  outputs: tf.Tensor or List,

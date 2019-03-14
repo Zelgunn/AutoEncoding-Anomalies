@@ -7,7 +7,7 @@ from abc import ABC
 from tqdm import tqdm
 
 from models import AutoEncoderBaseModel, conv_type, KerasModel
-from callbacks import CallbackModel, AUCCallback
+from callbacks import RunModel, AUCCallback
 from datasets import Database, Dataset
 
 
@@ -188,7 +188,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             # reduced axis are [1 : n, 3 : height, 4 : width, 5 : channels]
             predictions = tf.reduce_mean(error, axis=[1, 3, 4, 5])
 
-        return CallbackModel(inputs=[encoder_input, true_outputs], outputs=predictions)
+        return RunModel(inputs=[encoder_input, true_outputs], outputs=predictions)
 
     # endregion
 
