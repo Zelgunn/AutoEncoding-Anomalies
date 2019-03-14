@@ -15,7 +15,7 @@ class RandomCropper(DataPreprocessor):
         self.keep_ratio = keep_ratio
 
     def process(self, inputs: np.ndarray, outputs: np.ndarray):
-        batch_size, inputs_length, inputs_width, inputs_height, channels = inputs.shape
+        batch_size, inputs_length, inputs_height, inputs_width, channels = inputs.shape
         outputs_length = outputs.shape[1]
 
         width_ratio = np.random.uniform(size=batch_size, low=1.0 - self.width_range, high=1.0)
@@ -36,25 +36,29 @@ class RandomCropper(DataPreprocessor):
         width_offsets = np.round(width_offsets).astype(np.int32)
         height_offsets = np.round(height_offsets).astype(np.int32)
 
+        cropped_inputs = np.empty(shape=[batch_size, inputs_length, 128, 128, channels])
+        cropped_outputs = np.empty(shape=[batch_size, outputs_length, 128, 128, channels])
+
         for i in range(batch_size):
-            y_start, y_end = height_offsets[i], height_offsets[i] + heights[i]
-            x_start, x_end = width_offsets[i], width_offsets[i] + widths[i]
+            x_start, x_end = height_offsets[i], height_offsets[i] + heights[i]
+            y_start, y_end = width_offsets[i], width_offsets[i] + widths[i]
 
             for j in range(inputs_length):
-                frame = crop_and_resize_frame(inputs[i][j], x_start, x_end, y_start, y_end)
-                inputs[i][j] = np.expand_dims(frame, axis=-1)
+                frame = crop_and_resize_frame(inputs[i][j], x_start, x_end, y_start, y_end, dsize=(128, 128))
+                cropped_inputs[i][j] = np.expand_dims(frame, axis=-1)
 
             for j in range(outputs_length):
-                frame = crop_and_resize_frame(outputs[i][j], x_start, x_end, y_start, y_end)
-                outputs[i][j] = np.expand_dims(frame, axis=-1)
+                frame = crop_and_resize_frame(outputs[i][j], x_start, x_end, y_start, y_end, dsize=(128, 128))
+                cropped_outputs[i][j] = np.expand_dims(frame, axis=-1)
 
-        return inputs, outputs
+        return cropped_inputs, cropped_outputs
 
 
-def crop_and_resize_frame(frame: np.ndarray, x_start: int, x_end: int, y_start: int, y_end: int, dst=None):
-    dsize = (frame.shape[1], frame.shape[0])
+def crop_and_resize_frame(frame: np.ndarray, x_start: int, x_end: int, y_start: int, y_end: int, dst=None, dsize=None):
+    if dsize is None:
+        dsize = (frame.shape[1], frame.shape[0])
 
-    cropped_frame = frame[y_start: y_end, x_start: x_end]
+    cropped_frame = frame[x_start: x_end, y_start: y_end]
     resized_frame = cv2.resize(cropped_frame, dsize, dst=dst)
 
     return resized_frame

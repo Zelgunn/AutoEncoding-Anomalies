@@ -32,7 +32,7 @@
         "train":
         {
             "_blurring" : {"max_sigma" : 5.0, "kernel_size" : [3, 3]},
-            "_cropping" : {"width_range" : 0.75},
+            "cropping" : {"width_range" : 0.25},
             "_brightness" : {"bias" : 0.5},
             "_dropout_rate": 0.05
         },

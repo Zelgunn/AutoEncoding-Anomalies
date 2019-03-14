@@ -36,7 +36,7 @@ alt_config_suffix_used = None
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/BasicAE/log_1552395491"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/BasicAE/log_1552524728"
 # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551958674"
 
 # region Config/Database selection
@@ -85,8 +85,8 @@ print("===============================================")
 # region Datasets
 print("===== Loading data =====")
 database = database_class(database_path=database_path,
-                          input_sequence_length=None,
-                          output_sequence_length=None,
+                          input_sequence_length=auto_encoder.input_sequence_length,
+                          output_sequence_length=auto_encoder.output_sequence_length,
                           train_preprocessors=auto_encoder.train_data_preprocessors,
                           test_preprocessors=auto_encoder.test_data_preprocessors)
 database.load()
@@ -124,7 +124,7 @@ K.set_session(session)
 if previous_weights_to_load is not None:
     previous_weights_to_load: str = previous_weights_to_load
     print("=> Loading weights from :", previous_weights_to_load)
-    auto_encoder.load_weights(previous_weights_to_load, epoch=25)
+    auto_encoder.load_weights(previous_weights_to_load, epoch=100)
 # endregion
 
 if profile:

@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from data_preprocessors import DataPreprocessor
+from data_preprocessors import DataPreprocessor, RandomCropper
 from datasets import Dataset
-from utils.numpy_utils import NumpySeedContext
 
 
 class Database(ABC):
@@ -46,8 +45,27 @@ class Database(ABC):
 
         database_type = type(self)
         database: Database = database_type(self.database_path, input_sequence_length, output_sequence_length)
-        database.train_dataset = self.train_dataset.resized(image_size, input_sequence_length, output_sequence_length)
-        database.test_dataset = self.test_dataset.resized(image_size, input_sequence_length, output_sequence_length)
+
+        if cropper_in_preprocessors(self.train_preprocessors):
+            database.train_dataset = self.train_dataset
+        else:
+            database.train_dataset = self.train_dataset.resized(image_size, input_sequence_length,
+                                                                output_sequence_length)
+
+        if cropper_in_preprocessors(self.test_preprocessors):
+            database.test_dataset = self.test_dataset
+        else:
+            database.test_dataset = self.test_dataset.resized(image_size, input_sequence_length, output_sequence_length)
+
         database._require_saving = self._require_saving
 
         return database
+
+
+def cropper_in_preprocessors(preprocessors):
+    result = False
+    for preprocessor in preprocessors:
+        if isinstance(preprocessor, RandomCropper):
+            result = True
+            break
+    return result
