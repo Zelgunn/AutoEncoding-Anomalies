@@ -4,22 +4,22 @@ import os
 import json
 from typing import List
 
-from datasets import Database, PartiallyLoadableSubset
+from datasets import Dataset, PartiallyLoadableSubset
 from data_preprocessors import DataPreprocessor
 
 
-class PartiallyLoadableDatabase(Database, ABC):
+class PartiallyLoadableDataset(Dataset, ABC):
     def __init__(self,
-                 database_path: str,
+                 dataset_path: str,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
-        super(PartiallyLoadableDatabase, self).__init__(database_path=database_path,
-                                                        input_sequence_length=input_sequence_length,
-                                                        output_sequence_length=output_sequence_length,
-                                                        train_preprocessors=train_preprocessors,
-                                                        test_preprocessors=test_preprocessors)
+        super(PartiallyLoadableDataset, self).__init__(dataset_path=dataset_path,
+                                                       input_sequence_length=input_sequence_length,
+                                                       output_sequence_length=output_sequence_length,
+                                                       train_preprocessors=train_preprocessors,
+                                                       test_preprocessors=test_preprocessors)
         self.header = None
         self.train_subset: PartiallyLoadableSubset = self.train_subset
         self.test_subset: PartiallyLoadableSubset = self.test_subset
@@ -27,14 +27,14 @@ class PartiallyLoadableDatabase(Database, ABC):
     def load(self):
         with open(self.header_filepath, "r") as header_file:
             self.header = json.load(header_file)
-        self.train_subset = PartiallyLoadableSubset(subset_path=self.database_path,
+        self.train_subset = PartiallyLoadableSubset(subset_path=self.dataset_path,
                                                     config=self.header["train"],
                                                     data_preprocessors=self.train_preprocessors,
                                                     input_sequence_length=self.input_sequence_length,
                                                     output_sequence_length=self.output_sequence_length,
                                                     epoch_length=-1)
 
-        self.test_subset = PartiallyLoadableSubset(subset_path=self.database_path,
+        self.test_subset = PartiallyLoadableSubset(subset_path=self.dataset_path,
                                                    config=self.header["test"],
                                                    data_preprocessors=self.test_preprocessors,
                                                    input_sequence_length=self.input_sequence_length,
@@ -75,11 +75,11 @@ class PartiallyLoadableDatabase(Database, ABC):
             shard_filename = "{0}_{1}x{2}_{3}_{4}_{5:03d}.npy"
 
             images_shard_filename = shard_filename.format(self.base_name, height, width, subset_id, "images", i)
-            images_shard_filepath = os.path.join(self.database_path, images_shard_filename)
+            images_shard_filepath = os.path.join(self.dataset_path, images_shard_filename)
             np.save(images_shard_filepath, images_shard)
 
             labels_shard_filename = shard_filename.format(self.base_name, height, width, subset_id, "labels", i)
-            labels_shard_filepath = os.path.join(self.database_path, labels_shard_filename)
+            labels_shard_filepath = os.path.join(self.dataset_path, labels_shard_filename)
             np.save(labels_shard_filepath, labels_shard)
 
             if i == 0:
@@ -119,7 +119,7 @@ class PartiallyLoadableDatabase(Database, ABC):
 
     @property
     def header_filepath(self):
-        return os.path.join(self.database_path, self.header_filename)
+        return os.path.join(self.dataset_path, self.header_filename)
 
     def normalize(self, target_min=0.0, target_max=1.0):
         normalization_range = [target_min, target_max - target_min]

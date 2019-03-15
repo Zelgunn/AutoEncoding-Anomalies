@@ -3,23 +3,23 @@ import cv2
 import os
 from typing import List
 
-from datasets import PartiallyLoadableDatabase
+from datasets import PartiallyLoadableDataset
 from data_preprocessors import DataPreprocessor
 
 
-class SubwayDatabase(PartiallyLoadableDatabase):
+class SubwayDataset(PartiallyLoadableDataset):
     def __init__(self,
-                 database_path: str,
+                 dataset_path: str,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
-        super(SubwayDatabase, self).__init__(database_path=database_path,
-                                             input_sequence_length=input_sequence_length,
-                                             output_sequence_length=output_sequence_length,
-                                             train_preprocessors=train_preprocessors,
-                                             test_preprocessors=test_preprocessors)
-        self._base_name = "Subway_Exit" if "exit" in database_path.lower() else "Subway_Entrance"
+        super(SubwayDataset, self).__init__(dataset_path=dataset_path,
+                                            input_sequence_length=input_sequence_length,
+                                            output_sequence_length=output_sequence_length,
+                                            train_preprocessors=train_preprocessors,
+                                            test_preprocessors=test_preprocessors)
+        self._base_name = "Subway_Exit" if "exit" in dataset_path.lower() else "Subway_Entrance"
         self.video_capture = None
         self.frame_count = None
         self.frame_height = None
@@ -29,7 +29,7 @@ class SubwayDatabase(PartiallyLoadableDatabase):
 
     def on_build_shard_begin(self, height, width):
         video_filename = "{0}_{1}x{2}.avi".format(self.base_name, height, width)
-        video_filepath = os.path.join(self.database_path, video_filename)
+        video_filepath = os.path.join(self.dataset_path, video_filename)
         if not os.path.exists(video_filepath):
             self.save_resized_video(height, width)
         self.open_video(video_filepath)
@@ -52,7 +52,7 @@ class SubwayDatabase(PartiallyLoadableDatabase):
 
     @property
     def base_video_filepath(self):
-        return os.path.join(self.database_path, self.base_name + ".avi")
+        return os.path.join(self.dataset_path, self.base_name + ".avi")
 
     def open_video(self, video_filepath: str):
         if self.video_capture is not None:
@@ -97,7 +97,7 @@ class SubwayDatabase(PartiallyLoadableDatabase):
         if self.video_capture is None:
             self.open_video(self.base_video_filepath)
 
-        video_filepath = os.path.join(self.database_path, "Subway_Exit_{0}x{1}.avi".format(height, width))
+        video_filepath = os.path.join(self.dataset_path, "Subway_Exit_{0}x{1}.avi".format(height, width))
         frame_size = (width, height)
         video_writer = cv2.VideoWriter(video_filepath, self.fourcc, self.fps, frame_size)
 
@@ -133,9 +133,9 @@ def subway_exit_anomaly_frame_labels(frame_count, skip=0):
 
 if __name__ == "__main__":
     path = os.path.normpath("../datasets/subway/exit")
-    subway_database = SubwayDatabase(path,
-                                     input_sequence_length=None,
-                                     output_sequence_length=None)
+    subway_dataset = SubwayDataset(path,
+                                   input_sequence_length=None,
+                                   output_sequence_length=None)
     prepared_resolutions = [
         [128, 128],
         [192, 256],
@@ -143,4 +143,4 @@ if __name__ == "__main__":
         [48, 64],
         [24, 32]
     ]
-    subway_database.prepare_resolutions(prepared_resolutions, shard_size=2000, skip=5)
+    subway_dataset.prepare_resolutions(prepared_resolutions, shard_size=2000, skip=5)

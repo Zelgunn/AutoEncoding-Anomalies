@@ -4,17 +4,13 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # endregion
 
-import matplotlib
-
-matplotlib.use("Agg")
-
 # region Imports
 import keras.backend as K
 import tensorflow as tf
 import cv2
 
 from models import BasicAE, VAE, GAN, VAEGAN, AGE
-from datasets import UCSDDatabase, SubwayDatabase
+from datasets import UCSDDataset, SubwayDataset
 
 # endregion
 
@@ -26,10 +22,10 @@ models_dict = {"BasicAE": BasicAE,
                "AGE": AGE,
                }
 
-datasets_dict = {"UCSD_Ped2": [UCSDDatabase, "../datasets/ucsd/ped2", "UCSD_Ped"],
-                 "UCSD_Ped1": [UCSDDatabase, "../datasets/ucsd/ped1", "UCSD_Ped"],
-                 "Subway_Exit": [SubwayDatabase, "../datasets/subway/exit", "Subway"],
-                 "Subway_Entrance": [SubwayDatabase, "../datasets/subway/entrance", "Subway"]
+datasets_dict = {"UCSD_Ped2": [UCSDDataset, "../datasets/ucsd/ped2", "UCSD_Ped"],
+                 "UCSD_Ped1": [UCSDDataset, "../datasets/ucsd/ped1", "UCSD_Ped"],
+                 "Subway_Exit": [SubwayDataset, "../datasets/subway/exit", "Subway"],
+                 "Subway_Entrance": [SubwayDataset, "../datasets/subway/entrance", "Subway"]
                  }
 
 # endregion
@@ -40,17 +36,17 @@ alt_config_suffix_used = None
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/BasicAE/log_1552524728"
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDatabase/VAE/log_1551958674"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/BasicAE/log_1552524728"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/VAE/log_1551958674"
 
-# region Config/Database selection
-database_class, database_path, database_config_alias = datasets_dict[dataset_used]
-config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=database_config_alias)
+# region Config/Dataset selection
+dataset_class, dataset_path, dataset_config_alias = datasets_dict[dataset_used]
+config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=dataset_config_alias)
 if alt_config_suffix_used is None:
     alt_config_used = None
 else:
     alt_config_used = "configs/alt/{dataset}/{model}_{dataset}_{suffix}.json".format(
-        model=model_used, dataset=database_config_alias, suffix=alt_config_suffix_used)
+        model=model_used, dataset=dataset_config_alias, suffix=alt_config_suffix_used)
 # endregion
 
 preview_test_subset = False
@@ -74,9 +70,9 @@ print("Model used \t\t\t\t\t:", model_used)
 print("Dataset used \t\t\t\t\t:", dataset_used)
 print("Use flow \t\t\t\t\t:", use_flow)
 print("Use patches \t\t\t\t\t:", use_patches)
-print("Database class \t\t\t\t\t:", str(database_class))
-print("Database path \t\t\t\t\t:", database_path)
-print("Database config alias \t\t\t\t:", database_config_alias)
+print("Dataset class \t\t\t\t\t:", str(dataset_class))
+print("Dataset path \t\t\t\t\t:", dataset_path)
+print("Dataset config alias \t\t\t\t:", dataset_config_alias)
 print("Config used \t\t\t\t\t:", config_used)
 print("Blocks used \t\t\t\t\t:", auto_encoder.block_type_name)
 print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
@@ -88,29 +84,29 @@ print("===============================================")
 
 # region Datasets
 print("===== Loading data =====")
-database = database_class(database_path=database_path,
-                          input_sequence_length=auto_encoder.input_sequence_length,
-                          output_sequence_length=auto_encoder.output_sequence_length,
-                          train_preprocessors=auto_encoder.train_data_preprocessors,
-                          test_preprocessors=auto_encoder.test_data_preprocessors)
-database.load()
+dataset = dataset_class(dataset_path=dataset_path,
+                        input_sequence_length=auto_encoder.input_sequence_length,
+                        output_sequence_length=auto_encoder.output_sequence_length,
+                        train_preprocessors=auto_encoder.train_data_preprocessors,
+                        test_preprocessors=auto_encoder.test_data_preprocessors)
+dataset.load()
 
 print("===== Resizing data to input_shape =====")
-database = auto_encoder.resized_database(database)
+dataset = auto_encoder.resized_dataset(dataset)
 
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
-database.normalize(*auto_encoder.output_range)
+dataset.normalize(*auto_encoder.output_range)
 
 seed = 8
-database.test_subset.epoch_length = 2
+dataset.test_subset.epoch_length = 2
 # endregion
 # endregion
 
 
 # region Test subset preview
 if preview_test_subset:
-    _, videos = database.test_subset.get_batch(8, seed=1, apply_preprocess_step=False, max_shard_count=8)
+    _, videos = dataset.test_subset.get_batch(8, seed=1, apply_preprocess_step=False, max_shard_count=8)
     for video in videos:
         for frame in video:
             cv2.imshow("frame", frame)
@@ -136,9 +132,9 @@ if profile:
     import cProfile
 
     print("===== Profiling activated ... =====")
-    cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
+    cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=500, epochs=10, batch_size=6)
+    auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)
 
 # TODO : Residual Scaling
 

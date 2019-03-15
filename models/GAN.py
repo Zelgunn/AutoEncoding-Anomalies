@@ -1,11 +1,10 @@
 from keras.layers import Input, Dense, Reshape
 from keras.callbacks import CallbackList
-import tensorflow as tf
 import numpy as np
 from typing import List
 
 from models import AutoEncoderBaseModel, KerasModel, metrics_dict, LayerStack
-from datasets import Database
+from datasets import Dataset
 
 
 class GAN(AutoEncoderBaseModel):
@@ -98,9 +97,9 @@ class GAN(AutoEncoderBaseModel):
                 "discriminator": self.discriminator}
 
     # region Training
-    def train_epoch(self, database: Database, callbacks: CallbackList = None):
+    def train_epoch(self, dataset: Dataset, callbacks: CallbackList = None):
         # region Variables initialization
-        epoch_length = len(database.train_subset)
+        epoch_length = len(dataset.train_subset)
         autoencoder: KerasModel = self.autoencoder
         decoder: KerasModel = self.decoder
         adversarial_generator: KerasModel = self.adversarial_generator
@@ -112,7 +111,7 @@ class GAN(AutoEncoderBaseModel):
         # discriminator_metrics = [1.0, 0.75]
         for batch_index in range(epoch_length):
             # region Generate batch data (common)
-            noisy_x, x = database.train_subset[0]
+            noisy_x, x = dataset.train_subset[0]
             batch_size = x.shape[0]
             x_real = [x]
             z = np.random.normal(size=[discriminator_steps, batch_size, *self.compute_decoder_input_shape()])
@@ -126,7 +125,7 @@ class GAN(AutoEncoderBaseModel):
             x_generated = []
             for i in range(discriminator_steps):
                 if i > 0:
-                    x_real += [database.train_subset.sample(sequence_length=database.output_sequence_length)]
+                    x_real += [dataset.train_subset.sample(sequence_length=dataset.output_sequence_length)]
                 x_generated += [decoder.predict(x=z[i])]
 
             x_real = np.array(x_real)
@@ -169,7 +168,7 @@ class GAN(AutoEncoderBaseModel):
             callbacks.on_batch_end(batch_index, batch_logs)
             # endregion
 
-        self.on_epoch_end(database, callbacks)
+        self.on_epoch_end(dataset, callbacks)
 
     # endregion
 

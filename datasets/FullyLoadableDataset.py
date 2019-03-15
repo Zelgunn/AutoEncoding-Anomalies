@@ -3,22 +3,22 @@ import numpy as np
 import cv2
 from typing import List
 
-from datasets import Database, FullyLoadableSubset
+from datasets import Dataset, FullyLoadableSubset
 from data_preprocessors import DataPreprocessor
 
 
-class FullyLoadableDatabase(Database, ABC):
+class FullyLoadableDataset(Dataset, ABC):
     def __init__(self,
-                 database_path: str,
+                 dataset_path: str,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
-        super(FullyLoadableDatabase, self).__init__(database_path=database_path,
-                                                    input_sequence_length=input_sequence_length,
-                                                    output_sequence_length=output_sequence_length,
-                                                    train_preprocessors=train_preprocessors,
-                                                    test_preprocessors=test_preprocessors)
+        super(FullyLoadableDataset, self).__init__(dataset_path=dataset_path,
+                                                   input_sequence_length=input_sequence_length,
+                                                   output_sequence_length=output_sequence_length,
+                                                   train_preprocessors=train_preprocessors,
+                                                   test_preprocessors=test_preprocessors)
         self.train_subset: FullyLoadableSubset = self.train_subset
         self.test_subset: FullyLoadableSubset = self.test_subset
 

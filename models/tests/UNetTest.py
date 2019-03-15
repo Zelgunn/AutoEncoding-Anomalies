@@ -8,7 +8,7 @@ from time import time
 import os
 
 from layers import DenseBlock3D
-from datasets import SubwayDatabase
+from datasets import SubwayDataset
 
 
 def get_conv_model():
@@ -171,26 +171,26 @@ def get_dense_block_model():
     return dense_block_model
 
 
-def get_database():
-    subway_database = SubwayDatabase(database_path="../datasets/subway/exit",
-                                     input_sequence_length=None,
-                                     output_sequence_length=None)
-    subway_database.load()
+def get_dataset():
+    subway_dataset = SubwayDataset(dataset_path="../datasets/subway/exit",
+                                   input_sequence_length=None,
+                                   output_sequence_length=None)
+    subway_dataset.load()
 
-    subway_database = subway_database.resized(image_size=(96, 128), input_sequence_length=8, output_sequence_length=8)
-    subway_database.normalize(0.0, 1.0)
+    subway_dataset = subway_dataset.resized(image_size=(96, 128), input_sequence_length=8, output_sequence_length=8)
+    subway_dataset.normalize(0.0, 1.0)
 
-    subway_database.train_subset.epoch_length = 250
-    subway_database.train_subset.batch_size = 16
-    subway_database.test_subset.epoch_length = 25
-    subway_database.test_subset.batch_size = 2
+    subway_dataset.train_subset.epoch_length = 250
+    subway_dataset.train_subset.batch_size = 16
+    subway_dataset.test_subset.epoch_length = 25
+    subway_dataset.test_subset.batch_size = 2
 
-    return subway_database
+    return subway_dataset
 
 
 def main():
     model = get_conv_lstm_model()
-    database = get_database()
+    dataset = get_dataset()
 
     model.compile(optimizer=Adam(lr=1e-4), loss="mae", metrics=["mse"])
     # model.load_weights("../logs/tests/1551101991.9433231/weights.h5")
@@ -199,7 +199,7 @@ def main():
     log_dir = os.path.normpath(log_dir)
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="batch")
 
-    model.fit_generator(database.train_subset, epochs=2, validation_data=database.test_subset,
+    model.fit_generator(dataset.train_subset, epochs=2, validation_data=dataset.test_subset,
                         callbacks=[tensorboard])
 
     key = 13
@@ -213,7 +213,7 @@ def main():
         if key != -1:
             seed += 1
 
-            x, y_true = database.test_subset.get_batch(seed=seed)
+            x, y_true = dataset.test_subset.get_batch(seed=seed)
             y_pred = model.predict(x)
             i = 0
 

@@ -21,7 +21,7 @@ from tqdm import tqdm
 from typing import List, Union, Dict, Tuple
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
-from datasets import Database, Subset
+from datasets import Dataset, Subset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
 from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
@@ -690,52 +690,52 @@ class AutoEncoderBaseModel(ABC):
         return {"encoder": self.encoder,
                 "decoder": self.decoder}
 
-    def resized_database(self, database: Database) -> Database:
-        return database.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
+    def resized_dataset(self, dataset: Dataset) -> Dataset:
+        return dataset.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
 
     # endregion
 
     # region Training
     def train(self,
-              database: Database,
+              dataset: Dataset,
               epoch_length: int,
               batch_size: int = 64,
               epochs: int = 1):
         assert isinstance(batch_size, int) or isinstance(batch_size, list)
         assert isinstance(epochs, int) or isinstance(epochs, list)
 
-        self.on_train_begin(database)
+        self.on_train_begin(dataset)
 
-        callbacks = self.build_callbacks(database)
-        samples_count = database.train_subset.samples_count
+        callbacks = self.build_callbacks(dataset)
+        samples_count = dataset.train_subset.samples_count
         callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length, samples_count)
 
         callbacks.on_train_begin()
         try:
-            self.train_loop(database, callbacks, batch_size, epoch_length, epochs)
+            self.train_loop(dataset, callbacks, batch_size, epoch_length, epochs)
         except KeyboardInterrupt:
             print("\n==== Training was stopped by a Keyboard Interrupt ====\n")
         callbacks.on_train_end()
 
-        self.on_train_end(database)
+        self.on_train_end(dataset)
 
-    def train_loop(self, database: Database, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
-        database = self.resized_database(database)
-        database.train_subset.epoch_length = epoch_length
-        database.train_subset.batch_size = batch_size
-        database.test_subset.batch_size = batch_size
+    def train_loop(self, dataset: Dataset, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
+        dataset = self.resized_dataset(dataset)
+        dataset.train_subset.epoch_length = epoch_length
+        dataset.train_subset.batch_size = batch_size
+        dataset.test_subset.batch_size = batch_size
 
         for _ in range(epochs):
-            self.train_epoch(database, callbacks)
+            self.train_epoch(dataset, callbacks)
 
-    def train_epoch(self, database: Database, callbacks: CallbackList = None):
-        epoch_length = len(database.train_subset)
+    def train_epoch(self, dataset: Dataset, callbacks: CallbackList = None):
+        epoch_length = len(dataset.train_subset)
 
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
 
         for batch_index in range(epoch_length):
-            x, y = database.train_subset[0]
+            x, y = dataset.train_subset[0]
 
             batch_logs = {"batch": batch_index, "size": x.shape[0]}
             callbacks.on_batch_begin(batch_index, batch_logs)
@@ -751,10 +751,10 @@ class AutoEncoderBaseModel(ABC):
 
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(database, callbacks)
+        self.on_epoch_end(dataset, callbacks)
 
     def on_epoch_end(self,
-                     database: Database,
+                     dataset: Dataset,
                      callbacks: CallbackList = None,
                      epoch_logs: dict = None):
 
@@ -763,12 +763,12 @@ class AutoEncoderBaseModel(ABC):
             epoch_logs = {}
 
         out_labels = self.autoencoder.metrics_names
-        val_outs = self.autoencoder.evaluate_generator(database.test_subset)
+        val_outs = self.autoencoder.evaluate_generator(dataset.test_subset)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
 
-        database.on_epoch_end()
+        dataset.on_epoch_end()
 
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
@@ -776,27 +776,27 @@ class AutoEncoderBaseModel(ABC):
         self.epochs_seen += 1
 
         if self.epochs_seen % 1 == 0 or self.epochs_seen > 15:
-            predictions, labels, lengths = self.predict_anomalies(database)
+            predictions, labels, lengths = self.predict_anomalies(dataset)
             roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
             print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
 
-    def on_train_begin(self, database: Database):
+    def on_train_begin(self, dataset: Dataset):
         if not self.layers_built:
             self.build_layers()
 
         if self.log_dir is not None:
             return
-        self.log_dir = self.__class__.make_log_dir(database)
+        self.log_dir = self.__class__.make_log_dir(dataset)
         print("Logs directory : '{}'".format(self.log_dir))
 
         self.save_models_info(self.log_dir)
 
-    def on_train_end(self, database: Database):
+    def on_train_end(self, dataset: Dataset):
         print("============== Saving models weights... ==============")
         self.save_weights()
         print("======================= Done ! =======================")
 
-        roc_and_pr = self.predict_and_evaluate(database, stride=1)
+        roc_and_pr = self.predict_and_evaluate(dataset, stride=1)
         with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
             results_file.write("ROC = {}|PR  = {}\n".format(*roc_and_pr))
 
@@ -849,13 +849,13 @@ class AutoEncoderBaseModel(ABC):
         return self._raw_predictions_models[reduction_axis]
 
     def predict_anomalies(self,
-                          database: Database,
+                          dataset: Dataset,
                           stride=1,
                           normalize_predictions=True):
 
-        predictions, labels = self.predict_anomalies_on_subset(database.test_subset, stride)
+        predictions, labels = self.predict_anomalies_on_subset(dataset.test_subset, stride)
 
-        # train_predictions, train_labels = self.predict_anomalies_on_subset(database.train_subset, stride)
+        # train_predictions, train_labels = self.predict_anomalies_on_subset(dataset.train_subset, stride)
         # predictions += train_predictions
         # labels += train_labels
 
@@ -978,9 +978,9 @@ class AutoEncoderBaseModel(ABC):
         return roc, pr
 
     def predict_and_evaluate(self,
-                             database: Database,
+                             dataset: Dataset,
                              stride=1):
-        predictions, labels, lengths = self.predict_anomalies(database, stride=stride, normalize_predictions=True)
+        predictions, labels, lengths = self.predict_anomalies(dataset, stride=stride, normalize_predictions=True)
         graph_filepath = os.path.join(self.log_dir, "Anomaly_score.png")
         roc, pr = self.evaluate_predictions(predictions, labels, lengths, graph_filepath)
         print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))
@@ -1025,8 +1025,8 @@ class AutoEncoderBaseModel(ABC):
 
     # region Callbacks
     # region Build callbacks
-    def build_callbacks(self, database: Database):
-        return self.build_common_callbacks() + self.build_anomaly_callbacks(database)
+    def build_callbacks(self, dataset: Dataset):
+        return self.build_common_callbacks() + self.build_anomaly_callbacks(dataset)
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
@@ -1045,11 +1045,11 @@ class AutoEncoderBaseModel(ABC):
 
         return common_callbacks
 
-    def build_anomaly_callbacks(self, database: Database) -> List[Callback]:
-        # region Getting database/datasets
-        database = self.resized_database(database)
-        test_subset = database.test_subset
-        train_subset = database.train_subset
+    def build_anomaly_callbacks(self, dataset: Dataset) -> List[Callback]:
+        # region Getting dataset/datasets
+        dataset = self.resized_dataset(dataset)
+        test_subset = dataset.test_subset
+        train_subset = dataset.train_subset
         # endregion
 
         train_image_callback = self.build_auto_encoding_callback(train_subset, "train", self.tensorboard)
@@ -1070,7 +1070,7 @@ class AutoEncoderBaseModel(ABC):
         # anomaly_callbacks.append(frame_auc_callback)
 
         # region Pixel level error AUC (ROC)
-        # TODO : Check labels size in UCSDDatabase
+        # TODO : Check labels size in UCSDDataset
         # if pixel_labels is not None:
         #     pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
         #                                      videos, pixel_labels,
@@ -1200,9 +1200,9 @@ class AutoEncoderBaseModel(ABC):
 
     @classmethod
     def make_log_dir(cls,
-                     database: Database):
+                     dataset: Dataset):
         project_log_dir = "../logs/AutoEncoding-Anomalies"
-        base_dir = os.path.join(project_log_dir, database.__class__.__name__, cls.__name__)
+        base_dir = os.path.join(project_log_dir, dataset.__class__.__name__, cls.__name__)
         log_dir = get_log_dir(base_dir)
         return log_dir
 

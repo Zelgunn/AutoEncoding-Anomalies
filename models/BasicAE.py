@@ -1,4 +1,4 @@
-from models import AutoEncoderBaseModel, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, KerasModel
 
 
 class BasicAE(AutoEncoderBaseModel):

@@ -5,14 +5,14 @@ from data_preprocessors import DataPreprocessor, RandomCropper
 from datasets import Subset
 
 
-class Database(ABC):
+class Dataset(ABC):
     def __init__(self,
-                 database_path: str,
+                 dataset_path: str,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
                  train_preprocessors: List[DataPreprocessor] = None,
                  test_preprocessors: List[DataPreprocessor] = None):
-        self.database_path = database_path
+        self.dataset_path = dataset_path
         self.input_sequence_length = input_sequence_length
         self.output_sequence_length = output_sequence_length
         self.train_preprocessors = train_preprocessors or []
@@ -43,23 +43,23 @@ class Database(ABC):
             self.output_sequence_length = output_sequence_length
             return self
 
-        database_type = type(self)
-        database: Database = database_type(self.database_path, input_sequence_length, output_sequence_length)
+        dataset_type = type(self)
+        dataset: Dataset = dataset_type(self.dataset_path, input_sequence_length, output_sequence_length)
 
         if cropper_in_preprocessors(self.train_preprocessors):
-            database.train_subset = self.train_subset
+            dataset.train_subset = self.train_subset
         else:
-            database.train_subset = self.train_subset.resized(image_size, input_sequence_length,
-                                                              output_sequence_length)
+            dataset.train_subset = self.train_subset.resized(image_size, input_sequence_length,
+                                                             output_sequence_length)
 
         if cropper_in_preprocessors(self.test_preprocessors):
-            database.test_subset = self.test_subset
+            dataset.test_subset = self.test_subset
         else:
-            database.test_subset = self.test_subset.resized(image_size, input_sequence_length, output_sequence_length)
+            dataset.test_subset = self.test_subset.resized(image_size, input_sequence_length, output_sequence_length)
 
-        database._require_saving = self._require_saving
+        dataset._require_saving = self._require_saving
 
-        return database
+        return dataset
 
 
 def cropper_in_preprocessors(preprocessors):

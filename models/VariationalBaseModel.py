@@ -7,8 +7,8 @@ from abc import ABC
 from tqdm import tqdm
 
 from models import AutoEncoderBaseModel, conv_type, KerasModel
-from callbacks import RunModel, AUCCallback
-from datasets import Database, Subset
+from callbacks import RunModel
+from datasets import Subset
 
 
 class VariationalBaseModel(AutoEncoderBaseModel, ABC):
@@ -147,13 +147,14 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             j = (j + 1) % predicted_video_lenght
             if key != -1:
                 i = (i + 1) % interpolation_count
+
     # endregion
 
     # region Callbacks
-    # def build_anomaly_callbacks(self, database: Database):
-    #     database = self.resized_database(database)
-    #     test_subset = database.test_subset
-    #     anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
+    # def build_anomaly_callbacks(self, dataset: Dataset):
+    #     dataset = self.resized_dataset(dataset)
+    #     test_subset = dataset.test_subset
+    #     anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(dataset)
     #
     #     samples = test_subset.sample(batch_size=512, seed=16, sampled_videos_count=16, return_labels=True)
     #     videos, frame_labels, _ = samples

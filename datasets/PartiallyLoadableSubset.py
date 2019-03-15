@@ -79,7 +79,7 @@ class PartiallyLoadableSubset(Subset):
             if (target_width == width) and (target_height == height):
                 target_index = i
         assert target_index is not None, \
-            "size {0}x{1} not in database".format(target_height, target_width)
+            "size {0}x{1} not in dataset".format(target_height, target_width)
 
         subset_type = type(self)
         other = subset_type(subset_path=self.subset_path, config=self.config,
