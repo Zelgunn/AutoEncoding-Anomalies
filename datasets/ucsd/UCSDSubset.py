@@ -4,21 +4,21 @@ import numpy as np
 from tqdm import tqdm
 from typing import Type
 
-from datasets import FullyLoadableDataset
+from datasets import FullyLoadableSubset
 
 
-class UCSDDataset(FullyLoadableDataset):
+class UCSDSubset(FullyLoadableSubset):
     # region Loading
     def load(self):
-        if self.dataset_path.endswith(os.path.sep):
-            self.dataset_path = self.dataset_path[:-1]
+        if self.subset_path.endswith(os.path.sep):
+            self.subset_path = self.subset_path[:-1]
 
         self.pixel_labels = None
 
         self.saved_to_npz = os.path.exists(self.npz_filepath)
-        print("Loading UCSD dataset : " + self.dataset_path)
+        print("Loading UCSD subset : " + self.subset_path)
         if self.saved_to_npz:
-            print("Found saved dataset (in .npz file)")
+            print("Found saved subset (in .npz file)")
             npz_file = np.load(self.npz_filepath)
             self.videos = npz_file["videos"]
             if "anomaly_labels" in npz_file:
@@ -26,35 +26,35 @@ class UCSDDataset(FullyLoadableDataset):
                 if None in self.pixel_labels:
                     self.pixel_labels = None
         else:
-            print("Building dataset from raw data")
-            self.videos = UCSDDataset._load_ucsd_videos_raw(self.dataset_path)
-            labels_dictionary = UCSDDataset._get_videos_dictionary(self.dataset_path, ".bmp")
+            print("Building subset from raw data")
+            self.videos = UCSDSubset._load_ucsd_videos_raw(self.subset_path)
+            labels_dictionary = UCSDSubset._get_videos_dictionary(self.subset_path, ".bmp")
             if len(labels_dictionary) > 0:
-                self.pixel_labels = UCSDDataset._load_videos_from_dictionary_of_paths(labels_dictionary, dtype=np.bool)
+                self.pixel_labels = UCSDSubset._load_videos_from_dictionary_of_paths(labels_dictionary, dtype=np.bool)
             else:
                 self.pixel_labels = None
 
     def save_to_npz(self, force=False):
         if self.saved_to_npz and not force:
             return
-        print("Saving UCSD dataset : " + self.dataset_path + " (to .npz file)")
+        print("Saving UCSD subset : " + self.subset_path + " (to .npz file)")
         np.savez(self.npz_filepath, videos=self.videos, anomaly_labels=self.pixel_labels)
 
     @property
     def npz_filepath(self) -> str:
-        return self.dataset_path + ".npz"
+        return self.subset_path + ".npz"
 
     # region Static loading methods
     @staticmethod
-    def _get_videos_dictionary(dataset_path: str, extension: str):
+    def _get_videos_dictionary(subset_path: str, extension: str):
         if not extension.startswith("."):
             extension = "." + extension
-        sub_directories = [dir_info[0] for dir_info in os.walk(dataset_path)]
-        if dataset_path in sub_directories:
-            sub_directories.remove(dataset_path)
+        sub_directories = [dir_info[0] for dir_info in os.walk(subset_path)]
+        if subset_path in sub_directories:
+            sub_directories.remove(subset_path)
         tiff_images_dictionary = {}
         for sub_directory in sub_directories:
-            tiff_images_paths = UCSDDataset._get_files_with_extension(sub_directory, extension)
+            tiff_images_paths = UCSDSubset._get_files_with_extension(sub_directory, extension)
             if len(tiff_images_paths) is not 0:
                 tiff_images_dictionary[sub_directory] = tiff_images_paths
         return tiff_images_dictionary
@@ -92,9 +92,9 @@ class UCSDDataset(FullyLoadableDataset):
         return videos
 
     @staticmethod
-    def _load_ucsd_videos_raw(dataset_path: str):
-        videos_dictionary = UCSDDataset._get_videos_dictionary(dataset_path, ".tif")
-        return UCSDDataset._load_videos_from_dictionary_of_paths(videos_dictionary)
+    def _load_ucsd_videos_raw(subset_path: str):
+        videos_dictionary = UCSDSubset._get_videos_dictionary(subset_path, ".tif")
+        return UCSDSubset._load_videos_from_dictionary_of_paths(videos_dictionary)
     # endregion
     # endregion
 

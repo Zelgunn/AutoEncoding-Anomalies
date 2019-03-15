@@ -4,6 +4,10 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # endregion
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 # region Imports
 import keras.backend as K
 import tensorflow as tf
@@ -49,9 +53,9 @@ else:
         model=model_used, dataset=database_config_alias, suffix=alt_config_suffix_used)
 # endregion
 
-preview_test_dataset = False
+preview_test_subset = False
 allow_gpu_growth = False
-profile = False
+profile = True
 
 # region Model/Dataset initialization
 # region Model
@@ -76,7 +80,7 @@ print("Database config alias \t\t\t\t:", database_config_alias)
 print("Config used \t\t\t\t\t:", config_used)
 print("Blocks used \t\t\t\t\t:", auto_encoder.block_type_name)
 print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
-print("Preview tensorboard test images \t\t:", preview_test_dataset)
+print("Preview tensorboard test images \t\t:", preview_test_subset)
 print("Allow GPU growth \t\t\t\t:", allow_gpu_growth)
 print("Run cProfile \t\t\t\t\t:", profile)
 print("===============================================")
@@ -99,13 +103,14 @@ print("===== Normalizing data between {0} and {1} for activation \"{2}\"  ====="
 database.normalize(*auto_encoder.output_range)
 
 seed = 8
-database.test_dataset.epoch_length = 2
+database.test_subset.epoch_length = 2
 # endregion
 # endregion
 
-# region Test dataset preview
-if preview_test_dataset:
-    _, videos = database.test_dataset.get_batch(8, seed=1, apply_preprocess_step=False, max_shard_count=8)
+
+# region Test subset preview
+if preview_test_subset:
+    _, videos = database.test_subset.get_batch(8, seed=1, apply_preprocess_step=False, max_shard_count=8)
     for video in videos:
         for frame in video:
             cv2.imshow("frame", frame)
@@ -131,9 +136,9 @@ if profile:
     import cProfile
 
     print("===== Profiling activated ... =====")
-    cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=0, batch_size=6)", sort="cumulative")
+    cProfile.run("auto_encoder.train(database, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
 else:
-    auto_encoder.train(database, epoch_length=500, epochs=100, batch_size=6)
+    auto_encoder.train(database, epoch_length=500, epochs=10, batch_size=6)
 
 # TODO : Residual Scaling
 

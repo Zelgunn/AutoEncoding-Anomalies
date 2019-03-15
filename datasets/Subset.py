@@ -7,7 +7,7 @@ from data_preprocessors import DataPreprocessor
 from utils.numpy_utils import NumpySeedContext, fast_concatenate_0
 
 
-class Dataset(Sequence, ABC):
+class Subset(Sequence, ABC):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
@@ -83,7 +83,7 @@ class Dataset(Sequence, ABC):
 
         with NumpySeedContext(seed):
             videos_indices = np.random.permutation(np.arange(self.videos_count))[:sampled_videos_count]
-            sampled_videos, sampled_frame_labels, sampled_pixel_labels,  = [], [], None
+            sampled_videos, sampled_frame_labels, sampled_pixel_labels, = [], [], None
             shard_size = batch_size // sampled_videos_count
 
             for i, video_index in enumerate(videos_indices):

@@ -5,10 +5,10 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-from datasets import Dataset
+from datasets import Subset
 
 
-def visualize_model_errors(model: Model, dataset: Dataset, images_size=(512, 512), fps=25):
+def visualize_model_errors(model: Model, subset: Subset, images_size=(512, 512), fps=25):
     key = 13
     escape_key = 27
     seed = 0
@@ -20,7 +20,7 @@ def visualize_model_errors(model: Model, dataset: Dataset, images_size=(512, 512
         if key != -1:
             seed += 1
             i = 0
-            x, y_true = dataset.get_batch(seed=seed)
+            x, y_true = subset.get_batch(seed=seed)
             y_pred = model.predict(x)
             max_error = np.abs(y_pred - y_true).max()
 
@@ -42,17 +42,17 @@ def visualize_model_errors(model: Model, dataset: Dataset, images_size=(512, 512
         cv2.imshow("composite", composite)
         key = cv2.waitKey(fps)
 
-        i = (i + 1) % dataset.output_sequence_length
+        i = (i + 1) % subset.output_sequence_length
     cv2.destroyAllWindows()
 
 
-def evaluate_model_anomaly_detection_on_dataset(model: Model,
-                                                dataset: Dataset,
-                                                stride=None,
-                                                variational_resampling=0):
+def evaluate_model_anomaly_detection_on_subset(model: Model,
+                                               subset: Subset,
+                                               stride=None,
+                                               variational_resampling=0):
     roc_values, pr_values, anomaly_percentages = [], [], []
-    for i in range(dataset.videos_count):
-        roc, pr, anomaly_percentage = evaluate_model_anomaly_detection_one_video(model, dataset, i, stride,
+    for i in range(subset.videos_count):
+        roc, pr, anomaly_percentage = evaluate_model_anomaly_detection_one_video(model, subset, i, stride,
                                                                                  variational_resampling)
         roc_values.append(roc)
         pr_values.append(pr)
@@ -67,7 +67,7 @@ def evaluate_model_anomaly_detection_on_dataset(model: Model,
 
 
 def evaluate_model_anomaly_detection_one_video(model: Model,
-                                               dataset,
+                                               subset,
                                                video_index: int,
                                                stride=None,
                                                variational_resampling=0):
@@ -84,8 +84,8 @@ def evaluate_model_anomaly_detection_one_video(model: Model,
     predictions_op = tf.reduce_sum(predictions_op, axis=[2, 3, 4])
     # endregion
 
-    steps_count = (dataset.get_video_length(video_index) - output_sequence_length) // stride
-    predictions_shape = [steps_count * output_sequence_length, dataset.output_sequence_length]
+    steps_count = (subset.get_video_length(video_index) - output_sequence_length) // stride
+    predictions_shape = [steps_count * output_sequence_length, subset.output_sequence_length]
 
     predictions = np.zeros(shape=predictions_shape)
     labels = np.zeros(shape=predictions_shape, dtype=np.bool)
@@ -93,11 +93,11 @@ def evaluate_model_anomaly_detection_one_video(model: Model,
     for i in tqdm(range(steps_count), desc="Computing errors..."):
         start = i * stride
         end = start + output_sequence_length
-        step_video = dataset.get_video_frames(video_index, start, end)
+        step_video = subset.get_video_frames(video_index, start, end)
         step_video = np.expand_dims(step_video, axis=0)
-        step_labels = dataset.get_video_frame_labels(video_index, start, end)
+        step_labels = subset.get_video_frame_labels(video_index, start, end)
 
-        x, y_true = dataset.divide_batch_io(step_video)
+        x, y_true = subset.divide_batch_io(step_video)
 
         feed_dict = {input_layer: x, true_output: y_true}
         step_predictions = session.run(predictions_op, feed_dict)

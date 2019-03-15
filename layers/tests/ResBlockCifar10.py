@@ -1,3 +1,7 @@
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 from keras.layers import Input, AveragePooling2D, Dense, Reshape
 from keras.models import Model
 from keras.datasets import cifar10
@@ -20,7 +24,7 @@ def evaluate_on_cifar10():
     # region Model
     input_layer = Input(shape=[32, 32, 3])
     layer = input_layer
-    kernel_initializer = VarianceScaling(scale=2.0 / np.sqrt(total_depth), mode="fan_in", distribution="normal")
+    kernel_initializer = VarianceScaling(scale=1.0 / np.sqrt(total_depth), mode="fan_in", distribution="normal")
 
     for k in range(n_blocks):
         strides = 2 if k < (n_blocks - 1) else 1

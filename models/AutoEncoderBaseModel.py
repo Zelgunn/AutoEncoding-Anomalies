@@ -21,10 +21,10 @@ from tqdm import tqdm
 from typing import List, Union, Dict, Tuple
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
-from datasets import Database, Dataset
+from datasets import Database, Subset
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
-from callbacks import ImageCallback, AUCCallback, RunModel, MultipleModelsCheckpoint
+from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
 from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper, GaussianBlurrer
 
 
@@ -707,7 +707,7 @@ class AutoEncoderBaseModel(ABC):
         self.on_train_begin(database)
 
         callbacks = self.build_callbacks(database)
-        samples_count = database.train_dataset.samples_count
+        samples_count = database.train_subset.samples_count
         callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length, samples_count)
 
         callbacks.on_train_begin()
@@ -721,21 +721,21 @@ class AutoEncoderBaseModel(ABC):
 
     def train_loop(self, database: Database, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
         database = self.resized_database(database)
-        database.train_dataset.epoch_length = epoch_length
-        database.train_dataset.batch_size = batch_size
-        database.test_dataset.batch_size = batch_size
+        database.train_subset.epoch_length = epoch_length
+        database.train_subset.batch_size = batch_size
+        database.test_subset.batch_size = batch_size
 
         for _ in range(epochs):
             self.train_epoch(database, callbacks)
 
     def train_epoch(self, database: Database, callbacks: CallbackList = None):
-        epoch_length = len(database.train_dataset)
+        epoch_length = len(database.train_subset)
 
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
 
         for batch_index in range(epoch_length):
-            x, y = database.train_dataset[0]
+            x, y = database.train_subset[0]
 
             batch_logs = {"batch": batch_index, "size": x.shape[0]}
             callbacks.on_batch_begin(batch_index, batch_logs)
@@ -763,7 +763,7 @@ class AutoEncoderBaseModel(ABC):
             epoch_logs = {}
 
         out_labels = self.autoencoder.metrics_names
-        val_outs = self.autoencoder.evaluate_generator(database.test_dataset)
+        val_outs = self.autoencoder.evaluate_generator(database.test_subset)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
@@ -804,11 +804,11 @@ class AutoEncoderBaseModel(ABC):
 
     # region Testing
     def autoencode_video(self,
-                         dataset: Dataset,
+                         subset: Subset,
                          video_index: int,
                          output_video_filepath: str,
                          fps=25.0):
-        video_length = dataset.get_video_length(video_index)
+        video_length = subset.get_video_length(video_index)
         window_length = self.input_sequence_length
 
         frame_size = tuple(self.output_image_size)
@@ -816,7 +816,7 @@ class AutoEncoderBaseModel(ABC):
         video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
 
         for i in tqdm(range(video_length - window_length)):
-            input_shard = dataset.get_video_frames(video_index, i, i + window_length)
+            input_shard = subset.get_video_frames(video_index, i, i + window_length)
             input_shard = np.expand_dims(input_shard, axis=0)
             predicted_shard = self.autoencoder.predict_on_batch(input_shard)
 
@@ -853,9 +853,9 @@ class AutoEncoderBaseModel(ABC):
                           stride=1,
                           normalize_predictions=True):
 
-        predictions, labels = self.predict_anomalies_on_dataset(database.test_dataset, stride)
+        predictions, labels = self.predict_anomalies_on_subset(database.test_subset, stride)
 
-        # train_predictions, train_labels = self.predict_anomalies_on_dataset(database.train_dataset, stride)
+        # train_predictions, train_labels = self.predict_anomalies_on_subset(database.train_subset, stride)
         # predictions += train_predictions
         # labels += train_labels
 
@@ -873,11 +873,11 @@ class AutoEncoderBaseModel(ABC):
 
         return predictions, labels, lengths
 
-    def predict_anomalies_on_dataset(self, dataset: Dataset, stride: int):
+    def predict_anomalies_on_subset(self, subset: Subset, stride: int):
         predictions, labels = [], []
 
-        for video_index in range(dataset.videos_count):
-            video_predictions, video_labels = self.predict_anomalies_on_video(dataset, video_index, stride,
+        for video_index in range(subset.videos_count):
+            video_predictions, video_labels = self.predict_anomalies_on_video(subset, video_index, stride,
                                                                               normalize_predictions=True)
 
             predictions.append(video_predictions)
@@ -886,21 +886,21 @@ class AutoEncoderBaseModel(ABC):
         return predictions, labels
 
     def predict_anomalies_on_video(self,
-                                   dataset: Dataset,
+                                   subset: Subset,
                                    video_index: int,
                                    stride: int,
                                    normalize_predictions=False):
         raw_predictions_model = self.get_anomalies_raw_predictions_model()
 
-        video_length = dataset.get_video_length(video_index)
+        video_length = subset.get_video_length(video_index)
         steps_count = 1 + (video_length - self.input_sequence_length) // stride
         # video_length = steps_count * stride
 
         # region Scores arrays
         predictions = np.zeros(shape=[video_length])
 
-        if dataset.has_labels:
-            video_labels = dataset.get_video_frame_labels(video_index, 0, video_length)
+        if subset.has_labels:
+            video_labels = subset.get_video_frame_labels(video_index, 0, video_length)
         else:
             video_labels = np.zeros(shape=[video_length], dtype=np.bool)
 
@@ -912,7 +912,7 @@ class AutoEncoderBaseModel(ABC):
             start = i * stride
             end = start + self.input_sequence_length
 
-            step_video = dataset.get_video_frames(video_index, start, end)
+            step_video = subset.get_video_frames(video_index, start, end)
             step_video = np.expand_dims(step_video, axis=0)
 
             step_predictions = raw_predictions_model.predict(x=[step_video, step_video], batch_size=1)
@@ -1048,19 +1048,19 @@ class AutoEncoderBaseModel(ABC):
     def build_anomaly_callbacks(self, database: Database) -> List[Callback]:
         # region Getting database/datasets
         database = self.resized_database(database)
-        test_dataset = database.test_dataset
-        train_dataset = database.train_dataset
+        test_subset = database.test_subset
+        train_subset = database.train_subset
         # endregion
 
-        train_image_callback = self.build_auto_encoding_callback(train_dataset, "train", self.tensorboard)
-        test_image_callback = self.build_auto_encoding_callback(test_dataset, "test", self.tensorboard)
+        train_image_callback = self.build_auto_encoding_callback(train_subset, "train", self.tensorboard)
+        test_image_callback = self.build_auto_encoding_callback(test_subset, "test", self.tensorboard)
 
         anomaly_callbacks = [train_image_callback, test_image_callback]
 
         # region AUC callbacks
-        # samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=8, return_labels=True)
+        # samples = test_subset.sample(batch_size=512, seed=16, sampled_videos_count=8, return_labels=True)
         # videos, frame_labels, pixel_labels = samples
-        # videos = test_dataset.divide_batch_io(videos)
+        # videos = test_subset.divide_batch_io(videos)
 
         # frame_predictions_model = self.build_frame_level_error_callback_model()
         # frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
@@ -1085,13 +1085,13 @@ class AutoEncoderBaseModel(ABC):
 
     # region Image|Video callbacks
     def build_auto_encoding_callback(self,
-                                     dataset: Dataset,
+                                     subset: Subset,
                                      name: str,
                                      tensorboard: TensorBoard,
                                      frequency="epoch",
                                      include_composite=False) -> ImageCallback:
-        videos = dataset.get_batch(self.image_summaries_max_outputs, seed=1, apply_preprocess_step=False,
-                                   max_shard_count=self.image_summaries_max_outputs)
+        videos = subset.get_batch(self.image_summaries_max_outputs, seed=1, apply_preprocess_step=False,
+                                  max_shard_count=self.image_summaries_max_outputs)
 
         true_outputs_placeholder = self.get_true_outputs_placeholder()
         summary_inputs = [self.autoencoder.input, true_outputs_placeholder]

@@ -1,9 +1,9 @@
 from datasets.Database import Database
-from datasets.Dataset import Dataset
-from datasets.FullyLoadableDataset import FullyLoadableDataset
+from datasets.Subset import Subset
+from datasets.FullyLoadableSubset import FullyLoadableSubset
 from datasets.FullyLoadableDatabase import FullyLoadableDatabase
-from datasets.PartiallyLoadableDataset import PartiallyLoadableDataset
+from datasets.PartiallyLoadableSubset import PartiallyLoadableSubset
 from datasets.PartiallyLoadableDatabase import PartiallyLoadableDatabase
-from datasets.ucsd.UCSDDatabase import UCSDDatabase, UCSDDataset
+from datasets.ucsd.UCSDDatabase import UCSDDatabase, UCSDSubset
 from datasets.subway.SubwayDatabase import SubwayDatabase
-from datasets.subway.SubwayDataset import SubwayDataset
+from datasets.subway.SubwaySubset import SubwaySubset

@@ -149,13 +149,13 @@ class AGE(AutoEncoderBaseModel):
 
     # region Training
     def train_epoch(self, database: Database, callbacks: CallbackList = None):
-        epoch_length = len(database.train_dataset)
+        epoch_length = len(database.train_subset)
 
         callbacks.on_epoch_begin(self.epochs_seen)
 
         for batch_index in range(epoch_length):
             decoder_steps = self.config["decoder_steps"]
-            x, y = database.train_dataset[0]
+            x, y = database.train_subset[0]
             batch_size = x.shape[0]
             z = np.random.normal(size=[decoder_steps + 1, batch_size, self.embeddings_size])
 

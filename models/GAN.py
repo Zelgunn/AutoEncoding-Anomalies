@@ -100,7 +100,7 @@ class GAN(AutoEncoderBaseModel):
     # region Training
     def train_epoch(self, database: Database, callbacks: CallbackList = None):
         # region Variables initialization
-        epoch_length = len(database.train_dataset)
+        epoch_length = len(database.train_subset)
         autoencoder: KerasModel = self.autoencoder
         decoder: KerasModel = self.decoder
         adversarial_generator: KerasModel = self.adversarial_generator
@@ -112,7 +112,7 @@ class GAN(AutoEncoderBaseModel):
         # discriminator_metrics = [1.0, 0.75]
         for batch_index in range(epoch_length):
             # region Generate batch data (common)
-            noisy_x, x = database.train_dataset[0]
+            noisy_x, x = database.train_subset[0]
             batch_size = x.shape[0]
             x_real = [x]
             z = np.random.normal(size=[discriminator_steps, batch_size, *self.compute_decoder_input_shape()])
@@ -126,7 +126,7 @@ class GAN(AutoEncoderBaseModel):
             x_generated = []
             for i in range(discriminator_steps):
                 if i > 0:
-                    x_real += [database.train_dataset.sample(sequence_length=database.output_sequence_length)]
+                    x_real += [database.train_subset.sample(sequence_length=database.output_sequence_length)]
                 x_generated += [decoder.predict(x=z[i])]
 
             x_real = np.array(x_real)

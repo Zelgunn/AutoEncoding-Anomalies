@@ -3,29 +3,29 @@ import copy
 import os
 from typing import List
 
-from datasets import Dataset
+from datasets import Subset
 from data_preprocessors import DataPreprocessor
 
 
-class PartiallyLoadableDataset(Dataset):
+class PartiallyLoadableSubset(Subset):
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 dataset_path: str,
+                 subset_path: str,
                  config: dict,
                  epoch_length: int,
                  data_preprocessors: List[DataPreprocessor] = None,
                  batch_size=64,
                  shuffle_on_epoch_end=True,
                  **kwargs):
-        super(PartiallyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
-                                                       output_sequence_length=output_sequence_length,
-                                                       data_preprocessors=data_preprocessors,
-                                                       batch_size=batch_size,
-                                                       epoch_length=epoch_length,
-                                                       shuffle_on_epoch_end=shuffle_on_epoch_end,
-                                                       **kwargs)
-        self.dataset_path = dataset_path
+        super(PartiallyLoadableSubset, self).__init__(input_sequence_length=input_sequence_length,
+                                                      output_sequence_length=output_sequence_length,
+                                                      data_preprocessors=data_preprocessors,
+                                                      batch_size=batch_size,
+                                                      epoch_length=epoch_length,
+                                                      shuffle_on_epoch_end=shuffle_on_epoch_end,
+                                                      **kwargs)
+        self.subset_path = subset_path
         self.config = copy.deepcopy(config)
         self.sub_config_index = 0
         self._shard_indices_offset = None
@@ -53,11 +53,11 @@ class PartiallyLoadableDataset(Dataset):
         return samples * self.normalization_range[1] + self.normalization_range[0]
 
     def get_video_hook(self, video_index):
-        video_shard_filepath = os.path.join(self.dataset_path, self.videos_filenames[video_index])
+        video_shard_filepath = os.path.join(self.subset_path, self.videos_filenames[video_index])
         return np.load(video_shard_filepath, mmap_mode="r")
 
     def get_labels_hook(self, video_index):
-        shard_labels_filepath = os.path.join(self.dataset_path, self.labels_filenames[video_index])
+        shard_labels_filepath = os.path.join(self.subset_path, self.labels_filenames[video_index])
         return np.load(shard_labels_filepath, mmap_mode="r")
 
     def get_video_length(self, video_index):
@@ -81,12 +81,12 @@ class PartiallyLoadableDataset(Dataset):
         assert target_index is not None, \
             "size {0}x{1} not in database".format(target_height, target_width)
 
-        dataset_type = type(self)
-        other = dataset_type(dataset_path=self.dataset_path, config=self.config,
-                             input_sequence_length=input_sequence_length,
-                             output_sequence_length=output_sequence_length,
-                             data_preprocessors=self.data_preprocessors, batch_size=self.batch_size,
-                             epoch_length=self.epoch_length, shuffle_on_epoch_end=self.shuffle_on_epoch_end)
+        subset_type = type(self)
+        other = subset_type(subset_path=self.subset_path, config=self.config,
+                            input_sequence_length=input_sequence_length,
+                            output_sequence_length=output_sequence_length,
+                            data_preprocessors=self.data_preprocessors, batch_size=self.batch_size,
+                            epoch_length=self.epoch_length, shuffle_on_epoch_end=self.shuffle_on_epoch_end)
         other.sub_config_index = target_index
         other.normalization_range = self.normalization_range
         return other

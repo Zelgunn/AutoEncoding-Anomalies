@@ -8,7 +8,7 @@ from time import time
 from layers import ResBasicBlock3D, DenseBlock3D, ResBasicBlock3DTranspose
 from datasets import UCSDDatabase, SubwayDatabase
 from data_preprocessors import BrightnessShifter, DropoutNoiser
-from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection_on_dataset
+from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection_on_subset
 
 
 def build_conv_encoder(input_layer):
@@ -159,10 +159,10 @@ def get_ucsd_database(shift_brightness, dropout_noise):
     database = database.resized(image_size=(128, 128), input_sequence_length=16, output_sequence_length=32)
     database.normalize(0.0, 1.0)
 
-    database.train_dataset.epoch_length = 250
-    database.train_dataset.batch_size = 8
-    database.test_dataset.epoch_length = 25
-    database.test_dataset.batch_size = 2
+    database.train_subset.epoch_length = 250
+    database.train_subset.batch_size = 8
+    database.test_subset.epoch_length = 25
+    database.test_subset.batch_size = 2
 
     return database
 
@@ -183,10 +183,10 @@ def get_subway_database(shift_brightness, dropout_noise):
     database = database.resized(image_size=(96, 128), input_sequence_length=16, output_sequence_length=32)
     database.normalize(0.0, 1.0)
 
-    database.train_dataset.epoch_length = 250
-    database.train_dataset.batch_size = 8
-    database.test_dataset.epoch_length = 25
-    database.test_dataset.batch_size = 2
+    database.train_subset.epoch_length = 250
+    database.train_subset.batch_size = 8
+    database.test_subset.epoch_length = 25
+    database.test_subset.batch_size = 2
 
     return database
 
@@ -194,9 +194,9 @@ def get_subway_database(shift_brightness, dropout_noise):
 def train_model(model, database, mode):
     log_dir = "../logs/tests/conv3d_rec_pred/{}/{}".format(mode, int(time()))
     log_dir = os.path.normpath(log_dir)
-    tensorboard = TensorBoard(log_dir=log_dir, update_freq=database.train_dataset.batch_size * 10)
+    tensorboard = TensorBoard(log_dir=log_dir, update_freq=database.train_subset.batch_size * 10)
 
-    model.fit_generator(database.train_dataset, epochs=20, validation_data=database.test_dataset,
+    model.fit_generator(database.train_subset, epochs=20, validation_data=database.test_subset,
                         callbacks=[tensorboard])
 
     model.save_weights(os.path.join(log_dir, "weights.h5"))
@@ -207,17 +207,17 @@ def main():
     model = get_model(mode)
 
     database = get_ucsd_database(True, False)
-    train_dataset = database.train_dataset
-    test_dataset = database.test_dataset
+    train_subset = database.train_subset
+    test_subset = database.test_subset
 
     model.compile(optimizer=Adam(lr=1e-3), loss="mse", metrics=["mse"])
 
     # model.load_weights("../logs/tests/conv3d_rec_pred/{}/1551190470/weights.h5".format(mode))
 
     train_model(model, database, mode)
-    visualize_model_errors(model, test_dataset)
-    visualize_model_errors(model, train_dataset)
-    evaluate_model_anomaly_detection_on_dataset(model, test_dataset, 500, 8)
+    visualize_model_errors(model, test_subset)
+    visualize_model_errors(model, train_subset)
+    evaluate_model_anomaly_detection_on_subset(model, test_subset, 500, 8)
 
 
 if __name__ == "__main__":

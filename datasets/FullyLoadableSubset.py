@@ -4,39 +4,39 @@ import cv2
 import copy
 from typing import List
 
-from datasets import Dataset
+from datasets import Subset
 from data_preprocessors import DataPreprocessor
 
 
-class FullyLoadableDataset(Dataset, ABC):
+class FullyLoadableSubset(Subset, ABC):
     # region Initialization
     def __init__(self,
                  input_sequence_length: int or None,
                  output_sequence_length: int or None,
-                 dataset_path: str,
+                 subset_path: str,
                  epoch_length: int,
                  batch_size=64,
                  data_preprocessors: List[DataPreprocessor] = None,
                  shuffle_on_epoch_end=True,
                  **kwargs):
-        self.dataset_path = dataset_path
+        self.subset_path = subset_path
         self.videos = None
         self.pixel_labels = None
         self._frame_labels = None
-        super(FullyLoadableDataset, self).__init__(input_sequence_length=input_sequence_length,
-                                                   output_sequence_length=output_sequence_length,
-                                                   data_preprocessors=data_preprocessors,
-                                                   batch_size=batch_size,
-                                                   epoch_length=epoch_length,
-                                                   shuffle_on_epoch_end=shuffle_on_epoch_end,
-                                                   **kwargs)
+        super(FullyLoadableSubset, self).__init__(input_sequence_length=input_sequence_length,
+                                                  output_sequence_length=output_sequence_length,
+                                                  data_preprocessors=data_preprocessors,
+                                                  batch_size=batch_size,
+                                                  epoch_length=epoch_length,
+                                                  shuffle_on_epoch_end=shuffle_on_epoch_end,
+                                                  **kwargs)
 
     def make_copy(self, copy_inputs=False, copy_labels=False):
-        dataset_type = type(self)
-        other: FullyLoadableDataset = dataset_type(dataset_path=self.dataset_path,
-                                                   input_sequence_length=self.input_sequence_length,
-                                                   output_sequence_length=self.output_sequence_length,
-                                                   epoch_length=self.epoch_length)
+        subset_type = type(self)
+        other: FullyLoadableSubset = subset_type(subset_path=self.subset_path,
+                                                 input_sequence_length=self.input_sequence_length,
+                                                 output_sequence_length=self.output_sequence_length,
+                                                 epoch_length=self.epoch_length)
         other.data_preprocessors = self.data_preprocessors
         other.batch_size = self.batch_size
         other.shuffle_on_epoch_end = self.shuffle_on_epoch_end
@@ -59,7 +59,7 @@ class FullyLoadableDataset(Dataset, ABC):
     # endregion
 
     def normalize(self, current_min, current_max, target_min=0.0, target_max=1.0):
-        super(FullyLoadableDataset, self).normalize(current_min, current_max, target_min, target_max)
+        super(FullyLoadableSubset, self).normalize(current_min, current_max, target_min, target_max)
         multiplier = (target_max - target_min) / (current_max - current_min)
         for i in range(self.videos_count):
             self.videos[i] = (self.videos[i] - current_min) * multiplier + target_min
@@ -94,18 +94,18 @@ class FullyLoadableDataset(Dataset, ABC):
 
     # region Resizing
     def resized(self, size, input_sequence_length, output_sequence_length):
-        dataset = self.make_copy(copy_inputs=False, copy_labels=False)
-        dataset.videos = self.resized_videos(size)
-        dataset.input_sequence_length = input_sequence_length
-        dataset.output_sequence_length = output_sequence_length
+        subset = self.make_copy(copy_inputs=False, copy_labels=False)
+        subset.videos = self.resized_videos(size)
+        subset.input_sequence_length = input_sequence_length
+        subset.output_sequence_length = output_sequence_length
 
         if self._frame_labels is not None:
-            dataset._frame_labels = np.copy(self._frame_labels)
+            subset._frame_labels = np.copy(self._frame_labels)
 
         if self.pixel_labels is not None:
-            dataset.pixel_labels = self.resized_pixel_labels(size)
+            subset.pixel_labels = self.resized_pixel_labels(size)
 
-        return dataset
+        return subset
 
     def resized_videos(self, size):
         return resize_videos(self.videos, size)

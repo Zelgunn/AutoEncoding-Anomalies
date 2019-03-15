@@ -180,10 +180,10 @@ def get_database():
     subway_database = subway_database.resized(image_size=(96, 128), input_sequence_length=8, output_sequence_length=8)
     subway_database.normalize(0.0, 1.0)
 
-    subway_database.train_dataset.epoch_length = 250
-    subway_database.train_dataset.batch_size = 16
-    subway_database.test_dataset.epoch_length = 25
-    subway_database.test_dataset.batch_size = 2
+    subway_database.train_subset.epoch_length = 250
+    subway_database.train_subset.batch_size = 16
+    subway_database.test_subset.epoch_length = 25
+    subway_database.test_subset.batch_size = 2
 
     return subway_database
 
@@ -199,7 +199,7 @@ def main():
     log_dir = os.path.normpath(log_dir)
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="batch")
 
-    model.fit_generator(database.train_dataset, epochs=2, validation_data=database.test_dataset,
+    model.fit_generator(database.train_subset, epochs=2, validation_data=database.test_subset,
                         callbacks=[tensorboard])
 
     key = 13
@@ -213,7 +213,7 @@ def main():
         if key != -1:
             seed += 1
 
-            x, y_true = database.test_dataset.get_batch(seed=seed)
+            x, y_true = database.test_subset.get_batch(seed=seed)
             y_pred = model.predict(x)
             i = 0
 

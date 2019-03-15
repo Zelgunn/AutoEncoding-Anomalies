@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from models import AutoEncoderBaseModel, conv_type, KerasModel
 from callbacks import RunModel, AUCCallback
-from datasets import Database, Dataset
+from datasets import Database, Subset
 
 
 class VariationalBaseModel(AutoEncoderBaseModel, ABC):
@@ -102,7 +102,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     # endregion
 
     # region Testing
-    def visualize_vae_interpolation(self, dataset: Dataset):
+    def visualize_vae_interpolation(self, subset: Subset):
         encoder_input = self.encoder.get_input_at(0)
         _, latent_mean, latent_log_var = self.encoder(encoder_input)
 
@@ -110,8 +110,8 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         decoder_output = self.decoder.get_output_at(0)
 
         interpolation_count = 16
-        input_video, output_video = dataset.get_batch(batch_size=1, seed=None, apply_preprocess_step=False,
-                                                      max_shard_count=1)
+        input_video, output_video = subset.get_batch(batch_size=1, seed=None, apply_preprocess_step=False,
+                                                     max_shard_count=1)
         session = K.get_session()
 
         mean, log_var = session.run([latent_mean, latent_log_var], feed_dict={encoder_input: input_video})
@@ -152,12 +152,12 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     # region Callbacks
     # def build_anomaly_callbacks(self, database: Database):
     #     database = self.resized_database(database)
-    #     test_dataset = database.test_dataset
+    #     test_subset = database.test_subset
     #     anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(database)
     #
-    #     samples = test_dataset.sample(batch_size=512, seed=16, sampled_videos_count=16, return_labels=True)
+    #     samples = test_subset.sample(batch_size=512, seed=16, sampled_videos_count=16, return_labels=True)
     #     videos, frame_labels, _ = samples
-    #     videos = test_dataset.divide_batch_io(videos)
+    #     videos = test_subset.divide_batch_io(videos)
     #
     #     n_predictions_model = self.n_predictions(n=24)
     #

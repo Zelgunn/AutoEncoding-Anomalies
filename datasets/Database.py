@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from data_preprocessors import DataPreprocessor, RandomCropper
-from datasets import Dataset
+from datasets import Subset
 
 
 class Database(ABC):
@@ -18,8 +18,8 @@ class Database(ABC):
         self.train_preprocessors = train_preprocessors or []
         self.test_preprocessors = test_preprocessors or []
         self._require_saving = False
-        self.train_dataset: Dataset = None
-        self.test_dataset: Dataset = None
+        self.train_subset: Subset = None
+        self.test_subset: Subset = None
 
     @abstractmethod
     def load(self):
@@ -30,12 +30,12 @@ class Database(ABC):
         raise NotImplementedError
 
     def on_epoch_end(self):
-        self.train_dataset.on_epoch_end()
-        self.test_dataset.on_epoch_end()
+        self.train_subset.on_epoch_end()
+        self.test_subset.on_epoch_end()
 
     @property
     def images_size(self):
-        return self.train_dataset.images_size
+        return self.train_subset.images_size
 
     def resized(self, image_size, input_sequence_length, output_sequence_length):
         if self.images_size == image_size:
@@ -47,15 +47,15 @@ class Database(ABC):
         database: Database = database_type(self.database_path, input_sequence_length, output_sequence_length)
 
         if cropper_in_preprocessors(self.train_preprocessors):
-            database.train_dataset = self.train_dataset
+            database.train_subset = self.train_subset
         else:
-            database.train_dataset = self.train_dataset.resized(image_size, input_sequence_length,
-                                                                output_sequence_length)
+            database.train_subset = self.train_subset.resized(image_size, input_sequence_length,
+                                                              output_sequence_length)
 
         if cropper_in_preprocessors(self.test_preprocessors):
-            database.test_dataset = self.test_dataset
+            database.test_subset = self.test_subset
         else:
-            database.test_dataset = self.test_dataset.resized(image_size, input_sequence_length, output_sequence_length)
+            database.test_subset = self.test_subset.resized(image_size, input_sequence_length, output_sequence_length)
 
         database._require_saving = self._require_saving
 
