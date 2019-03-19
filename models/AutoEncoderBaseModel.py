@@ -9,7 +9,6 @@ from tensorflow.python.keras.optimizers import Adam, RMSprop
 from tensorflow.python.keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger
 from tensorflow.python.keras.callbacks import LearningRateScheduler
 from tensorflow.python.keras.backend import binary_crossentropy, get_session, set_learning_phase
-from tensorflow.python.keras.utils.generic_utils import to_list
 from tensorboard.plugins.pr_curve import summary as pr_summary
 
 import tensorflow as tf
@@ -29,6 +28,7 @@ from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
 from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
 from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper, GaussianBlurrer
+from utils.misc_utils import to_list
 
 
 # region Containers

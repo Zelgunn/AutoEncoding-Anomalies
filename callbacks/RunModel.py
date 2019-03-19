@@ -1,8 +1,9 @@
 import tensorflow as tf
 from tensorflow.python.keras.backend import get_session
-from tensorflow.python.keras.utils.generic_utils import to_list
 import numpy as np
 from typing import List
+
+from utils.misc_utils import to_list
 
 
 class RunModel(object):

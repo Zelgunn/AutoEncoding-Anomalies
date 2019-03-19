@@ -5,10 +5,10 @@ from tensorflow.python.keras.layers import Conv2DTranspose, Conv3DTranspose
 from tensorflow.python.keras.utils import conv_utils
 from tensorflow.python.keras import activations, initializers, regularizers, constraints
 from tensorflow.python.keras import backend
-from tensorflow.python.keras.utils.generic_utils import to_list
 from typing import Tuple, List, Union, AnyStr, Callable, Dict
 
 from layers import CompositeLayer
+from utils.misc_utils import to_list
 
 
 # region Basic blocks
