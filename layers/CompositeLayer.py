@@ -1,4 +1,4 @@
-from keras.layers import Layer
+from tensorflow.python.keras.engine.base_layer import Layer
 from typing import Tuple
 
 

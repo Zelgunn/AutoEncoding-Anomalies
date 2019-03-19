@@ -1,10 +1,14 @@
 import tensorflow as tf
+from keras.models import Model
+from keras.layers import Input, Conv3D, Conv3DTranspose, Layer
 import cv2
 import numpy as np
 import json
 from datasets import VideoDatasetV2, DatasetConfigV2
+from layers import ResBlock3D, DenseBlock3D
 
-tf.enable_eager_execution()
+
+# tf.enable_eager_execution()
 
 
 # region Helpers
@@ -20,11 +24,25 @@ def _bytes_feature(values):
 
 # endregion
 
-
 train_filepath = r"..\datasets\ucsd\ped2\Train_{}.tfrecord"
 
 dataset = VideoDatasetV2(r"..\datasets\ucsd\ped2", DatasetConfigV2(16, 32))
 subset = dataset.train_subset
+iterator = subset.make_tensorflow_dataset(6)
+
+input_layer = tf.keras.layers.Input(shape=(32, 240, 360, 1))
+layer = input_layer
+layer = tf.keras.layers.Conv3D(filters=8, kernel_size=3, strides=2, padding="same")(layer)
+layer = ResBlock3D(filters=8, kernel_size=3, strides=2, basic_block_count=2)(layer)
+layer = ResBlock3D(filters=8, kernel_size=3, strides=1, basic_block_count=2)(layer)
+layer = DenseBlock3D(kernel_size=3, growth_rate=4, depth=4)(layer)
+layer = tf.keras.layers.Conv3DTranspose(filters=16, kernel_size=3, strides=2, padding="same")(layer)
+layer = tf.keras.layers.Conv3DTranspose(filters=8, kernel_size=3, strides=2, padding="same")(layer)
+model = tf.keras.models.Model(inputs=input_layer, outputs=layer)
+model.compile("adam", loss="mse")
+model.fit(iterator, epochs=10, steps_per_epoch=30)
+model.train_on_batch(iterator)
+
 exit()
 
 

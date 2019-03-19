@@ -1,7 +1,9 @@
-from keras.layers import InputSpec, Conv1D, Conv2D, Conv3D, BatchNormalization
-from keras.utils import conv_utils
-from keras import activations, initializers, regularizers, constraints
-from keras import backend as K
+import tensorflow as tf
+from tensorflow.python.keras.layers import InputSpec
+from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
+from tensorflow.python.keras.layers import BatchNormalization, concatenate
+from tensorflow.python.keras.utils import conv_utils
+from tensorflow.python.keras import activations, initializers, regularizers, constraints
 from typing import List
 
 from layers import CompositeLayer
@@ -155,7 +157,7 @@ class _DenseBlock(CompositeLayer):
 
         self.use_batch_normalization = use_batch_normalization
 
-        self.data_format = K.normalize_data_format(data_format)
+        self.data_format = conv_utils.normalize_data_format(data_format)
         self.channel_axis = -1 if self.data_format == "channels_last" else 1
 
         self.activation = activations.get(activation)
@@ -207,7 +209,7 @@ class _DenseBlock(CompositeLayer):
         intermediate_shape = list(input_shape)
         self.input_spec = InputSpec(ndim=self.rank + 2, axes={self.channel_axis: input_dim})
 
-        with K.name_scope("dense_block_weights"):
+        with tf.name_scope("dense_block_weights"):
             for i in range(self._depth):
                 self.build_sub_layer(self.composite_function_blocks[i], tuple(intermediate_shape))
                 intermediate_shape[self.channel_axis] += self.growth_rate
@@ -221,12 +223,12 @@ class _DenseBlock(CompositeLayer):
         inputs_list = [inputs]
         layer = inputs
 
-        with K.name_scope("dense_block"):
+        with tf.name_scope("dense_block"):
             for i in range(self._depth):
                 layer = self.composite_function_blocks[i](layer)
 
                 inputs_list.append(layer)
-                layer = K.concatenate(inputs_list, axis=-1)
+                layer = concatenate(inputs_list, axis=-1)
 
         if self.transition_layer is not None:
             layer = self.transition_layer(layer)

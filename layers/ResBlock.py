@@ -1,10 +1,11 @@
-from keras.layers import InputSpec
-from keras.layers import Conv1D, Conv2D, Conv3D
-from keras.layers import Deconv2D, Deconv3D
-from keras.utils import conv_utils
-from keras.utils.generic_utils import to_list
-from keras import activations, initializers, regularizers, constraints
-from keras import backend as K
+import tensorflow as tf
+from tensorflow.python.keras.layers import InputSpec
+from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
+from tensorflow.python.keras.layers import Conv2DTranspose, Conv3DTranspose
+from tensorflow.python.keras.utils import conv_utils
+from tensorflow.python.keras import activations, initializers, regularizers, constraints
+from tensorflow.python.keras import backend
+from tensorflow.python.keras.utils.generic_utils import to_list
 from typing import Tuple, List, Union, AnyStr, Callable, Dict
 
 from layers import CompositeLayer
@@ -42,7 +43,7 @@ class ResBasicBlockND(CompositeLayer):
         self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, "kernel_size")
         self.strides = conv_utils.normalize_tuple(strides, rank, "strides")
 
-        self.data_format = K.normalize_data_format(data_format)
+        self.data_format = conv_utils.normalize_data_format(data_format)
         self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, "dilation_rate")
         self.activation = activations.get(activation)
         self.use_bias = use_bias
@@ -71,7 +72,7 @@ class ResBasicBlockND(CompositeLayer):
         conv_layer_type = self.get_conv_layer_type()
         for i in range(self.depth):
             strides = self.strides if (i == 0) else 1
-            kernel_initializer = self.kernel_initializer if (i == 0) else K.zeros
+            kernel_initializer = self.kernel_initializer if (i == 0) else tf.zeros_initializer
             conv_layer = conv_layer_type(filters=self.filters,
                                          kernel_size=self.kernel_size,
                                          strides=strides,
@@ -105,7 +106,7 @@ class ResBasicBlockND(CompositeLayer):
         self.init_layers(input_shape)
         intermediate_shape = input_shape
 
-        with K.name_scope("residual_basic_block_weights"):
+        with tf.name_scope("residual_basic_block_weights"):
             for i in range(self.depth):
                 self.build_sub_layer(self.conv_layers[i], intermediate_shape)
                 intermediate_shape = self.conv_layers[i].compute_output_shape(intermediate_shape)
@@ -113,20 +114,21 @@ class ResBasicBlockND(CompositeLayer):
             if self.projection_layer is not None:
                 self.build_sub_layer(self.projection_layer, input_shape)
 
-            self.residual_multiplier = self.add_weight(name="residual_multiplier", shape=[], dtype=K.floatx(),
-                                                       initializer=K.ones)
+            self.residual_multiplier = self.add_weight(name="residual_multiplier", shape=[], dtype=backend.floatx(),
+                                                       initializer=tf.ones_initializer)
             if self.use_bias:
                 for i in range(self.depth):
-                    conv_bias = self.add_weight(name="conv_bias", shape=[], dtype=K.floatx(), initializer=K.zeros)
+                    conv_bias = self.add_weight(name="conv_bias", shape=[], dtype=backend.floatx(),
+                                                initializer=tf.zeros_initializer)
                     self.conv_biases.append(conv_bias)
 
                     if i < (self.depth - 1):
-                        activation_bias = self.add_weight(name="activation_bias", shape=[], dtype=K.floatx(),
-                                                          initializer=K.zeros)
+                        activation_bias = self.add_weight(name="activation_bias", shape=[], dtype=backend.floatx(),
+                                                          initializer=tf.zeros_initializer)
                         self.activation_biases.append(activation_bias)
 
-                self.residual_bias = self.add_weight(name="residual_bias", shape=[], dtype=K.floatx(),
-                                                     initializer=K.zeros)
+                self.residual_bias = self.add_weight(name="residual_bias", shape=[], dtype=backend.floatx(),
+                                                     initializer=tf.zeros_initializer)
 
         self.input_spec = InputSpec(ndim=self.rank + 2, axes={self.channel_axis: input_shape[self.channel_axis]})
         super(ResBasicBlockND, self).build(input_shape)
@@ -144,7 +146,7 @@ class ResBasicBlockND(CompositeLayer):
                         outputs = outputs + self.activation_biases[i]
                     outputs = self.activation(outputs)
 
-        if self.use_projection(K.int_shape(inputs)):
+        if self.use_projection(backend.int_shape(inputs)):
             inputs = self.projection_layer(inputs)
 
         # x_k+1 = x_k + a*f(x_k) + b
@@ -157,7 +159,7 @@ class ResBasicBlockND(CompositeLayer):
         return outputs
 
     def use_projection(self, input_shape):
-        strides = to_list(self.strides, allow_tuple=True)
+        strides = to_list(self.strides)
         for stride in strides:
             if stride != 1:
                 return True
@@ -227,7 +229,7 @@ class ResBasicBlock1D(ResBasicBlockND):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -260,7 +262,7 @@ class ResBasicBlock2D(ResBasicBlockND):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -293,7 +295,7 @@ class ResBasicBlock3D(ResBasicBlockND):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -320,17 +322,17 @@ class ResBasicBlock3D(ResBasicBlockND):
 class ResBasicBlockNDTranspose(ResBasicBlockND):
     def get_conv_layer_type(self):
         assert self.rank in [2, 3]
-        return Deconv2D if self.rank is 2 else Deconv3D
+        return Conv2DTranspose if self.rank is 2 else Conv3DTranspose
 
     def compute_output_shape(self, input_shape):
         def get_new_space(space):
             new_space = []
             for i in range(len(space)):
-                new_dim = conv_utils.deconv_length(
+                new_dim = conv_utils.deconv_output_length(
                     space[i],
-                    self.strides[i],
                     self.kernel_size[i],
                     padding="same",
+                    stride=self.strides[i],
                     output_padding=None)
                 new_space.append(new_dim)
             return tuple(new_space)
@@ -349,7 +351,7 @@ class ResBasicBlock2DTranspose(ResBasicBlockNDTranspose):
                  data_format=None,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -384,7 +386,7 @@ class ResBasicBlock3DTranspose(ResBasicBlockNDTranspose):
                  data_format=None,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -447,7 +449,7 @@ class ResBlockND(CompositeLayer):
         self.kernel_size = conv_utils.normalize_tuple(kernel_size, rank, "kernel_size")
         self.strides = conv_utils.normalize_tuple(strides, rank, "strides")
 
-        self.data_format = K.normalize_data_format(data_format)
+        self.data_format = conv_utils.normalize_data_format(data_format)
         self.dilation_rate = conv_utils.normalize_tuple(dilation_rate, rank, "dilation_rate")
         self.activation = activations.get(activation)
         self.use_bias = use_bias
@@ -490,7 +492,7 @@ class ResBlockND(CompositeLayer):
 
         intermediate_shape = input_shape
 
-        with K.name_scope("residual_block_weights"):
+        with tf.name_scope("residual_block_weights"):
             for i in range(self.basic_block_count):
                 basic_block = self.basic_blocks[i]
                 self.build_sub_layer(basic_block, intermediate_shape)
@@ -501,7 +503,7 @@ class ResBlockND(CompositeLayer):
 
     def call(self, inputs, **kwargs):
         layer = inputs
-        with K.name_scope("residual_block"):
+        with tf.name_scope("residual_block"):
             for basic_block in self.basic_blocks:
                 layer = basic_block(layer)
         return layer
@@ -572,7 +574,7 @@ class ResBlock1D(ResBlockND):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -608,7 +610,7 @@ class ResBlock2D(ResBlockND):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -644,7 +646,7 @@ class ResBlock3D(ResBlockND):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -695,11 +697,11 @@ class ResBlockNDTranspose(ResBlockND):
         def get_new_space(space):
             new_space = []
             for i in range(len(space)):
-                new_dim = conv_utils.deconv_length(
+                new_dim = conv_utils.deconv_output_length(
                     space[i],
-                    self.strides[i],
                     self.kernel_size[i],
                     padding="same",
+                    stride=self.strides[i],
                     output_padding=None)
                 new_space.append(new_dim)
             return tuple(new_space)
@@ -721,7 +723,7 @@ class ResBlock2DTranspose(ResBlockNDTranspose):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
@@ -759,7 +761,7 @@ class ResBlock3DTranspose(ResBlockNDTranspose):
                  dilation_rate=1,
                  activation="relu",
                  use_bias=True,
-                 kernel_initializer="glorot_uniform",
+                 kernel_initializer="he_normal",
                  bias_initializer="zeros",
                  kernel_regularizer=None,
                  bias_regularizer=None,
