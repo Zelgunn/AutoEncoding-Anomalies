@@ -717,12 +717,13 @@ class AutoEncoderBaseModel(ABC):
             print("\n==== Training was stopped by a Keyboard Interrupt ====\n")
         callbacks.on_train_end()
 
-        self.on_train_end(dataset)
+        self.on_train_end()
 
     def train_loop(self, dataset: Dataset, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
         dataset = self.resized_dataset(dataset)
         dataset.train_subset.epoch_length = epoch_length
         dataset.train_subset.batch_size = batch_size
+        dataset.test_subset.epoch_length = 64
         dataset.test_subset.batch_size = batch_size
 
         for _ in range(epochs):
@@ -775,7 +776,7 @@ class AutoEncoderBaseModel(ABC):
 
         self.epochs_seen += 1
 
-        if self.epochs_seen % 1 == 0 or self.epochs_seen > 15:
+        if self.epochs_seen % 1 == 0:
             predictions, labels, lengths = self.predict_anomalies(dataset)
             roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
             print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
@@ -791,14 +792,10 @@ class AutoEncoderBaseModel(ABC):
 
         self.save_models_info(self.log_dir)
 
-    def on_train_end(self, dataset: Dataset):
+    def on_train_end(self):
         print("============== Saving models weights... ==============")
         self.save_weights()
         print("======================= Done ! =======================")
-
-        roc_and_pr = self.predict_and_evaluate(dataset, stride=1)
-        with open(os.path.join(self.log_dir, "results.txt"), "w") as results_file:
-            results_file.write("ROC = {}|PR  = {}\n".format(*roc_and_pr))
 
     # endregion
 

@@ -3,19 +3,19 @@ import numpy as np
 from typing import Dict, List
 import os
 
-from datasets import SubsetV2
+from datasets import SubsetV2, DatasetConfigV2
 
 
 class VideoSubsetV2(SubsetV2):
-    def __init__(self, records_dict: Dict[str, List[str]]):
-        super(VideoSubsetV2, self).__init__()
+    def __init__(self, records_dict: Dict[str, List[str]], config: DatasetConfigV2):
+        super(VideoSubsetV2, self).__init__(config=config)
+
         self.records_dict = records_dict
         self.videos_filepath = list(self.records_dict.keys())
 
         self.REC_BATCH_SIZE = 32
-        self.SEQ_NUM_FRAMES = 32
 
-        self.shards_per_sample = (self.SEQ_NUM_FRAMES // self.REC_BATCH_SIZE) + 1
+        self.shards_per_sample = (self.config.output_sequence_length // self.REC_BATCH_SIZE) + 1
 
     def video_filepath_generator(self):
         for i in range(500):
@@ -60,8 +60,9 @@ class VideoSubsetV2(SubsetV2):
 
     def join_shards(self, shards, shards_length):
         total_length = tf.cast(tf.reduce_sum(shards_length), tf.int64)
-        offset = tf.random.uniform(shape=(), minval=0, maxval=total_length - self.SEQ_NUM_FRAMES, dtype=tf.int64)
+        offset = tf.random.uniform(shape=(), minval=0, maxval=total_length - self.config.output_sequence_length,
+                                   dtype=tf.int64)
         shard_count, shard_size, height, width, channels = tf.unstack(tf.shape(shards))
         shards = tf.reshape(shards, [shard_count * shard_size, height, width, channels])
-        shards = shards[offset:offset + self.SEQ_NUM_FRAMES]
+        shards = shards[offset:offset + self.config.output_sequence_length]
         return shards

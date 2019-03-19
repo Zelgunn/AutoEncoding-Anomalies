@@ -1,7 +1,8 @@
 import tensorflow as tf
 import cv2
 import numpy as np
-from datasets import VideoDatasetV2
+import json
+from datasets import VideoDatasetV2, DatasetConfigV2
 
 tf.enable_eager_execution()
 
@@ -22,6 +23,10 @@ def _bytes_feature(values):
 
 train_filepath = r"..\datasets\ucsd\ped2\Train_{}.tfrecord"
 
+dataset = VideoDatasetV2(r"..\datasets\ucsd\ped2", DatasetConfigV2(16, 32))
+subset = dataset.train_subset
+exit()
+
 
 def convert_function(video):
     encoded_frames = [tf.compat.as_bytes(cv2.imencode(".jpg", frame)[1].tobytes()) for frame in video]
@@ -30,24 +35,27 @@ def convert_function(video):
     return features
 
 
+SEQ_NUM_FRAMES = 32
+SHARD_SIZE = 32
+
+
 def encode():
     ucsd_filepath = r"..\datasets\ucsd\ped2\Train.npz"
     video = np.load(ucsd_filepath)["videos"]
     video = np.concatenate(video) * 255
 
-    batch_count = np.ceil(len(video) / REC_BATCH_SIZE).astype(np.int64)
+    batch_count = np.ceil(len(video) / SHARD_SIZE).astype(np.int64)
 
     for i in range(batch_count):
         filepath = train_filepath.format("2_{}".format(i))
         with tf.python_io.TFRecordWriter(filepath) as writer:
-            features = convert_function(video[i * REC_BATCH_SIZE:(i + 1) * REC_BATCH_SIZE])
+            features = convert_function(video[i * SHARD_SIZE:(i + 1) * SHARD_SIZE])
 
             tfrecord_example = tf.train.Example(features=tf.train.Features(feature=features))
             writer.write(tfrecord_example.SerializeToString())
 
-
-SEQ_NUM_FRAMES = 32
-REC_BATCH_SIZE = 32
+    with open(r"..\datasets\ucsd\ped2\header.json", 'w') as file:
+        json.dump({"shard_size": SHARD_SIZE}, file)
 
 
 def parse_shard(serialized_example):
@@ -62,13 +70,13 @@ def parse_shard(serialized_example):
                        dtype=tf.float32)
 
     def images_padded():
-        paddings = [[0, REC_BATCH_SIZE - shard_length], [0, 0], [0, 0], [0, 0]]
+        paddings = [[0, SHARD_SIZE - shard_length], [0, 0], [0, 0], [0, 0]]
         return tf.pad(images, paddings)
 
     def images_identity():
         return images
 
-    images = tf.cond(shard_length < REC_BATCH_SIZE,
+    images = tf.cond(shard_length < SHARD_SIZE,
                      images_padded,
                      images_identity)
 
@@ -82,7 +90,6 @@ def join_shards(shards, shards_length):
     shards = tf.reshape(shards, [shard_count * shard_size, height, width, channels])
     shards = shards[offset:offset + SEQ_NUM_FRAMES]
     return shards
-
 
 # def decode():
 #     steps = 32

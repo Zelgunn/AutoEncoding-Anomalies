@@ -36,7 +36,7 @@ alt_config_suffix_used = None
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/BasicAE/log_1552524728"
+previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/BasicAE/log_1552939125_blur_5_3x3_bright_20_ext"
 # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/VAE/log_1551958674"
 
 # region Config/Dataset selection
@@ -51,7 +51,7 @@ else:
 
 preview_test_subset = False
 allow_gpu_growth = False
-profile = True
+profile = False
 
 # region Model/Dataset initialization
 # region Model
@@ -97,12 +97,8 @@ dataset = auto_encoder.resized_dataset(dataset)
 print("===== Normalizing data between {0} and {1} for activation \"{2}\"  =====".format(
     *auto_encoder.output_range, auto_encoder.output_activation["name"]))
 dataset.normalize(*auto_encoder.output_range)
-
-seed = 8
-dataset.test_subset.epoch_length = 2
 # endregion
 # endregion
-
 
 # region Test subset preview
 if preview_test_subset:
@@ -125,7 +121,7 @@ K.set_session(session)
 if previous_weights_to_load is not None:
     previous_weights_to_load: str = previous_weights_to_load
     print("=> Loading weights from :", previous_weights_to_load)
-    auto_encoder.load_weights(previous_weights_to_load, epoch=100)
+    auto_encoder.load_weights(previous_weights_to_load, epoch=40)
 # endregion
 
 if profile:
@@ -134,7 +130,7 @@ if profile:
     print("===== Profiling activated ... =====")
     cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
 else:
-    auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)
+    auto_encoder.train(dataset, epoch_length=1000, epochs=500, batch_size=6)
 
 # TODO : Residual Scaling
 

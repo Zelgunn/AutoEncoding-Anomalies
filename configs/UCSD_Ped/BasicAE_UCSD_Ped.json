@@ -31,10 +31,10 @@
     {
         "train":
         {
-            "_blurring" : {"max_sigma" : 5.0, "kernel_size" : [3, 3]},
-            "cropping" : {"width_range" : 0.25},
-            "_brightness" : {"bias" : 0.5},
-            "_dropout_rate": 0.05
+            "blurring" : {"max_sigma" : 5.0, "kernel_size" : [3, 3]},
+            "_cropping" : {"width_range" : 0.25},
+            "brightness" : {"bias" : 0.2},
+            "_dropout_rate": 0.1
         },
         "test":
         {

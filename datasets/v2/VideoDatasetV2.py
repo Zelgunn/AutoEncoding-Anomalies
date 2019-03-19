@@ -1,13 +1,14 @@
 import os
 from typing import Dict
 
-from datasets import DatasetV2, VideoSubsetV2
+from datasets import DatasetV2, VideoSubsetV2, DatasetConfigV2
 
 
 class VideoDatasetV2(DatasetV2):
-    def __init__(self, dataset_path):
+    def __init__(self, dataset_path: str, config: DatasetConfigV2):
 
-        super(VideoDatasetV2, self).__init__(dataset_path)
+        super(VideoDatasetV2, self).__init__(dataset_path=dataset_path,
+                                             config=config)
 
         potential_subsets = []
         for element in os.listdir(dataset_path):
@@ -30,12 +31,14 @@ class VideoDatasetV2(DatasetV2):
 
         self.subsets: Dict[str: VideoSubsetV2] = {}
         for subset_name in subsets_dict:
-            self.subsets[subset_name.lower()] = VideoSubsetV2(subsets_dict[subset_name])
+            self.subsets[subset_name.lower()] = VideoSubsetV2(subsets_dict[subset_name], self.config)
 
     @property
     def train_subset(self) -> VideoSubsetV2:
-        return self.subsets["train"]
+        subset: VideoSubsetV2 = super(VideoDatasetV2, self).train_subset
+        return subset
 
     @property
     def test_subset(self) -> VideoSubsetV2:
-        return self.subsets["test"]
+        subset: VideoSubsetV2 = super(VideoDatasetV2, self).test_subset
+        return subset
