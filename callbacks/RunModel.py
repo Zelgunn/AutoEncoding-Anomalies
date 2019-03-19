@@ -1,6 +1,6 @@
 import tensorflow as tf
-from keras.backend import get_session
-from keras.utils.generic_utils import to_list
+from tensorflow.python.keras.backend import get_session
+from tensorflow.python.keras.utils.generic_utils import to_list
 import numpy as np
 from typing import List
 
@@ -10,8 +10,8 @@ class RunModel(object):
                  inputs: tf.Tensor or List,
                  outputs: tf.Tensor or List,
                  output_is_summary=False):
-        self.inputs = to_list(inputs, allow_tuple=True)
-        self.outputs = to_list(outputs, allow_tuple=True)
+        self.inputs = to_list(inputs)
+        self.outputs = to_list(outputs)
         self.output_is_summary = output_is_summary
 
     def run(self, x, session=None):
@@ -21,7 +21,7 @@ class RunModel(object):
             return self.predict(x, session)
 
     def predict(self, x, batch_size=32, session=None):
-        x = to_list(x, allow_tuple=True)
+        x = to_list(x)
         assert len(x) == len(self.inputs),\
             "Expected x to contain {0} inputs (received {1})".format(len(self.inputs), len(x))
 
@@ -48,7 +48,7 @@ class RunModel(object):
         return results
 
     def run_summary(self, x, session=None):
-        x = to_list(x, allow_tuple=True)
+        x = to_list(x)
         assert len(x) == len(self.inputs), \
             "Expected x to contain {0} inputs (received {1})".format(len(self.inputs), len(x))
 

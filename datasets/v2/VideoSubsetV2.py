@@ -13,26 +13,24 @@ class VideoSubsetV2(SubsetV2):
         self.records_dict = records_dict
         self.videos_filepath = list(self.records_dict.keys())
 
-        self.REC_BATCH_SIZE = 32
-
-        self.shards_per_sample = (self.config.output_sequence_length // self.REC_BATCH_SIZE) + 1
+        self.shards_per_sample = (self.config.output_sequence_length // self.config.shard_size) + 1
 
     def video_filepath_generator(self):
-        for i in range(500):
+        while True:
             video_index = np.random.randint(len(self.videos_filepath))
             video_path = self.videos_filepath[video_index]
             shards = self.records_dict[video_path]
             offset = np.random.randint(len(shards) - self.shards_per_sample + 1)
             yield [os.path.join(video_path, shard) for shard in shards[offset:offset + self.shards_per_sample]]
 
-    def make_iterator(self, batch_size):
+    def make_tensorflow_dataset(self, batch_size):
         dataset = tf.data.Dataset.from_generator(self.video_filepath_generator, tf.string)
         dataset = tf.data.TFRecordDataset(dataset)
         dataset = dataset.map(lambda shard: self.parse_shard(shard))
         dataset = dataset.batch(self.shards_per_sample)
         dataset = dataset.map(lambda shards, shards_length: self.join_shards(shards, shards_length))
         dataset = dataset.batch(batch_size)
-        return dataset.make_one_shot_iterator()
+        return dataset
 
     def parse_shard(self, serialized_example):
         features = {"video": tf.VarLenFeature(tf.string)}
@@ -46,13 +44,13 @@ class VideoSubsetV2(SubsetV2):
                            dtype=tf.float32)
 
         def images_padded():
-            paddings = [[0, self.REC_BATCH_SIZE - shard_length], [0, 0], [0, 0], [0, 0]]
+            paddings = [[0, self.config.shard_size - shard_length], [0, 0], [0, 0], [0, 0]]
             return tf.pad(images, paddings)
 
         def images_identity():
             return images
 
-        images = tf.cond(shard_length < self.REC_BATCH_SIZE,
+        images = tf.cond(shard_length < self.config.shard_size,
                          images_padded,
                          images_identity)
 

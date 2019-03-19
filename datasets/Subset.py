@@ -1,4 +1,4 @@
-from keras.utils import Sequence
+from tensorflow.python.keras.utils import Sequence
 from abc import ABC, abstractmethod
 import numpy as np
 from typing import List

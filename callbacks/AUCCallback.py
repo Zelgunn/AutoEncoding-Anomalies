@@ -1,4 +1,4 @@
-from keras.callbacks import TensorBoard
+from tensorflow.python.keras.callbacks import TensorBoard
 import numpy as np
 import tensorflow as tf
 from tensorboard.plugins.pr_curve import summary as pr_summary

@@ -1,9 +1,9 @@
-from keras.layers import Input, AveragePooling2D, Dense, Reshape, Conv2D
-from keras.models import Model
-from keras.datasets import cifar10
-from keras.utils.np_utils import to_categorical
-from keras.preprocessing.image import ImageDataGenerator
-from keras.regularizers import l2
+from tensorflow.python.keras.layers import Input, AveragePooling2D, Dense, Reshape, Conv2D
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.datasets import cifar10
+from tensorflow.python.keras.utils.np_utils import to_categorical
+from tensorflow.python.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.python.keras.regularizers import l2
 import numpy as np
 
 from layers import DenseBlock2D

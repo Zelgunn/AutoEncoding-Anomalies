@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf
 
-from keras.callbacks import Callback, TensorBoard
+from tensorflow.python.keras.callbacks import Callback, TensorBoard
 
 
 class TensorBoardPlugin(Callback, ABC):

@@ -1,5 +1,5 @@
-from keras.layers import Input, Dense, Reshape
-from keras.callbacks import CallbackList
+from tensorflow.python.keras.layers import Input, Dense, Reshape
+from tensorflow.python.keras.callbacks import CallbackList
 import numpy as np
 from typing import List
 

@@ -1,6 +1,6 @@
 import tensorflow as tf
-from keras.layers import Dense, Lambda, Reshape, Input
-import keras.backend as K
+from tensorflow.python.keras.layers import Dense, Lambda, Reshape, Input
+from tensorflow.python.keras import backend
 import numpy as np
 import cv2
 from abc import ABC
@@ -112,7 +112,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         interpolation_count = 16
         input_video, output_video = subset.get_batch(batch_size=1, seed=None, apply_preprocess_step=False,
                                                      max_shard_count=1)
-        session = K.get_session()
+        session = backend.get_session()
 
         mean, log_var = session.run([latent_mean, latent_log_var], feed_dict={encoder_input: input_video})
         stddev = np.sqrt(np.exp(log_var))

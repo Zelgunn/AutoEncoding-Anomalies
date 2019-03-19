@@ -1,4 +1,4 @@
-from keras.layers import Input
+from tensorflow.python.keras.layers import Input
 import tensorflow as tf
 
 from models import GAN, VariationalBaseModel, KerasModel, metrics_dict

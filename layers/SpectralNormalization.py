@@ -1,8 +1,7 @@
-from keras.layers import Wrapper
-from keras.layers import Dense, Conv2D, Deconv2D, Conv3D, Deconv3D
-from keras.initializers import RandomNormal
+from tensorflow.python.keras.layers import Wrapper
+from tensorflow.python.keras.layers import Dense, Conv2D, Conv2DTranspose, Conv3D, Conv3DTranspose
+from tensorflow.python.keras.initializers import RandomNormal
 from typing import List
-import keras.backend as K
 import tensorflow as tf
 
 from layers import ResBasicBlock1D, ResBasicBlock2D, ResBasicBlock3D, ResBasicBlock2DTranspose, ResBasicBlock3DTranspose
@@ -19,8 +18,8 @@ class WeightsInfo(object):
 KNOWN_WEIGHTS_NAMES = {Dense: "kernel",
                        Conv2D: "kernel",
                        Conv3D: "kernel",
-                       Deconv2D: "kernel",
-                       Deconv3D: "kernel",
+                       Conv2DTranspose: "kernel",
+                       Conv3DTranspose: "kernel",
                        ResBasicBlock1D: "kernels",
                        ResBasicBlock2D: "kernels",
                        ResBasicBlock3D: "kernels",
@@ -86,21 +85,21 @@ class SpectralNormalization(Wrapper):
         u_variable = weights_info.u
         weights = weights_info.weights
         weights_shape = weights.shape.as_list()
-        reshaped_weights = K.reshape(weights, [-1, weights_shape[-1]])
+        reshaped_weights = tf.reshape(weights, [-1, weights_shape[-1]])
 
         u, v = SpectralNormalization.power_iteration(reshaped_weights, u_variable)
-        sigma = v @ reshaped_weights @ K.transpose(u)
+        sigma = v @ reshaped_weights @ tf.transpose(u)
         weights_normalized = reshaped_weights / sigma
 
         with tf.control_dependencies([u_variable.assign(u)]):
-            weights_normalized = K.reshape(weights_normalized, weights_shape)
+            weights_normalized = tf.reshape(weights_normalized, weights_shape)
 
         return weights_normalized
 
     @staticmethod
     def power_iteration(weights: tf.Variable, u: tf.Variable):
-        v = K.l2_normalize(u @ K.transpose(weights))
-        u = K.l2_normalize(v @ weights)
+        v = tf.math.l2_normalize(u @ tf.transpose(weights))
+        u = tf.math.l2_normalize(v @ weights)
         return u, v
 
     def compute_output_shape(self, input_shape):

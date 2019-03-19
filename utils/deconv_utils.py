@@ -1,4 +1,4 @@
-from keras.layers import Deconv2D
+from tensorflow.python.keras.layers import Conv2DTranspose
 
 
 def make_deconv_layers_with_target(input_shape,
@@ -30,8 +30,8 @@ def make_deconv_layers_with_target(input_shape,
 
     deconv_layers = []
     for i in range(depth):
-        deconv_layer = Deconv2D(filters=filters[i], strides=strides[i], kernel_size=kernel_sizes[i],
-                                activation=activations[i])
+        deconv_layer = Conv2DTranspose(filters=filters[i], strides=strides[i], kernel_size=kernel_sizes[i],
+                                       activation=activations[i])
         deconv_layers.append(deconv_layer)
     return deconv_layers
 

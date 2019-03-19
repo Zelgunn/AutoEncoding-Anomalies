@@ -1,7 +1,7 @@
-from keras.models import Model
-from keras.layers import Input, AveragePooling3D, UpSampling3D, concatenate, Conv3D, ConvLSTM2D
-from keras.optimizers import Adam
-from keras.callbacks import TensorBoard
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.layers import Input, AveragePooling3D, UpSampling3D, concatenate, Conv3D, ConvLSTM2D
+from tensorflow.python.keras.optimizers import Adam
+from tensorflow.python.keras.callbacks import TensorBoard
 import cv2
 import numpy as np
 from time import time

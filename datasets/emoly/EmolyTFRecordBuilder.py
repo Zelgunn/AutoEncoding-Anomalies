@@ -1,10 +1,4 @@
-import tensorflow as tf
-import cv2
-import numpy as np
 import os
-import time
-
-
 
 
 class EmolyTFRecordBuilder(object):
@@ -18,8 +12,5 @@ class EmolyTFRecordBuilder(object):
     def videos_folder(self):
         return os.path.join(self.dataset_path, "video")
 
-
 # emoly_tf_record_builder = EmolyTFRecordBuilder("../datasets/emoly")
 # print(emoly_tf_record_builder.list_videos_filenames())
-
-v_d = VideoDatasetV2(r"C:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped2")

@@ -1,14 +1,14 @@
-import os
+# import os
+#
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
-from keras.layers import Input, AveragePooling2D, Dense, Reshape
-from keras.models import Model
-from keras.datasets import cifar10
-from keras.utils.np_utils import to_categorical
-from keras.preprocessing.image import ImageDataGenerator
-from keras.callbacks import TensorBoard
-from keras.initializers import VarianceScaling
+from tensorflow.python.keras.layers import Input, AveragePooling2D, Dense, Reshape
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.datasets import cifar10
+from tensorflow.python.keras.utils.np_utils import to_categorical
+from tensorflow.python.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.python.keras.callbacks import TensorBoard
+from tensorflow.python.keras.initializers import VarianceScaling
 import numpy as np
 import os
 from time import time

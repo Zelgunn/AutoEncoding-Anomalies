@@ -1,12 +1,15 @@
-from keras.models import Model as KerasModel
-from keras.layers import Activation, LeakyReLU, Dense, Dropout, Layer, Input, Reshape, Concatenate, BatchNormalization
-from keras.layers import Conv3D, Deconv3D, MaxPooling3D, AveragePooling3D, UpSampling3D
-from keras.initializers import VarianceScaling
-from keras.regularizers import l2
-from keras.optimizers import Adam, RMSprop
-from keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger, LearningRateScheduler
-from keras.backend import binary_crossentropy, get_session, set_learning_phase
-from keras.utils.generic_utils import to_list
+from tensorflow.python.keras.models import Model as KerasModel
+from tensorflow.python.keras.layers import Activation, LeakyReLU, Dense, Dropout, Input
+from tensorflow.python.keras.layers import Layer, Reshape, Concatenate
+from tensorflow.python.keras.layers import BatchNormalization
+from tensorflow.python.keras.layers import Conv3D, Conv3DTranspose, MaxPooling3D, AveragePooling3D, UpSampling3D
+from tensorflow.python.keras.initializers import VarianceScaling
+from tensorflow.python.keras.regularizers import l2
+from tensorflow.python.keras.optimizers import Adam, RMSprop
+from tensorflow.python.keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger
+from tensorflow.python.keras.callbacks import LearningRateScheduler
+from tensorflow.python.keras.backend import binary_crossentropy, get_session, set_learning_phase
+from tensorflow.python.keras.utils.generic_utils import to_list
 from tensorboard.plugins.pr_curve import summary as pr_summary
 
 import tensorflow as tf
@@ -155,7 +158,7 @@ metrics_dict = {"L1": absolute_error,
 # region Dynamic choice between Conv/ResBlock/DenseBlock/MaxPooling/...
 types_with_transpose = ["conv_block", "residual_block"]
 
-conv_type = {"conv_block": {False: Conv3D, True: Deconv3D},
+conv_type = {"conv_block": {False: Conv3D, True: Conv3DTranspose},
              "residual_block": {False: ResBlock3D, True: ResBlock3DTranspose},
              "dense_block": {False: DenseBlock3D}}
 

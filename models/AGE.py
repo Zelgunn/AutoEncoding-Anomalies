@@ -1,5 +1,5 @@
-from keras.layers import Input, Reshape
-from keras.callbacks import CallbackList
+from tensorflow.python.keras.layers import Input, Reshape
+from tensorflow.python.keras.callbacks import CallbackList
 import tensorflow as tf
 import numpy as np
 import copy

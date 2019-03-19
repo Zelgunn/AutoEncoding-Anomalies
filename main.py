@@ -1,11 +1,11 @@
 # region Select GPU
-import os
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# import os
+#
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # endregion
 
 # region Imports
-import keras.backend as K
+from tensorflow.python.keras import backend
 import tensorflow as tf
 import cv2
 
@@ -36,8 +36,8 @@ alt_config_suffix_used = None
 use_flow = False
 use_patches = False
 previous_weights_to_load = None
-previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/BasicAE/log_1552939125_blur_5_3x3_bright_20_ext"
-# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/VAE/log_1551958674"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/BasicAE/"
+# previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/VAE/"
 
 # region Config/Dataset selection
 dataset_class, dataset_path, dataset_config_alias = datasets_dict[dataset_used]
@@ -116,7 +116,7 @@ config = tf.ConfigProto(allow_soft_placement=True)
 config.gpu_options.allow_growth = allow_gpu_growth
 # config.gpu_options.per_process_gpu_memory_fraction = 0.95
 session = tf.Session(config=config)
-K.set_session(session)
+backend.set_session(session)
 
 if previous_weights_to_load is not None:
     previous_weights_to_load: str = previous_weights_to_load

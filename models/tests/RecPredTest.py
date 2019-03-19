@@ -1,7 +1,9 @@
-from keras.models import Model
-from keras.layers import Input, Conv3D, Deconv3D, BatchNormalization, LeakyReLU, MaxPooling3D, concatenate, UpSampling3D
-from keras.optimizers import Adam
-from keras.callbacks import TensorBoard
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.layers import Input, Conv3D, Conv3DTranspose
+from tensorflow.python.keras.layers import BatchNormalization, LeakyReLU, concatenate
+from tensorflow.python.keras.layers import MaxPooling3D, UpSampling3D
+from tensorflow.python.keras.optimizers import Adam
+from tensorflow.python.keras.callbacks import TensorBoard
 import os
 from time import time
 
@@ -73,15 +75,15 @@ def build_dense_block_encoder(input_layer):
 def build_conv_decoder(input_layer):
     layer = input_layer
 
-    layer = Deconv3D(kernel_size=3, filters=48, kernel_initializer="he_normal", padding="same", strides=2)(layer)
+    layer = Conv3DTranspose(kernel_size=3, filters=48, kernel_initializer="he_normal", padding="same", strides=2)(layer)
     layer = BatchNormalization()(layer)
     layer = LeakyReLU()(layer)
 
-    layer = Deconv3D(kernel_size=3, filters=32, kernel_initializer="he_normal", padding="same", strides=2)(layer)
+    layer = Conv3DTranspose(kernel_size=3, filters=32, kernel_initializer="he_normal", padding="same", strides=2)(layer)
     layer = BatchNormalization()(layer)
     layer = LeakyReLU()(layer)
 
-    layer = Deconv3D(kernel_size=3, filters=32, kernel_initializer="he_normal", padding="same", strides=2)(layer)
+    layer = Conv3DTranspose(kernel_size=3, filters=32, kernel_initializer="he_normal", padding="same", strides=2)(layer)
     layer = BatchNormalization()(layer)
     layer = LeakyReLU()(layer)
 

@@ -1,6 +1,6 @@
 import tensorflow as tf
-from keras.models import Model
-import keras.backend as K
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras import backend
 import cv2
 import numpy as np
 from tqdm import tqdm
@@ -89,7 +89,7 @@ def evaluate_model_anomaly_detection_one_video(model: Model,
 
     predictions = np.zeros(shape=predictions_shape)
     labels = np.zeros(shape=predictions_shape, dtype=np.bool)
-    session = K.get_session()
+    session = backend.get_session()
     for i in tqdm(range(steps_count), desc="Computing errors..."):
         start = i * stride
         end = start + output_sequence_length

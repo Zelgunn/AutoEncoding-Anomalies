@@ -1,14 +1,18 @@
 import os
 from typing import Dict
+import json
 
 from datasets import DatasetV2, VideoSubsetV2, DatasetConfigV2
 
 
 class VideoDatasetV2(DatasetV2):
     def __init__(self, dataset_path: str, config: DatasetConfigV2):
-
         super(VideoDatasetV2, self).__init__(dataset_path=dataset_path,
                                              config=config)
+
+        with open(os.path.join(dataset_path, "header.json"), 'r') as file:
+            header = json.load(file)
+            self.config.shard_size = header["shard_size"]
 
         potential_subsets = []
         for element in os.listdir(dataset_path):

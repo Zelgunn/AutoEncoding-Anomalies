@@ -1,4 +1,4 @@
-from keras.callbacks import TensorBoard
+from tensorflow.python.keras.callbacks import TensorBoard
 import numpy as np
 from typing import List
 

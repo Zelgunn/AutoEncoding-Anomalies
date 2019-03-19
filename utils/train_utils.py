@@ -1,4 +1,4 @@
-from keras import Model
+from tensorflow.python.keras import Model
 import os
 from time import time
 

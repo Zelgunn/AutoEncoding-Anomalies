@@ -1,5 +1,5 @@
-from keras .models import Model as KerasModel
-from keras.callbacks import Callback
+from tensorflow.python.keras .models import Model as KerasModel
+from tensorflow.python.keras.callbacks import Callback
 from typing import Dict
 import os
 

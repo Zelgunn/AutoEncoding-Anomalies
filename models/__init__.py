@@ -1,4 +1,4 @@
-from keras.models import Model as KerasModel
+from tensorflow.python.keras.models import Model as KerasModel
 from models.AutoEncoderBaseModel import metrics_dict, conv_type, LayerBlock, LayerStack
 from models.AutoEncoderBaseModel import AutoEncoderBaseModel
 from models.VariationalBaseModel import VariationalBaseModel
