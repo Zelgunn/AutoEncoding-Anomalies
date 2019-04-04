@@ -81,24 +81,24 @@ def parse_shard(serialized_example):
     parsed_features = tf.parse_single_example(serialized_example, features)
 
     encoded_shard = parsed_features["video"].values
-    shard_length = tf.shape(encoded_shard)[0]
+    shard_size = tf.shape(encoded_shard)[0]
 
     images = tf.map_fn(lambda i: tf.cast(tf.image.decode_jpeg(encoded_shard[i]), tf.float32),
-                       tf.range(shard_length),
+                       tf.range(shard_size),
                        dtype=tf.float32)
 
     def images_padded():
-        paddings = [[0, SHARD_SIZE - shard_length], [0, 0], [0, 0], [0, 0]]
+        paddings = [[0, SHARD_SIZE - shard_size], [0, 0], [0, 0], [0, 0]]
         return tf.pad(images, paddings)
 
     def images_identity():
         return images
 
-    images = tf.cond(shard_length < SHARD_SIZE,
+    images = tf.cond(shard_size < SHARD_SIZE,
                      images_padded,
                      images_identity)
 
-    return images, shard_length
+    return images, shard_size
 
 
 def join_shards(shards, shards_length):

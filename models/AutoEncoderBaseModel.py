@@ -184,6 +184,7 @@ class AutoEncoderBaseModel(ABC):
         self._decoder: KerasModel = None
         self._autoencoder: KerasModel = None
         self._raw_predictions_models: Dict[Tuple, RunModel] = {}
+        self._reconstructor_model: RunModel = None
 
         self.decoder_input_layer = None
         self.reconstructor_output = None
@@ -302,6 +303,10 @@ class AutoEncoderBaseModel(ABC):
 
         self.train_data_preprocessors = self.get_data_preprocessors(True)
         self.test_data_preprocessors = self.get_data_preprocessors(False)
+
+        seed = np.random.randint(2147483647)
+        self.config["seed"] = seed
+        tf.set_random_seed(seed)
 
     # region Data Preprocessors
     def get_data_preprocessors(self, train: bool):
@@ -848,50 +853,58 @@ class AutoEncoderBaseModel(ABC):
 
         return self._raw_predictions_models[reduction_axis]
 
-    def predict_anomalies(self,
-                          dataset: Dataset,
-                          stride=1,
-                          normalize_predictions=True):
+    def predict_anomalies_on_single_example(self, step_video: np.ndarray):
+        raw_predictions_model = self.get_anomalies_raw_predictions_model()
 
-        predictions, labels = self.predict_anomalies_on_subset(dataset.test_subset, stride)
+        step_predictions = raw_predictions_model.predict(x=[step_video, step_video], batch_size=1)
+        step_predictions = np.squeeze(step_predictions)
 
-        # train_predictions, train_labels = self.predict_anomalies_on_subset(dataset.train_subset, stride)
-        # predictions += train_predictions
-        # labels += train_labels
+        return step_predictions
 
-        lengths = np.empty(shape=[len(labels)], dtype=np.int32)
-        for i in range(len(labels)):
-            lengths[i] = len(labels[i])
-            if i > 0:
-                lengths[i] += lengths[i - 1]
+    # region Using attractors
+    def get_reconstructor_run_model(self) -> RunModel:
+        if self._reconstructor_model is None:
+            reconstructor = KerasModel(inputs=self.decoder_input_layer, outputs=self.reconstructor_output,
+                                       name="Reconstructor")
+            encoder_output = self.encoder(self.encoder.get_input_at(0))
+            if isinstance(encoder_output, list):
+                encoder_output = encoder_output[0]
+            pred_output = reconstructor(encoder_output)
 
-        predictions = np.concatenate(predictions)
-        labels = np.concatenate(labels)
+            inputs = self.encoder.get_input_at(0)
+            outputs = pred_output
 
-        if normalize_predictions:
-            predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
+            self._reconstructor_model = RunModel(inputs, outputs)
 
-        return predictions, labels, lengths
+        return self._reconstructor_model
 
-    def predict_anomalies_on_subset(self, subset: Subset, stride: int):
-        predictions, labels = [], []
+    def predict_anomalies_on_single_example_until_convergence(self,
+                                                              step_video: np.ndarray,
+                                                              convergence_threshold: float,
+                                                              max_iterations: int
+                                                              ):
+        reconstructor_run_model = self.get_reconstructor_run_model()
+        total_error = np.zeros([len(step_video)])
 
-        for video_index in range(subset.videos_count):
-            video_predictions, video_labels = self.predict_anomalies_on_video(subset, video_index, stride,
-                                                                              normalize_predictions=True)
+        for i in range(max_iterations):
+            reconstructed_video = reconstructor_run_model.predict(x=step_video, batch_size=1)
+            step_error = np.mean(np.square(reconstructed_video - step_video), axis=(2, 3, 4))
+            total_error += step_error
+            if step_error.mean() < convergence_threshold:
+                break
+            step_video = reconstructed_video
 
-            predictions.append(video_predictions)
-            labels.append(video_labels)
+        return total_error
 
-        return predictions, labels
+    # endregion
 
     def predict_anomalies_on_video(self,
                                    subset: Subset,
                                    video_index: int,
                                    stride: int,
-                                   normalize_predictions=False):
-        raw_predictions_model = self.get_anomalies_raw_predictions_model()
-
+                                   normalize_predictions=False,
+                                   convergence_threshold=None,
+                                   max_iterations=1):
         video_length = subset.get_video_length(video_index)
         steps_count = 1 + (video_length - self.input_sequence_length) // stride
         # video_length = steps_count * stride
@@ -915,8 +928,12 @@ class AutoEncoderBaseModel(ABC):
             step_video = subset.get_video_frames(video_index, start, end)
             step_video = np.expand_dims(step_video, axis=0)
 
-            step_predictions = raw_predictions_model.predict(x=[step_video, step_video], batch_size=1)
-            step_predictions = np.squeeze(step_predictions)
+            if convergence_threshold is None:
+                step_predictions = self.predict_anomalies_on_single_example(step_video)
+            else:
+                step_predictions = self.predict_anomalies_on_single_example_until_convergence(step_video,
+                                                                                              convergence_threshold,
+                                                                                              max_iterations)
 
             predictions[start: end] += step_predictions
             counts[start:end] += 1
@@ -929,6 +946,49 @@ class AutoEncoderBaseModel(ABC):
             # predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
 
         return predictions, video_labels
+
+    def predict_anomalies_on_subset(self,
+                                    subset: Subset,
+                                    stride: int,
+                                    convergence_threshold=None,
+                                    max_iterations=1):
+        predictions, labels = [], []
+
+        for video_index in range(subset.videos_count):
+            video_results = self.predict_anomalies_on_video(subset, video_index, stride,
+                                                            normalize_predictions=True,
+                                                            convergence_threshold=convergence_threshold,
+                                                            max_iterations=max_iterations)
+            video_predictions, video_labels = video_results
+            predictions.append(video_predictions)
+            labels.append(video_labels)
+
+        return predictions, labels
+
+    def predict_anomalies(self,
+                          dataset: Dataset,
+                          stride=1,
+                          normalize_predictions=True,
+                          convergence_threshold=None,
+                          max_iterations=1):
+        predictions, labels = self.predict_anomalies_on_subset(dataset.test_subset,
+                                                               stride,
+                                                               convergence_threshold,
+                                                               max_iterations)
+
+        lengths = np.empty(shape=[len(labels)], dtype=np.int32)
+        for i in range(len(labels)):
+            lengths[i] = len(labels[i])
+            if i > 0:
+                lengths[i] += lengths[i - 1]
+
+        predictions = np.concatenate(predictions)
+        labels = np.concatenate(labels)
+
+        if normalize_predictions:
+            predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
+
+        return predictions, labels, lengths
 
     def evaluate_predictions(self,
                              predictions: np.ndarray,
@@ -979,8 +1039,14 @@ class AutoEncoderBaseModel(ABC):
 
     def predict_and_evaluate(self,
                              dataset: Dataset,
-                             stride=1):
-        predictions, labels, lengths = self.predict_anomalies(dataset, stride=stride, normalize_predictions=True)
+                             stride=1,
+                             convergence_threshold=None,
+                             max_iterations=1):
+        predictions, labels, lengths = self.predict_anomalies(dataset,
+                                                              stride=stride,
+                                                              normalize_predictions=True,
+                                                              convergence_threshold=convergence_threshold,
+                                                              max_iterations=max_iterations)
         graph_filepath = os.path.join(self.log_dir, "Anomaly_score.png")
         roc, pr = self.evaluate_predictions(predictions, labels, lengths, graph_filepath)
         print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))

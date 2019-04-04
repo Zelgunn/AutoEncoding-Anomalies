@@ -5,6 +5,7 @@ from typing import List
 
 from datasets import PartiallyLoadableDataset
 from data_preprocessors import DataPreprocessor
+from datasets.tfrecord_builders import window_to_frame_labels
 
 
 class SubwayDataset(PartiallyLoadableDataset):
@@ -113,22 +114,13 @@ class SubwayDataset(PartiallyLoadableDataset):
         print('', end=os.linesep)
 
 
-def subway_anomaly_frame_labels(anomaly_windows, frame_count, skip=0):
-    skip += 1
-
-    labels = np.zeros(shape=[frame_count], dtype=np.bool)
-    for start, end in anomaly_windows:
-        labels[start // skip:end // skip] = True
-    return labels
-
-
 def subway_exit_anomaly_frame_labels(frame_count, skip=0):
     anomaly_windows = [(40880, 41160),
                        (41400, 41700),
                        (50410, 50710),
                        (50980, 51250),
                        (60160, 60940)]
-    return subway_anomaly_frame_labels(anomaly_windows, frame_count, skip)
+    return window_to_frame_labels(anomaly_windows, frame_count, skip)
 
 
 if __name__ == "__main__":

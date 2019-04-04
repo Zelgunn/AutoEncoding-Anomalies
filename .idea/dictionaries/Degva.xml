@@ -1,6 +1,7 @@
 <component name="ProjectDictionaryState">
   <dictionary name="Degva">
     <words>
+      <w>actee</w>
       <w>astype</w>
       <w>autoencode</w>
       <w>autoencoder</w>
@@ -8,17 +9,26 @@
       <w>degva</w>
       <w>divx</w>
       <w>emoly</w>
+      <w>farneback</w>
       <w>filenames</w>
+      <w>gaussians</w>
       <w>imshow</w>
+      <w>induit</w>
       <w>lenght</w>
       <w>lstm</w>
       <w>matplotlib</w>
+      <w>mfcc</w>
+      <w>ndarray</w>
+      <w>ndim</w>
       <w>paddings</w>
       <w>resampling</w>
       <w>softmax</w>
+      <w>spatio</w>
       <w>tensorflow</w>
       <w>tfrecord</w>
+      <w>tfrecords</w>
       <w>tqdm</w>
+      <w>winsize</w>
     </words>
   </dictionary>
 </component>

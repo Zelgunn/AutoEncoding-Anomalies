@@ -15,7 +15,7 @@ class VideoSubsetV2(SubsetV2):
 
         self.shards_per_sample = (self.config.output_sequence_length // self.config.shard_size) + 1
 
-    def video_filepath_generator(self):
+    def shard_filepath_generator(self):
         while True:
             video_index = np.random.randint(len(self.videos_filepath))
             video_path = self.videos_filepath[video_index]
@@ -24,7 +24,7 @@ class VideoSubsetV2(SubsetV2):
             yield [os.path.join(video_path, shard) for shard in shards[offset:offset + self.shards_per_sample]]
 
     def make_tensorflow_dataset(self, batch_size):
-        dataset = tf.data.Dataset.from_generator(self.video_filepath_generator, tf.string)
+        dataset = tf.data.Dataset.from_generator(self.shard_filepath_generator, tf.string)
         dataset = tf.data.TFRecordDataset(dataset)
         dataset = dataset.map(lambda shard: self.parse_shard(shard))
         dataset = dataset.batch(self.shards_per_sample)
@@ -37,24 +37,24 @@ class VideoSubsetV2(SubsetV2):
         parsed_features = tf.parse_single_example(serialized_example, features)
 
         encoded_shard = parsed_features["video"].values
-        shard_length = tf.shape(encoded_shard)[0]
+        shard_size = tf.shape(encoded_shard)[0]
 
         images = tf.map_fn(lambda i: tf.cast(tf.image.decode_jpeg(encoded_shard[i]), tf.float32),
-                           tf.range(shard_length),
+                           tf.range(shard_size),
                            dtype=tf.float32)
 
         def images_padded():
-            paddings = [[0, self.config.shard_size - shard_length], [0, 0], [0, 0], [0, 0]]
+            paddings = [[0, self.config.shard_size - shard_size], [0, 0], [0, 0], [0, 0]]
             return tf.pad(images, paddings)
 
         def images_identity():
             return images
 
-        images = tf.cond(shard_length < self.config.shard_size,
+        images = tf.cond(shard_size < self.config.shard_size,
                          images_padded,
                          images_identity)
 
-        return images, shard_length
+        return images, shard_size
 
     def join_shards(self, shards, shards_length):
         total_length = tf.cast(tf.reduce_sum(shards_length), tf.int64)

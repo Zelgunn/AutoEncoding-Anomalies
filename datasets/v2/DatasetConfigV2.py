@@ -4,3 +4,7 @@ class DatasetConfigV2(object):
         self.output_sequence_length = output_sequence_length
 
         self.shard_size = None
+
+    @property
+    def sample_length(self):
+        return self.output_sequence_length
