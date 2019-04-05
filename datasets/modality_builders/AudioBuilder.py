@@ -20,3 +20,6 @@ class AudioBuilder(ModalityBuilder):
 
     def get_buffer_shape(self, modality: str):
         raise NotImplementedError
+
+    def get_frame_count(self, modality: str) -> int:
+        raise NotImplementedError

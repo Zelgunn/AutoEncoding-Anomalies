@@ -15,7 +15,8 @@ class VideoReaderMode(IntEnum):
 class VideoReader(object):
     def __init__(self,
                  video_source: Union[str, cv2.VideoCapture, np.ndarray, List[str]],
-                 mode: VideoReaderMode = None):
+                 mode: VideoReaderMode = None,
+                 start=0, end=None):
 
         if mode is None:
             self.mode = infer_video_reader_mode(video_source)
@@ -35,25 +36,49 @@ class VideoReader(object):
                 self.video_capture = cv2.VideoCapture(video_source)
             else:
                 self.video_capture = video_source
+            max_frame_count = int(self.video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+
         elif self.mode == VideoReaderMode.NP_ARRAY:
             if isinstance(video_source, str):
                 self.video_array = np.load(video_source, mmap_mode="r")
             else:
                 self.video_array = video_source
+            max_frame_count = len(self.video_array)
+
         else:
             if isinstance(video_source, str):
                 images_names = os.listdir(video_source)
-                self.image_collection = [os.path.join(video_source, image_name) for image_name in images_names]
+                self.image_collection = [os.path.join(video_source, image_name) for image_name in images_names
+                                         if is_image_format_supported(image_name)]
                 self.image_collection = sorted(self.image_collection)
             else:
                 self.image_collection = video_source
+            max_frame_count = len(self.image_collection)
+        # endregion
+
+        # region End / Start
+        if end is None:
+            self.end = max_frame_count
+        elif end < 0:
+            self.end = max_frame_count + end
+        else:
+            self.end = min(end, max_frame_count)
+
+        if start is None:
+            self.start = 0
+        elif start < 0:
+            self.start = max_frame_count + start
+        else:
+            self.start = min(start, max_frame_count)
+
+        assert self.end > self.start
         # endregion
 
     def __iter__(self):
         if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
-            self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, self.start)
 
-        for i in range(self.frame_count):
+        for i in range(self.start, self.end):
             if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
                 ret, frame = self.video_capture.read()
             elif self.mode == VideoReaderMode.NP_ARRAY:
@@ -67,12 +92,13 @@ class VideoReader(object):
     # region Properties
     @property
     def frame_count(self):
-        if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
-            return int(self.video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        elif self.mode == VideoReaderMode.NP_ARRAY:
-            return len(self.video_array)
-        else:
-            return len(self.image_collection)
+        # if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
+        #     return int(self.video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        # elif self.mode == VideoReaderMode.NP_ARRAY:
+        #     return len(self.video_array)
+        # else:
+        #     return len(self.image_collection)
+        return self.end - self.start
 
     @property
     def frame_height(self):
@@ -148,7 +174,8 @@ def infer_video_reader_mode(video_source: Union[str, cv2.VideoCapture, np.ndarra
         return VideoReaderMode.IMAGE_COLLECTION
 
     elif not isinstance(video_source, str):
-        raise ValueError("\'video_source\' must either be a string, a VideoCapture, a ndarray or a list of strings")
+        raise ValueError("\'video_source\' must either be a string, a VideoCapture, a ndarray or a list of strings."
+                         "Received `{}` of with type `{}`".format(video_source, type(video_source)))
 
     elif os.path.isdir(video_source):
         return VideoReaderMode.IMAGE_COLLECTION
@@ -161,6 +188,19 @@ def infer_video_reader_mode(video_source: Union[str, cv2.VideoCapture, np.ndarra
 
     else:
         raise ValueError("\'video_source\' : {} does not exist.".format(video_source))
+
+
+def is_image_format_supported(image_name: str) -> bool:
+    # source : https://pillow.readthedocs.io/en/5.1.x/handbook/image-file-formats.html
+    image_name = image_name.lower()
+    supported_image_formats = [".bmp", ".eps", ".gif", ".icns", ".ico", ".im", ".jpg", ".jpeg", ".msp", ".pcx", ".png",
+                               ".ppm", ".sgi", ".spider", ".tif", ".tiff", ".xbm", ".blp", ".cur", ".dcx", ".dds",
+                               ".fli", ".flc", ".fpx", ".ftex", ".gbr", ".gd", ".imt", ".iptc", ".naa", ".mcidas",
+                               ".mic", ".mpo", ".pcd", ".pixar", ".psd", ".tga", ".wal", ".xpm"]
+    for image_format in supported_image_formats:
+        if image_name.endswith(image_format):
+            return True
+    return False
 
 
 def main():

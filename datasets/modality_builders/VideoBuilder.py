@@ -81,11 +81,11 @@ class VideoBuilder(ModalityBuilder):
             previous_frame = frame
 
             # region yield
-            if i % video_index_in_shard == 0:
+            if i % video_shard_size == 0:
                 yield shard
 
             if i == self.frame_count:
-                remain_size = i % video_index_in_shard
+                remain_size = i % video_shard_size
                 shard = {modality: shard[modality][:remain_size] for modality in shard}
                 yield shard
             # endregion
@@ -116,6 +116,9 @@ class VideoBuilder(ModalityBuilder):
             frame_size = None
 
         return frame_size
+
+    def get_frame_count(self, modality: str) -> int:
+        return self.frame_count
 
     # region Flow
     def get_flow_params(self):
@@ -169,12 +172,7 @@ class VideoBuilder(ModalityBuilder):
 # region Compute modalities
 def compute_raw(frame: np.ndarray,
                 frame_size: Tuple[int, int]):
-    raw = np.copy(frame)
-
-    frame_min = raw.min()
-    frame_max = raw.max()
-    if frame_max > 1.0 or frame_min < 0.0:
-        raw = (raw - frame_min) / (frame_max - frame_min)
+    raw = frame
 
     if frame_size is not None:
         raw = cv2.resize(raw, dsize=tuple(reversed(frame_size)))
@@ -191,6 +189,10 @@ def compute_flow(previous_frame: np.ndarray,
                  farneback_params: Dict,
                  use_polar: bool,
                  frame_size: Tuple[int, int]):
+    if frame.ndim == 3:
+        frame = frame.mean(axis=-1)
+        previous_frame = previous_frame.mean(axis=-1)
+
     flow: np.ndarray = cv2.calcOpticalFlowFarneback(prev=previous_frame, next=frame, flow=None,
                                                     flags=0, **farneback_params)
 
@@ -212,7 +214,7 @@ def compute_difference_of_gaussians(frame: np.ndarray,
                                     blurs: np.ndarray or List[int],
                                     frame_size: Tuple[int, int]):
     if frame.ndim == 3:
-        if frame[2] == 1:
+        if frame.shape[2] == 1:
             frame = np.squeeze(frame, axis=2)
         else:
             frame = np.mean(frame, axis=2)

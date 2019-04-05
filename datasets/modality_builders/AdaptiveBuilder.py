@@ -67,5 +67,10 @@ class AdaptiveBuilder(ModalityBuilder):
         for builder in self.builders:
             if modality in builder.modalities:
                 return builder.get_buffer_shape(modality)
+        raise ValueError("Could not find a builder with modality `{}`".format(modality))
 
-        raise ValueError
+    def get_frame_count(self, modality: str):
+        for builder in self.builders:
+            if modality in builder.modalities:
+                return builder.get_frame_count(modality)
+        raise ValueError("Could not find a builder with modality `{}`".format(modality))

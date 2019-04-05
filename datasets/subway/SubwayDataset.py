@@ -5,7 +5,6 @@ from typing import List
 
 from datasets import PartiallyLoadableDataset
 from data_preprocessors import DataPreprocessor
-from datasets.tfrecord_builders import window_to_frame_labels
 
 
 class SubwayDataset(PartiallyLoadableDataset):

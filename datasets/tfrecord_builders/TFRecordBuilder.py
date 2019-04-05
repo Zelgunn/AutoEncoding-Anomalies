@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import os
+import sys
 from typing import Union, Tuple, List, Dict, Any
 
 from datasets.modality_builders import AdaptiveBuilder, LabelsBuilder, VideoReader, AudioReader
@@ -9,7 +10,7 @@ from datasets.modality_builders import AdaptiveBuilder, LabelsBuilder, VideoRead
 
 class DataSource(object):
     def __init__(self,
-                 labels_source: Union[str, np.ndarray, List[str], bool, int, float],
+                 labels_source: Union[str, np.ndarray, List[str], bool, int, float, List[Tuple[int, int]]],
                  target_path: str,
                  video_source: Union[VideoReader, str, cv2.VideoCapture, np.ndarray, List[str]] = None,
                  video_frame_size: Tuple[int, int] = None,
@@ -26,20 +27,38 @@ class DataSource(object):
 class TFRecordBuilder(object):
     def __init__(self,
                  dataset_path: str,
-                 modalities: Dict[str, Dict[str, Any]]):
+                 modalities: Dict[str, Dict[str, Any]],
+                 verbose=1):
         self.dataset_path = dataset_path
         self.modalities = modalities
+        self.verbose = verbose
 
-    def build(self, data_source: DataSource):
+    def build(self, data_source: Union[DataSource, List[DataSource]]):
+        if isinstance(data_source, list):
+            for source in data_source:
+                if self.verbose > 0:
+                    print("Building {}".format(source.target_path))
+                self.build(source)
+            return
+
         modality_builder = AdaptiveBuilder(self.modalities,
                                            data_source.video_source,
                                            data_source.video_frame_size,
                                            data_source.audio_source)
-        labels_iterator = LabelsBuilder(None,
-                                        data_source.labels_source)
+        # TODO : Change the way shard_size is selected
+        labels_iterator = LabelsBuilder(data_source.labels_source,
+                                        shard_size=modality_builder.get_shard_size("raw_video"),
+                                        shard_count=modality_builder.get_shard_count())
 
         source_iterator = zip(modality_builder, labels_iterator)
-        for i, shard in source_iterator:
+
+        for i, shard in enumerate(source_iterator):
+            if self.verbose > 0:
+                print("\r{} : {}/{}".format(data_source.target_path,
+                                            i,
+                                            labels_iterator.shard_count), end='')
+            sys.stdout.flush()
+
             modalities, labels = shard
 
             features = {}
@@ -64,9 +83,12 @@ class TFRecordBuilder(object):
 
             example = tf.train.Example(features=tf.train.Features(feature=features))
 
-            shard_filepath = os.path.join(data_source.target_path, "shard_{}.tfrecord".format(i))
+            shard_filepath = os.path.join(data_source.target_path, "shard_{:5d}.tfrecord".format(i))
             writer = tf.io.TFRecordWriter(shard_filepath)
             writer.write(example.SerializeToString())
+
+        if self.verbose > 0:
+            print("\r{} : Done".format(data_source.target_path))
 
 
 def video_feature(video):

@@ -4,7 +4,10 @@ import os
 
 from datasets import DatasetConfigV2
 
-MODALITIES_PARSE_OPS = {"video": tf.VarLenFeature(tf.string),
+MODALITIES_PARSE_OPS = {"raw_video": tf.VarLenFeature(tf.string),
+                        "flow_x": tf.VarLenFeature(tf.string),
+                        "flow_y": tf.VarLenFeature(tf.string),
+                        "dog": tf.VarLenFeature(tf.string),
                         "labels": tf.VarLenFeature(tf.float32)}
 
 
