@@ -1,6 +1,6 @@
 from typing import Dict
 
-from datasets import SubsetLoader, DatasetConfig
+from datasets.loaders import SubsetLoader, DatasetConfig
 
 
 class DatasetLoader(object):

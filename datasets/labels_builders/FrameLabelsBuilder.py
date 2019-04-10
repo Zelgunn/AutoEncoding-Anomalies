@@ -1,7 +1,7 @@
 from typing import Union, List
 import numpy as np
 
-from datasets.modality_builders import VideoReader
+from datasets.data_readers import VideoReader
 
 
 class FrameLabelsBuilder(object):

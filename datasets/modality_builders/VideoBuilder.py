@@ -2,7 +2,8 @@ import numpy as np
 import cv2
 from typing import Union, List, Dict, Any, Tuple
 
-from datasets.modality_builders import ModalityBuilder, VideoReader
+from datasets.modality_builders import ModalityBuilder
+from datasets.data_readers import VideoReader
 
 
 class VideoBuilder(ModalityBuilder):

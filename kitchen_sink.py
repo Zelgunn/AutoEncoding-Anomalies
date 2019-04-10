@@ -1,9 +1,8 @@
 import tensorflow as tf
-import numpy as np
 import os
 import cv2
 
-tf.enable_eager_execution()
+from datasets.loaders import IOShape, DatasetConfig, SubsetLoader
 
 
 def parse_example(serialized_example):
@@ -56,8 +55,21 @@ def get_subway_paths():
     return paths
 
 
-def main():
-    paths = get_subway_paths()
+def read_and_display_dataset():
+    video_io_shape = IOShape(input_shape=(16, 128, 128, 1),
+                             output_shape=(32, 128, 128, 1))
+    config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
+                           modalities_io_shapes=
+                           {
+                               "raw_video": video_io_shape,
+                               "flow": video_io_shape,
+                               "dog": video_io_shape
+                           })
+    paths = config.list_subset_tfrecords("Train")
+    paths = [os.path.join(folder, filename)
+             for folder in paths
+             for filename in paths[folder]]
+
     dataset = tf.data.TFRecordDataset(paths)
     dataset = dataset.map(parse_example)
 
@@ -95,5 +107,10 @@ def main():
             cv2.waitKey(10)
 
 
+def main():
+    read_and_display_dataset()
+
+
 if __name__ == "__main__":
+    tf.enable_eager_execution()
     main()

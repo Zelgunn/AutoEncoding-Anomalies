@@ -31,9 +31,9 @@
     {
         "train":
         {
-            "_blurring" : {"max_sigma" : 5.0, "kernel_size" : [3, 3]},
-            "_cropping" : {"width_range" : 0.25},
-            "_brightness" : {"bias" : 0.2},
+            "_blurring" : {"max_sigma" : 2.0, "kernel_size" : [5, 5]},
+            "cropping" : {"width_range" : 0.25},
+            "brightness" : {"bias" : 0.2},
             "dropout_rate": 0.05
         },
         "test":
@@ -41,5 +41,6 @@
             "dropout_rate": 0.0
         }
     },
-    "lr_schedule": {"drop_epochs": 200, "drop_factor": 0.25}
+    "lr_schedule": {"drop_epochs": 200, "drop_factor": 0.25},
+    "seed": 2027815536
 }

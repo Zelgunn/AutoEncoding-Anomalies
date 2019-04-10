@@ -20,14 +20,14 @@ import os
 import json
 import copy
 from tqdm import tqdm
-from typing import List, Union, Dict, Tuple
+from typing import List, Union, Dict, Tuple, Optional
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
-from datasets import Dataset, Subset
+from datasets import SubsetLoader, DatasetLoader
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
 from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
-from data_preprocessors import DropoutNoiser, BrightnessShifter, RandomCropper, GaussianBlurrer
+from datasets.data_augmentation import VideoAugmentation
 from utils.misc_utils import to_list
 
 
@@ -172,6 +172,7 @@ uint8_max_constant = tf.constant(255.0, dtype=tf.float32)
 class AutoEncoderBaseModel(ABC):
     # region Initialization
     def __init__(self):
+        # Fuse with Load config (to reduce amount of None in __init__)
         self.image_summaries_max_outputs = 3
 
         self.layers_built = False
@@ -230,10 +231,10 @@ class AutoEncoderBaseModel(ABC):
         self.use_spectral_norm = False
         self.weight_decay_regularizer = None
 
-        self.train_data_preprocessors = None
-        self.test_data_preprocessors = None
+        self.train_data_augmentations = None
+        self.test_data_augmentations = None
 
-    def load_config(self, config_file: str, alt_config_file: str or None):
+    def load_config(self, config_file: str, alt_config_file: str):
         # region Open/Load json file(s)
         with open(config_file) as tmp_file:
             self.config = json.load(tmp_file)
@@ -301,15 +302,19 @@ class AutoEncoderBaseModel(ABC):
         self._inv_output_range_constant = tf.constant(inv_range, name="inv_output_range")
         # endregion
 
-        self.train_data_preprocessors = self.get_data_preprocessors(True)
-        self.test_data_preprocessors = self.get_data_preprocessors(False)
+        self.train_data_augmentations = self.build_data_augmentations(True)
+        self.test_data_augmentations = self.build_data_augmentations(False)
 
-        seed = np.random.randint(2147483647)
-        self.config["seed"] = seed
+        if "seed" in self.config:
+            seed = self.config["seed"]
+        else:
+            seed = np.random.randint(2147483647)
+            self.config["seed"] = seed
         tf.set_random_seed(seed)
 
-    # region Data Preprocessors
-    def get_data_preprocessors(self, train: bool):
+    # region Data Augmentation
+    # TODO : Move Data Augmentation from AutoEncoderBaseModel to Datasets
+    def build_data_augmentations(self, train: bool):
         data_preprocessors = []
 
         section_name = "train" if train else "test"
@@ -698,14 +703,15 @@ class AutoEncoderBaseModel(ABC):
         return {"encoder": self.encoder,
                 "decoder": self.decoder}
 
-    def resized_dataset(self, dataset: Dataset) -> Dataset:
+    def resized_dataset(self, dataset: DatasetLoader) -> DatasetLoader:
+        # TODO : Datasets will be resized by changing DatasetConfig and building the iterator after
         return dataset.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
 
     # endregion
 
     # region Training
     def train(self,
-              dataset: Dataset,
+              dataset: DatasetLoader,
               epoch_length: int,
               batch_size: int = 64,
               epochs: int = 1):
@@ -727,7 +733,12 @@ class AutoEncoderBaseModel(ABC):
 
         self.on_train_end()
 
-    def train_loop(self, dataset: Dataset, callbacks: CallbackList, batch_size: int, epoch_length: int, epochs: int):
+    def train_loop(self,
+                   dataset: DatasetLoader,
+                   callbacks: CallbackList,
+                   batch_size: int,
+                   epoch_length: int,
+                   epochs: int):
         dataset = self.resized_dataset(dataset)
         dataset.train_subset.epoch_length = epoch_length
         dataset.train_subset.batch_size = batch_size
@@ -737,7 +748,9 @@ class AutoEncoderBaseModel(ABC):
         for _ in range(epochs):
             self.train_epoch(dataset, callbacks)
 
-    def train_epoch(self, dataset: Dataset, callbacks: CallbackList = None):
+    def train_epoch(self,
+                    dataset: DatasetLoader,
+                    callbacks: CallbackList = None):
         epoch_length = len(dataset.train_subset)
 
         set_learning_phase(1)
@@ -763,7 +776,7 @@ class AutoEncoderBaseModel(ABC):
         self.on_epoch_end(dataset, callbacks)
 
     def on_epoch_end(self,
-                     dataset: Dataset,
+                     dataset: DatasetLoader,
                      callbacks: CallbackList = None,
                      epoch_logs: dict = None):
 
@@ -785,11 +798,13 @@ class AutoEncoderBaseModel(ABC):
         self.epochs_seen += 1
 
         if self.epochs_seen % 1 == 0:
-            predictions, labels, lengths = self.predict_anomalies(dataset)
+            predictions, labels, lengths = self.predict_anomalies(dataset,
+                                                                  convergence_threshold=None,
+                                                                  max_iterations=10)
             roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
             print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
 
-    def on_train_begin(self, dataset: Dataset):
+    def on_train_begin(self, dataset: DatasetLoader):
         if not self.layers_built:
             self.build_layers()
 
@@ -809,7 +824,7 @@ class AutoEncoderBaseModel(ABC):
 
     # region Testing
     def autoencode_video(self,
-                         subset: Subset,
+                         subset: SubsetLoader,
                          video_index: int,
                          output_video_filepath: str,
                          fps=25.0):
@@ -884,12 +899,19 @@ class AutoEncoderBaseModel(ABC):
                                                               max_iterations: int
                                                               ):
         reconstructor_run_model = self.get_reconstructor_run_model()
-        total_error = np.zeros([len(step_video)])
+        total_error = None
+        # total_error = []
 
         for i in range(max_iterations):
             reconstructed_video = reconstructor_run_model.predict(x=step_video, batch_size=1)
-            step_error = np.mean(np.square(reconstructed_video - step_video), axis=(2, 3, 4))
-            total_error += step_error
+            reconstructed_video = reconstructed_video[0]
+            step_error = np.square(reconstructed_video - step_video)
+            step_error = np.mean(step_error, axis=(2, 3, 4))
+            step_error = np.squeeze(step_error, axis=0)
+            if i == 0:
+                total_error = step_error
+            else:
+                total_error -= step_error
             if step_error.mean() < convergence_threshold:
                 break
             step_video = reconstructed_video
@@ -899,7 +921,7 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     def predict_anomalies_on_video(self,
-                                   subset: Subset,
+                                   subset: SubsetLoader,
                                    video_index: int,
                                    stride: int,
                                    normalize_predictions=False,
@@ -948,7 +970,7 @@ class AutoEncoderBaseModel(ABC):
         return predictions, video_labels
 
     def predict_anomalies_on_subset(self,
-                                    subset: Subset,
+                                    subset: SubsetLoader,
                                     stride: int,
                                     convergence_threshold=None,
                                     max_iterations=1):
@@ -966,7 +988,7 @@ class AutoEncoderBaseModel(ABC):
         return predictions, labels
 
     def predict_anomalies(self,
-                          dataset: Dataset,
+                          dataset: DatasetLoader,
                           stride=1,
                           normalize_predictions=True,
                           convergence_threshold=None,
@@ -1038,7 +1060,7 @@ class AutoEncoderBaseModel(ABC):
         return roc, pr
 
     def predict_and_evaluate(self,
-                             dataset: Dataset,
+                             dataset: DatasetLoader,
                              stride=1,
                              convergence_threshold=None,
                              max_iterations=1):
@@ -1052,6 +1074,64 @@ class AutoEncoderBaseModel(ABC):
         print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))
         return roc, pr
 
+    # thresholds = [
+    #         {"convergence_threshold": None, "max_iterations": 1},
+    #         {"convergence_threshold": 2e-4, "max_iterations": 20},
+    #         {"convergence_threshold": 1e-4, "max_iterations": 20},
+    #     ]
+
+    def evaluate_attractors(self,
+                            previous_weights_to_load: str,
+                            thresholds: List[Dict[str, Optional[int]]],
+                            dataset: DatasetLoader,
+                            start_epoch: int,
+                            end_epoch: int,
+                            step: int,
+                            ):
+        from tqdm import tqdm
+
+        count = (start_epoch - end_epoch) // step
+
+        roc_plot = np.zeros(shape=[len(thresholds), count])
+        pr_plot = np.zeros(shape=[len(thresholds), count])
+
+        def save_attractor_results(limit):
+            np.save(previous_weights_to_load + "/roc_plot.npy", roc_plot[:, :limit])
+            np.save(previous_weights_to_load + "/pr_plot.npy", pr_plot[:, :limit])
+
+            lines, lines_names = [], []
+            for k in range(len(thresholds)):
+                line_name = str(thresholds[k])
+                line, = plt.plot(roc_plot[k, :limit], label=line_name)
+
+                lines.append(line)
+                lines_names.append(line_name)
+            plt.legend(lines, lines_names)
+
+            plt.savefig(previous_weights_to_load + "/roc_plot.png", dpi=500)
+            plt.clf()
+
+            lines, lines_names = [], []
+            for k in range(len(thresholds)):
+                line_name = str(thresholds[k])
+                line, = plt.plot(pr_plot[k, :limit], label=line_name)
+
+                lines.append(line)
+                lines_names.append(line_name)
+            plt.legend(lines, lines_names)
+
+            plt.savefig(previous_weights_to_load + "/pr_plot.png", dpi=500)
+            plt.clf()
+
+        for i in tqdm(range(count)):
+            self.load_weights(previous_weights_to_load, epoch=start_epoch + step * i)
+            for j, params in enumerate(thresholds):
+                predictions, labels, lengths = self.predict_anomalies(dataset, **params)
+                roc, pr = self.evaluate_predictions(predictions, labels, lengths)
+                roc_plot[j, i] = roc
+                pr_plot[j, i] = pr
+
+            save_attractor_results(i + 1)
     # endregion
 
     # region Weights (Save|Load)
@@ -1091,7 +1171,7 @@ class AutoEncoderBaseModel(ABC):
 
     # region Callbacks
     # region Build callbacks
-    def build_callbacks(self, dataset: Dataset):
+    def build_callbacks(self, dataset: DatasetLoader):
         return self.build_common_callbacks() + self.build_anomaly_callbacks(dataset)
 
     def build_common_callbacks(self) -> List[Callback]:
@@ -1101,7 +1181,7 @@ class AutoEncoderBaseModel(ABC):
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
         base_filepath = self.log_dir + "/weights_{model_name}_epoch_{epoch}.h5"
-        model_checkpoint = MultipleModelsCheckpoint(base_filepath, self.saved_models, period=5)
+        model_checkpoint = MultipleModelsCheckpoint(base_filepath, self.saved_models, period=1)
 
         common_callbacks = [base_logger, self.tensorboard, progbar_logger, model_checkpoint]
 
@@ -1111,7 +1191,7 @@ class AutoEncoderBaseModel(ABC):
 
         return common_callbacks
 
-    def build_anomaly_callbacks(self, dataset: Dataset) -> List[Callback]:
+    def build_anomaly_callbacks(self, dataset: DatasetLoader) -> List[Callback]:
         # region Getting dataset/datasets
         dataset = self.resized_dataset(dataset)
         test_subset = dataset.test_subset
@@ -1150,7 +1230,7 @@ class AutoEncoderBaseModel(ABC):
 
     # region Image|Video callbacks
     def build_auto_encoding_callback(self,
-                                     subset: Subset,
+                                     subset: SubsetLoader,
                                      name: str,
                                      tensorboard: TensorBoard,
                                      frequency="epoch",
@@ -1265,7 +1345,7 @@ class AutoEncoderBaseModel(ABC):
 
     @classmethod
     def make_log_dir(cls,
-                     dataset: Dataset):
+                     dataset: DatasetLoader):
         project_log_dir = "../logs/AutoEncoding-Anomalies"
         base_dir = os.path.join(project_log_dir, dataset.__class__.__name__, cls.__name__)
         log_dir = get_log_dir(base_dir)
@@ -1311,4 +1391,8 @@ class AutoEncoderBaseModel(ABC):
     @property
     def output_sequence_length(self):
         return self.output_shape[0]
+
+    @property
+    def seed(self) -> int:
+        return self.config["seed"]
     # endregion

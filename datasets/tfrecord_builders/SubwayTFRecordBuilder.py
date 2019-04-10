@@ -2,7 +2,7 @@ import os
 from typing import Tuple, List, Dict, Any
 
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
-from datasets.modality_builders import VideoReader
+from datasets.data_readers import VideoReader
 
 
 class SubwayTFRecordBuilder(TFRecordBuilder):

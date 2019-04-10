@@ -1,6 +1,7 @@
 from typing import Union, List, Dict, Any
 
-from datasets.modality_builders import ModalityBuilder, AudioReader
+from datasets.modality_builders import ModalityBuilder
+from datasets.data_readers import AudioReader
 
 
 class AudioBuilder(ModalityBuilder):

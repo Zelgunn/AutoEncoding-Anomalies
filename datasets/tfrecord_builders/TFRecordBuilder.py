@@ -6,7 +6,8 @@ import sys
 import json
 from typing import Union, Tuple, List, Dict, Any
 
-from datasets.modality_builders import AdaptiveBuilder, VideoReader, AudioReader
+from datasets.modality_builders import AdaptiveBuilder
+from datasets.data_readers import VideoReader, AudioReader
 from datasets.labels_builders import LabelsBuilder
 
 
@@ -28,7 +29,7 @@ class DataSource(object):
         self.audio_source = audio_source
 
 
-dataset_tfrecords_info_filename = "dataset_tfrecords_info.json"
+tfrecords_config_filename = "tfrecords_config.json"
 
 
 class TFRecordBuilder(object):
@@ -52,22 +53,28 @@ class TFRecordBuilder(object):
     def build(self):
         data_sources = self.get_dataset_sources()
 
-        dataset_info_dict: Dict[str, Union[List[str], Dict]] = {"modalities": self.modalities}
+        subsets_dict: Dict[str, Union[List[str], Dict]] = {}
 
         for data_source in data_sources:
             if self.verbose > 0:
                 print("Building {}".format(data_source.target_path))
 
             target_path = os.path.relpath(data_source.target_path, self.dataset_path)
-            if data_source.subset_name in dataset_info_dict:
-                dataset_info_dict[data_source.subset_name].append(target_path)
+            if data_source.subset_name in subsets_dict:
+                subsets_dict[data_source.subset_name].append(target_path)
             else:
-                dataset_info_dict[data_source.subset_name] = [target_path]
+                subsets_dict[data_source.subset_name] = [target_path]
 
             self.build_one(data_source)
 
-        with open(os.path.join(self.dataset_path, dataset_tfrecords_info_filename), 'w') as file:
-            json.dump(dataset_info_dict, file)
+        tfrecords_config = {
+            "modalities": self.modalities,
+            "shard_duration": self.shard_duration,
+            "subsets": subsets_dict
+        }
+
+        with open(os.path.join(self.dataset_path, tfrecords_config_filename), 'w') as file:
+            json.dump(tfrecords_config, file)
 
     def build_one(self, data_source: Union[DataSource, List[DataSource]]):
         modality_builder = AdaptiveBuilder(shard_duration=self.shard_duration,
@@ -77,6 +84,7 @@ class TFRecordBuilder(object):
                                            audio_source=data_source.audio_source)
 
         # TODO : Give frequency source instead of static "raw_video"
+        # TODO : Delete previous .tfrecords
         shard_count = modality_builder.get_shard_count()
         labels_iterator = LabelsBuilder(data_source.labels_source,
                                         shard_count=shard_count,

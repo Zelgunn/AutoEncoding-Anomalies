@@ -3,7 +3,7 @@ import numpy as np
 from typing import Union, List, Dict, Any, Tuple, Type
 
 from datasets.modality_builders import ModalityBuilder, VideoBuilder, AudioBuilder
-from datasets.modality_builders import VideoReader, AudioReader
+from datasets.data_readers import VideoReader, AudioReader
 
 
 class AdaptiveBuilder(ModalityBuilder):
