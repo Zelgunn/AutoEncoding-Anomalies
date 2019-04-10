@@ -8,11 +8,13 @@ from datasets.modality_builders import VideoReader, AudioReader
 
 class AdaptiveBuilder(ModalityBuilder):
     def __init__(self,
+                 shard_duration: float,
                  modalities: Union[str, List[str], Dict[str, Dict[str, Any]]],
                  video_source: Union[VideoReader, str, cv2.VideoCapture, np.ndarray, List[str]],
                  video_frame_size: Tuple[int, int],
                  audio_source: Union[AudioReader, str, np.ndarray]):
-        super(AdaptiveBuilder, self).__init__(modalities=modalities)
+        super(AdaptiveBuilder, self).__init__(shard_duration=shard_duration,
+                                              modalities=modalities)
 
         self.builders: List[ModalityBuilder] = []
 
@@ -26,7 +28,10 @@ class AdaptiveBuilder(ModalityBuilder):
             else:
                 video_reader = video_source
 
-            video_builder = VideoBuilder(video_modalities, video_reader, video_frame_size)
+            video_builder = VideoBuilder(shard_duration=shard_duration,
+                                         modalities=video_modalities,
+                                         video_reader=video_reader,
+                                         default_frame_size=video_frame_size)
             self.builders.append(video_builder)
         # endregion
 
@@ -40,7 +45,9 @@ class AdaptiveBuilder(ModalityBuilder):
             else:
                 audio_reader = audio_source
 
-            audio_builder = AudioBuilder(audio_modalities, audio_reader)
+            audio_builder = AudioBuilder(shard_duration=shard_duration,
+                                         modalities=audio_modalities,
+                                         audio_reader=audio_reader)
             self.builders.append(audio_builder)
         # endregion
 
@@ -63,14 +70,14 @@ class AdaptiveBuilder(ModalityBuilder):
 
             yield shard
 
-    def get_buffer_shape(self, modality: str):
+    def get_modality_buffer_shape(self, modality: str):
         for builder in self.builders:
             if modality in builder.modalities:
-                return builder.get_buffer_shape(modality)
+                return builder.get_modality_buffer_shape(modality)
         raise ValueError("Could not find a builder with modality `{}`".format(modality))
 
-    def get_frame_count(self, modality: str):
+    def get_modality_frame_count(self, modality: str):
         for builder in self.builders:
             if modality in builder.modalities:
-                return builder.get_frame_count(modality)
+                return builder.get_modality_frame_count(modality)
         raise ValueError("Could not find a builder with modality `{}`".format(modality))

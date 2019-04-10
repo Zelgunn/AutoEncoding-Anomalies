@@ -8,4 +8,3 @@ from datasets.modality_builders.AudioBuilder import AudioBuilder
 
 from datasets.modality_builders.AdaptiveBuilder import AdaptiveBuilder
 
-from datasets.modality_builders.LabelsBuilder import LabelsBuilder

@@ -1136,7 +1136,6 @@ class AutoEncoderBaseModel(ABC):
         # anomaly_callbacks.append(frame_auc_callback)
 
         # region Pixel level error AUC (ROC)
-        # TODO : Check labels size in UCSDDataset
         # if pixel_labels is not None:
         #     pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
         #                                      videos, pixel_labels,

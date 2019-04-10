@@ -44,9 +44,6 @@ class PartiallyLoadableSubset(Subset):
             labels_indices = indices[:, -self.output_sequence_length:]
             video_labels = shard_labels[labels_indices]
 
-        # np.any(self.anomaly_labels, axis=(1, 2, 3))
-        # TODO : Load pixel_level labels
-
         return video, video_labels, None
 
     def normalize_samples(self, samples: np.ndarray):

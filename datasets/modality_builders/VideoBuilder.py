@@ -7,10 +7,16 @@ from datasets.modality_builders import ModalityBuilder, VideoReader
 
 class VideoBuilder(ModalityBuilder):
     def __init__(self,
+                 shard_duration: float,
                  modalities: Union[str, List[str], Dict[str, Dict[str, Any]]],
                  video_reader: VideoReader,
                  default_frame_size: Union[Tuple[int, int], List[int], None]):
-        super(VideoBuilder, self).__init__(modalities=modalities)
+        super(VideoBuilder, self).__init__(shard_duration=shard_duration,
+                                           modalities=modalities)
+
+        if not all([video_mod in self.supported_modalities() for video_mod in modalities]):
+            unsupported_mods = [video_mod for video_mod in modalities if video_mod not in self.supported_modalities()]
+            raise NotImplementedError(",".join(unsupported_mods) + " are not supported.")
 
         self.video_reader = video_reader
         self.default_frame_size = default_frame_size
@@ -27,9 +33,9 @@ class VideoBuilder(ModalityBuilder):
         return ["raw_video", "flow", "dog"]
 
     def __iter__(self):
-        shard: Dict[str, np.ndarray] = {modality: self.get_buffer(modality) for modality in self.modalities}
+        shard_buffer: Dict[str, np.ndarray] = {modality: self.get_modality_buffer(modality) for modality in
+                                               self.modalities}
         previous_frame = None
-        video_shard_size = self.get_shard_size("raw_video")
 
         # region Parameters
         # region Raw
@@ -57,50 +63,76 @@ class VideoBuilder(ModalityBuilder):
         # endregion
         # endregion
 
+        # region Compute initial shard size
+        reference_mod = None
+        time = 0.0
+
+        for video_mod in ["raw_video", "flow", "dog"]:
+            if video_mod in shard_buffer:
+                reference_mod = video_mod
+                break
+
+        shard_sizes = {modality: self.get_modality_initial_shard_size(modality)
+                       for modality in self.modalities}
+        video_shard_size = shard_sizes[reference_mod]
+        # endregion
+
         i = 0
         for frame in self.video_reader:
             frame = frame.astype("float64")
 
+            # region Skip first
             if self.skip_first and previous_frame is None:
                 previous_frame = frame
                 continue
-
-            video_index_in_shard = i % video_shard_size
-            if "raw_video" in shard:
-                raw_video = compute_raw(frame, raw_frame_size)
-                shard["raw_video"][video_index_in_shard] = raw_video
-
-            if "flow" in shard:
-                shard["flow"][video_index_in_shard] = compute_flow(previous_frame, frame, farneback_params,
-                                                                   flow_use_polar, flow_frame_size)
-
-            if "dog" in shard:
-                shard["dog"][video_index_in_shard] = compute_difference_of_gaussians(frame, dog_blurs, dog_frame_size)
-
-            i += 1
-            previous_frame = frame
-
-            # region yield
-            if i % video_shard_size == 0:
-                yield shard
-
-            if i == self.frame_count:
-                remain_size = i % video_shard_size
-                shard = {modality: shard[modality][:remain_size] for modality in shard}
-                yield shard
             # endregion
 
-    def get_buffer_shape(self, modality: str):
+            # region Compute video modalities
+            if "raw_video" in shard_buffer:
+                raw_video = compute_raw(frame, raw_frame_size)
+                shard_buffer["raw_video"][i] = raw_video
+
+            if "flow" in shard_buffer:
+                shard_buffer["flow"][i] = compute_flow(previous_frame, frame, farneback_params,
+                                                       flow_use_polar, flow_frame_size)
+
+            if "dog" in shard_buffer:
+                shard_buffer["dog"][i] = compute_difference_of_gaussians(frame, dog_blurs,
+                                                                         dog_frame_size)
+            # endregion
+
+            # region Iterate i
+            previous_frame = frame
+            i += 1
+            # endregion
+
+            # region Yield shard
+            if i % video_shard_size == 0:
+                shard = {modality: shard_buffer[modality][:shard_sizes[modality]]
+                         for modality in self.modalities}
+                yield shard
+
+                # region Prepare next shard
+                time += self.shard_duration
+
+                shard_sizes = {modality: self.get_modality_next_shard_size(modality, time)
+                               for modality in self.modalities}
+                video_shard_size = shard_sizes[reference_mod]
+                i = 0
+                # endregion
+            # endregion
+
+    def get_modality_buffer_shape(self, modality: str):
         frame_size = self.get_frame_size(modality)
-        shard_size = self.get_shard_size(modality)
+        max_shard_size = self.get_modality_max_shard_size(modality)
 
         if modality == "raw_video":
-            return [shard_size, *frame_size, self.video_reader.frame_channels]
+            return [max_shard_size, *frame_size, self.video_reader.frame_channels]
         elif modality == "flow":
-            return [shard_size, *frame_size, 2]
+            return [max_shard_size, *frame_size, 2]
         elif modality == "dog":
             dog_blurs = self.get_dog_params()
-            return [shard_size, *frame_size, len(dog_blurs) - 1]
+            return [max_shard_size, *frame_size, len(dog_blurs) - 1]
         else:
             raise ValueError
 
@@ -117,7 +149,7 @@ class VideoBuilder(ModalityBuilder):
 
         return frame_size
 
-    def get_frame_count(self, modality: str) -> int:
+    def get_modality_frame_count(self, modality: str) -> int:
         return self.frame_count
 
     # region Flow
@@ -183,7 +215,7 @@ def compute_raw(frame: np.ndarray,
     return raw
 
 
-# TODO : Compute flow from other sources (copy from preprocessed file, from model, ...)
+# TODO : Compute flow with other tools (copy from preprocessed file, from model, ...)
 def compute_flow(previous_frame: np.ndarray,
                  frame: np.ndarray,
                  farneback_params: Dict,

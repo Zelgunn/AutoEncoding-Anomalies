@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 
-from datasets import DatasetConfigV2
+from datasets import DatasetConfig
 
 MODALITIES_PARSE_OPS = {"raw_video": tf.VarLenFeature(tf.string),
                         "flow_x": tf.VarLenFeature(tf.string),
@@ -16,21 +16,11 @@ def get_shard_count(sample_length, shard_size):
     return max(1, shard_count)
 
 
-# TODO : Rename class to SubsetBuilder or something like that (not Subset/Dataset - taken by TF)
-class SubsetV2(object):
+class SubsetLoader(object):
     def __init__(self,
-                 dataset_path: str,
-                 config: DatasetConfigV2):
-        self.dataset_path = dataset_path
-        self.shard_count_per_sample = get_shard_count(config.sample_length, config.shard_size)
+                 config: DatasetConfig):
         self.config = config
-
-        # TODO : records_dict should come from Dataset
-        self.records_dict = get_video_shard_dict(dataset_path)["Train"]
-        self.sources_filepath = list(self.records_dict.keys())
-
-        # TODO : Load available modalities list from header, remove all un-available modalities
-        self.modalities = ["video"]
+        self.modalities = list(config.dataset_modalities_config.keys())
 
     def shard_filepath_generator(self):
         while True:
@@ -96,6 +86,10 @@ class SubsetV2(object):
 
         return dataset
 
+    @property
+    def shard_count_per_sample(self) -> int:
+        return self.config.shard_count_per_sample
+
 
 # TODO : Rework for different data supports
 def get_video_shard_dict(dataset_path: str):
@@ -122,12 +116,12 @@ def get_video_shard_dict(dataset_path: str):
 
 def main():
     # TODO : Input/Output sequence length are deprecated
-    config = DatasetConfigV2(input_sequence_length=16,
-                             output_sequence_length=32)
+    config = DatasetConfig(input_sequence_length=16,
+                           output_sequence_length=32)
 
     # TODO : Get shard length from collections of length in header file
     config.shard_size = 32
-    subset = SubsetV2(r"..\datasets\ucsd\ped2", config)
+    subset = SubsetLoader(r"..\datasets\ucsd\ped2", config)
 
     dataset = subset.get_dataset_iterator(True, batch_size=16)
     for batch in dataset.take(8):

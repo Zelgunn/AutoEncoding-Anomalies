@@ -1,15 +1,27 @@
-import numpy as np
-import cv2
 import os
-import json
 import csv
 from tqdm import tqdm
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any, List
 
-from datasets.tfrecord_builders import TFRecordBuilder
+from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 
 
 class EmolyTFRecordBuilder(TFRecordBuilder):
+    def __init__(self,
+                 dataset_path: str,
+                 shard_duration: float,
+                 modalities: Dict[str, Dict[str, Any]],
+                 video_frame_size: Tuple[int, int],
+                 verbose=1):
+        super(EmolyTFRecordBuilder, self).__init__(dataset_path=dataset_path,
+                                                   shard_duration=shard_duration,
+                                                   modalities=modalities,
+                                                   verbose=verbose)
+        self.video_frame_size = video_frame_size
+
+    def get_dataset_sources(self) -> List[DataSource]:
+        raise NotImplementedError
+
     def list_videos_filenames(self):
         elements = os.listdir(self.videos_folder)
         videos_filenames = []
@@ -69,5 +81,23 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
 
 if __name__ == "__main__":
-    emoly_tf_record_builder = EmolyTFRecordBuilder("../datasets/emoly")
-    emoly_tf_record_builder.build(shard_size=32)
+    emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
+                                                   shard_duration=2.0,
+                                                   modalities=
+                                                   {
+                                                       "raw_video":
+                                                           {
+                                                               "frequency": 25
+                                                           },
+                                                       "flow":
+                                                           {
+                                                               "use_polar": True,
+                                                               "frequency": "raw_video"
+                                                           },
+                                                       "dog":
+                                                           {
+                                                               "frequency": "raw_video"
+                                                           }
+                                                   },
+                                                   video_frame_size=(128, 128))
+    emoly_tf_record_builder.build()

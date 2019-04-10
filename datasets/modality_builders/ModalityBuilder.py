@@ -4,10 +4,12 @@ from typing import Union, List, Dict, Any
 
 
 class ModalityBuilder(ABC):
-    def __init__(self, modalities: Dict[str, Dict[str, Any]]):
+    def __init__(self,
+                 shard_duration: float,
+                 modalities: Dict[str, Dict[str, Any]]):
         for modality in modalities:
-            assert "shard_size" in modalities[modality], "`shard_size` not in modality `{}`".format(modality)
-
+            assert "frequency" in modalities[modality], "`frequency` not in modality `{}`".format(modality)
+        self.shard_duration = shard_duration
         self.modalities = modalities
 
     @classmethod
@@ -19,43 +21,58 @@ class ModalityBuilder(ABC):
     def __iter__(self):
         raise NotImplementedError
 
+    # region Modalities helper functions
     def select_parameter(self, modality, parameter_name, default_value):
         if parameter_name in self.modalities[modality]:
             return self.modalities[modality][parameter_name]
         else:
             return default_value
 
+    def get_modality_buffer(self, modality: str):
+        return np.zeros(self.get_modality_buffer_shape(modality), dtype="float32")
+
     @abstractmethod
-    def get_buffer_shape(self, modality: str):
+    def get_modality_buffer_shape(self, modality: str):
         raise NotImplementedError
 
-    def get_buffer(self, modality: str):
-        return np.zeros(self.get_buffer_shape(modality), dtype="float32")
+    def get_modality_max_shard_size(self, modality: str):
+        return int(np.ceil(self.shard_duration * self.get_modality_frequency(modality)))
 
-    def get_shard_size(self, modality: str) -> int:
-        shard_size = self.modalities[modality]["shard_size"]
+    def get_modality_frequency(self, modality: str) -> float:
+        return self.modalities[modality]["frequency"]
 
-        names_met = []
-        while isinstance(shard_size, str):
-            names_met.append(shard_size)
-            shard_size = self.modalities[shard_size]["shard_size"]
-            if shard_size in names_met:
-                raise ValueError("Cyclic reference in shard size : " + " -> ".join(names_met) + " -> " + shard_size)
+    def get_modality_initial_shard_size(self, modality: str):
+        return int(np.floor(self.shard_duration * self.get_modality_frequency(modality)))
 
+    def get_modality_next_shard_size(self,
+                                     modality: str,
+                                     time: float):
+        frequency = self.get_modality_frequency(modality)
+        yielded_frame_count = int(np.floor(time * frequency))
+
+        total_frame_count_yielded_next_time = int(np.floor(frequency * (time + self.shard_duration)))
+
+        frame_count = self.get_modality_frame_count(modality)
+        if total_frame_count_yielded_next_time > frame_count:
+            total_frame_count_yielded_next_time = frame_count
+
+        shard_size = total_frame_count_yielded_next_time - yielded_frame_count
         return shard_size
 
     @abstractmethod
-    def get_frame_count(self, modality: str) -> int:
+    def get_modality_frame_count(self, modality: str) -> int:
         raise NotImplementedError
 
+    # endregion
+
     def get_shard_count(self) -> int:
-        min_count = None
+        modality_durations = []
 
         for modality in self.modalities:
-            count = int(np.ceil(self.get_frame_count(modality) / self.get_shard_size(modality)))
-            if min_count is None:
-                min_count = count
-            else:
-                min_count = min(min_count, count)
+            modality_duration = self.get_modality_frame_count(modality) / self.get_modality_frequency(modality)
+            modality_durations.append(modality_duration)
 
-        return min_count
+        min_duration = min(*modality_durations)
+        shard_count = int(np.ceil(min_duration / self.shard_duration))
+
+        return shard_count

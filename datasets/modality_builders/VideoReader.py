@@ -3,7 +3,7 @@ import cv2
 from PIL import Image
 import os
 from enum import IntEnum
-from typing import Union, List
+from typing import Union, List, Optional
 
 
 class VideoReaderMode(IntEnum):
@@ -26,9 +26,9 @@ class VideoReader(object):
 
         self.video_source = video_source
 
-        self.video_capture: cv2.VideoCapture = None
-        self.video_array: np.array = None
-        self.image_collection: List[str] = None
+        self.video_capture: Optional[cv2.VideoCapture] = None
+        self.video_array: Optional[np.array] = None
+        self.image_collection: Optional[List[str]] = None
 
         # region Select & set container
         if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
@@ -204,7 +204,6 @@ def is_image_format_supported(image_name: str) -> bool:
 
 
 def main():
-    # TODO : Filter image collection inputs with supported image extensions
     video_reader = VideoReader(r"..\datasets\ucsd\ped2\Test\Test001_gt")
     print(video_reader.image_collection)
     for frame in video_reader:

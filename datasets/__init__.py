@@ -13,9 +13,6 @@ from datasets.subway.SubwaySubset import SubwaySubset
 from datasets.subway.SubwayDataset import SubwayDataset
 
 
-from datasets.v2.DatasetConfigV2 import DatasetConfigV2
-from datasets.v2.SubsetV2 import SubsetV2
-from datasets.v2.DatasetV2 import DatasetV2
-
-from datasets.v2.VideoSubsetV2 import VideoSubsetV2
-from datasets.v2.VideoDatasetV2 import VideoDatasetV2
+from datasets.v2.DatasetConfig import DatasetConfig
+from datasets.v2.SubsetLoader import SubsetLoader
+from datasets.v2.DatasetLoader import DatasetLoader

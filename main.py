@@ -137,4 +137,3 @@ else:
 # TODO : config - for callbacks (batch_size, samples count, ...)
 
 # TODO : Make patches from images
-# TODO : Flow version

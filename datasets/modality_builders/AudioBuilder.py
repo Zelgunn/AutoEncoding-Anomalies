@@ -5,9 +5,11 @@ from datasets.modality_builders import ModalityBuilder, AudioReader
 
 class AudioBuilder(ModalityBuilder):
     def __init__(self,
+                 shard_duration: float,
                  modalities: Union[str, List[str], Dict[str, Dict[str, Any]]],
                  audio_reader: AudioReader):
-        super(AudioBuilder, self).__init__(modalities=modalities)
+        super(AudioBuilder, self).__init__(shard_duration=shard_duration,
+                                           modalities=modalities)
 
         self.audio_reader = audio_reader
 
@@ -18,8 +20,8 @@ class AudioBuilder(ModalityBuilder):
     def __iter__(self):
         raise NotImplementedError
 
-    def get_buffer_shape(self, modality: str):
+    def get_modality_buffer_shape(self, modality: str):
         raise NotImplementedError
 
-    def get_frame_count(self, modality: str) -> int:
+    def get_modality_frame_count(self, modality: str) -> int:
         raise NotImplementedError
