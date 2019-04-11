@@ -1,18 +1,15 @@
 import tensorflow as tf
 import cv2
 import numpy as np
-from typing import Dict, Optional
+from typing import Dict
 
-from modalities import Modality, ModalityShape
+from modalities import Modality
 
 
 class RawVideo(Modality):
-    def __init__(self,
-                 frequency: float,
-                 io_shape: Optional[ModalityShape] = None):
+    def __init__(self, frequency: float):
         super(RawVideo, self).__init__(frequency=frequency,
-                                       rank=4,
-                                       io_shape=io_shape)
+                                       rank=4)
 
     @classmethod
     def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:

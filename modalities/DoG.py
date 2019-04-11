@@ -8,11 +8,10 @@ from modalities import Modality, ModalityShape
 class DoG(Modality):
     def __init__(self,
                  frequency: float,
-                 blurs=(2.0, 2.82, 4.0, 5.66, 8.0),
-                 io_shape: Optional[ModalityShape] = None):
+                 blurs=(2.0, 2.82, 4.0, 5.66, 8.0)
+                 ):
         super(DoG, self).__init__(frequency=frequency,
-                                  rank=4,
-                                  io_shape=io_shape)
+                                  rank=4)
         self.blurs = blurs
 
     def get_config(self) -> Dict[str, Any]:

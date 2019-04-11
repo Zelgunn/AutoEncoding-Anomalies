@@ -1,16 +1,13 @@
 import tensorflow as tf
-from typing import Dict, Optional
+from typing import Dict
 
-from modalities import Modality, ModalityShape
+from modalities import Modality
 
 
 class RawAudio(Modality):
-    def __init__(self,
-                 frequency: float,
-                 io_shape: Optional[ModalityShape] = None):
+    def __init__(self, frequency: float):
         super(RawAudio, self).__init__(frequency=frequency,
-                                       rank=1,
-                                       io_shape=io_shape)
+                                       rank=1)
 
     @classmethod
     def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:

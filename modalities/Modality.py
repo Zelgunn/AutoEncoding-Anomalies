@@ -33,16 +33,18 @@ class ModalityShape(object):
 class Modality(ABC):
     def __init__(self,
                  frequency: float,
-                 rank: int,
-                 io_shape: Optional[ModalityShape] = None):
+                 rank: int):
         self.frequency = frequency
         self.rank = rank
-        self.io_shape = io_shape
+        self.io_shape: Optional[ModalityShape] = None
 
     def get_config(self) -> Dict[str, Any]:
-        config = {"frequency": self.frequency,
-                  "rank": self.rank}
+        config = {"frequency": self.frequency}
         return config
+
+    @classmethod
+    def from_config(cls, config: Dict[str, Any]):
+        return cls(**config)
 
     @classmethod
     @abstractmethod

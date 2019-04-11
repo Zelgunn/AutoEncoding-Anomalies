@@ -3,21 +3,21 @@ import os
 import cv2
 
 from datasets.loaders import DatasetConfig, SubsetLoader
-from modalities import ModalityShape
+from modalities import ModalityShape, RawVideo, OpticalFlow, DoG
 
 
 def parse_example(serialized_example):
-    features = {"raw_video": tf.VarLenFeature(tf.string),
-                "flow": tf.VarLenFeature(tf.string),
-                "flow_shape": tf.FixedLenFeature([4], dtype=tf.int64),
-                "dog": tf.VarLenFeature(tf.string),
-                "dog_shape": tf.FixedLenFeature([4], dtype=tf.int64),
+    features = {"RawVideo": tf.VarLenFeature(tf.string),
+                "OpticalFlow": tf.VarLenFeature(tf.string),
+                "OpticalFlow_shape": tf.FixedLenFeature([4], dtype=tf.int64),
+                "DoG": tf.VarLenFeature(tf.string),
+                "DoG_shape": tf.FixedLenFeature([4], dtype=tf.int64),
                 "labels": tf.VarLenFeature(tf.float32)}
 
     parsed_features = tf.parse_single_example(serialized_example, features)
-    raw_video = parsed_features["raw_video"].values
-    flow = parsed_features["flow"].values
-    dog = parsed_features["dog"].values
+    raw_video = parsed_features["RawVideo"].values
+    flow = parsed_features["OpticalFlow"].values
+    dog = parsed_features["DoG"].values
     labels = parsed_features["labels"].values
 
     shard_size = tf.shape(raw_video)[0]
@@ -26,11 +26,11 @@ def parse_example(serialized_example):
                           dtype=tf.float32)
 
     flow = tf.decode_raw(flow, tf.float16)
-    flow_shape = parsed_features["flow_shape"]
+    flow_shape = parsed_features["OpticalFlow_shape"]
     flow = tf.reshape(flow, flow_shape)
 
     dog = tf.decode_raw(dog, tf.float16)
-    dog_shape = parsed_features["dog_shape"]
+    dog_shape = parsed_features["DoG_shape"]
     dog = tf.reshape(dog, dog_shape)
 
     return raw_video, flow, dog, labels
@@ -57,14 +57,14 @@ def get_subway_paths():
 
 
 def read_and_display_dataset():
-    video_io_shape = IOShape(input_shape=(16, 128, 128, 1),
-                             output_shape=(32, 128, 128, 1))
+    video_io_shape = ModalityShape(input_shape=(16, 128, 128, 1),
+                                   output_shape=(32, 128, 128, 1))
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
                            modalities_io_shapes=
                            {
-                               "raw_video": video_io_shape,
-                               "flow": video_io_shape,
-                               "dog": video_io_shape
+                               RawVideo: video_io_shape,
+                               OpticalFlow: video_io_shape,
+                               DoG: video_io_shape
                            })
     paths = config.list_subset_tfrecords("Train")
     paths = [os.path.join(folder, filename)
