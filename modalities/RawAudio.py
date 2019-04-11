@@ -17,8 +17,8 @@ class RawAudio(Modality):
         raise NotImplementedError
 
     @classmethod
-    def tfrecord_feature_parse_function(cls):
-        return tf.VarLenFeature(tf.string)
+    def tfrecord_features(cls) -> Dict[str, tuple]:
+        return {cls.tfrecord_id(): tf.VarLenFeature(tf.string)}
 
     @classmethod
     def rank(cls) -> int:

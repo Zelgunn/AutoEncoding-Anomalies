@@ -23,8 +23,9 @@ class MFCCs(Modality):
         raise NotImplementedError
 
     @classmethod
-    def tfrecord_feature_parse_function(cls):
-        return tf.VarLenFeature(tf.string)
+    def tfrecord_features(cls) -> Dict[str, tuple]:
+        return {cls.tfrecord_id(): tf.VarLenFeature(tf.string),
+                cls.tfrecord_shape_id(): cls.tfrecord_shape_parse_function()}
 
     @classmethod
     def rank(cls) -> int:

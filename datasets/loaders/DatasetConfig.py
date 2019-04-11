@@ -30,7 +30,7 @@ class DatasetConfig(object):
         self.modalities.set_modalities_shapes(modalities_io_shapes, filter_missing_modalities=True)
 
         shard_counts = []
-        for modality in self.modalities.values():
+        for modality in self.modalities:
             sample_length = modality.io_shape.sample_length
             shard_size = self.get_modality_max_shard_size(modality)
 

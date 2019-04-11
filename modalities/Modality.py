@@ -55,7 +55,7 @@ class Modality(ABC):
 
     @classmethod
     @abstractmethod
-    def tfrecord_feature_parse_function(cls):
+    def tfrecord_features(cls) -> Dict[str, tuple]:
         raise NotImplementedError
 
     @classmethod
@@ -65,18 +65,15 @@ class Modality(ABC):
     @classmethod
     def encode_raw(cls, array: np.ndarray, dtype: Union[type, str]) -> Dict[str, tf.train.Feature]:
         features = {
-            cls.tfrecord_id() + "_shape": int64_list_feature(array.shape),
+            cls.tfrecord_shape_id(): int64_list_feature(array.shape),
             cls.tfrecord_id(): bytes_list_feature([array.astype(dtype).tobytes()])
         }
         return features
 
     @classmethod
-    def decode_raw(cls, parsed_features, dtype: tf.dtypes.DType):
-        # TODO : Type parsed_features
-        print(type(parsed_features))
-        exit()
+    def decode_raw(cls, parsed_features: Dict[str, tf.SparseTensor], dtype: tf.dtypes.DType):
         encoded_modality = parsed_features[cls.tfrecord_id()].values
-        modality_shape = parsed_features[cls.tfrecord_id() + "_shape"]
+        modality_shape = parsed_features[cls.tfrecord_shape_id()]
 
         decoded_modality = tf.decode_raw(encoded_modality, dtype)
         decoded_modality = tf.reshape(decoded_modality, modality_shape)
@@ -85,6 +82,10 @@ class Modality(ABC):
     @classmethod
     def tfrecord_id(cls):
         return cls.__name__
+
+    @classmethod
+    def tfrecord_shape_id(cls):
+        return cls.tfrecord_id() + "_shape"
 
     @classmethod
     @abstractmethod

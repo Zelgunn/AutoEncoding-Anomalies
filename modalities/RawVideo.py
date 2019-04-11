@@ -18,15 +18,8 @@ class RawVideo(Modality):
         return {cls.tfrecord_id(): video_feature(modality_value)}
 
     @classmethod
-    def decode_from_tfrecord_feature(cls, parsed_features):
-        # TODO : Type parsed_features
-        print(type(parsed_features))
-        exit()
-
-        # TODO : Type encoded_raw_video
-        encoded_raw_video = parsed_features[cls.tfrecord_id()].values
-        print(type(encoded_raw_video))
-        exit()
+    def decode_from_tfrecord_feature(cls, parsed_features: Dict[str, tf.SparseTensor]):
+        encoded_raw_video: tf.Tensor = parsed_features[cls.tfrecord_id()].values
 
         raw_video_shard_size = tf.shape(encoded_raw_video)[0]
         raw_video = tf.map_fn(lambda i: tf.cast(tf.image.decode_jpeg(encoded_raw_video[i]), tf.float32),
@@ -48,8 +41,8 @@ class RawVideo(Modality):
         return raw_video
 
     @classmethod
-    def tfrecord_feature_parse_function(cls):
-        return tf.VarLenFeature(tf.string)
+    def tfrecord_features(cls) -> Dict[str, tuple]:
+        return {cls.tfrecord_id(): tf.VarLenFeature(tf.string)}
 
     @classmethod
     def rank(cls) -> int:

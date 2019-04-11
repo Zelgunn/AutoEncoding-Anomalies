@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import os
 import cv2
 
@@ -7,10 +8,10 @@ from modalities import ModalityShape, RawVideo, OpticalFlow, DoG
 
 
 def parse_example(serialized_example):
-    features = {"RawVideo": RawVideo.tfrecord_feature_parse_function(),
+    features = {"RawVideo": RawVideo.tfrecord_features(),
                 "OpticalFlow": tf.VarLenFeature(tf.string),
                 "OpticalFlow_shape": OpticalFlow.tfrecord_shape_parse_function(),
-                "DoG": DoG.tfrecord_feature_parse_function(),
+                "DoG": DoG.tfrecord_features(),
                 "DoG_shape": DoG.tfrecord_shape_parse_function(),
                 "labels": tf.VarLenFeature(tf.float32)}
 
@@ -66,23 +67,34 @@ def read_and_display_dataset():
                                OpticalFlow: video_io_shape,
                                DoG: video_io_shape
                            })
-    paths = config.list_subset_tfrecords("Train")
-    paths = [os.path.join(folder, filename)
-             for folder in paths
-             for filename in paths[folder]]
 
-    dataset = tf.data.TFRecordDataset(paths)
-    dataset = dataset.map(parse_example)
+    loader = SubsetLoader(config, "Train")
+    dataset = loader.get_dataset_iterator(output_labels=True,
+                                          batch_size=1)
+
+    # paths = config.list_subset_tfrecords("Train")
+    # paths = [os.path.join(folder, filename)
+    #          for folder in paths
+    #          for filename in paths[folder]]
+    #
+    # dataset = tf.data.TFRecordDataset(paths)
+    # dataset = dataset.map(parse_example)
 
     for batch in dataset:
-        raw_video, flow, dog, labels = batch
+        raw_video, flow, dog, labels = tuple(batch.values())
 
         raw_video = raw_video.numpy()
         flow = flow.numpy().astype("float32")
-        flow_x = flow[:, :, :, 0]
-        flow_y = flow[:, :, :, 1]
         dog = dog.numpy().astype("float32")
         labels = labels.numpy()
+
+        raw_video = np.squeeze(raw_video, axis=0)
+        flow = np.squeeze(flow, axis=0)
+        dog = np.squeeze(dog, axis=0)
+        labels = np.squeeze(labels, axis=0)
+
+        flow_x = flow[:, :, :, 0]
+        flow_y = flow[:, :, :, 1]
 
         raw_video /= 255
         flow_x /= 16
@@ -105,7 +117,8 @@ def read_and_display_dataset():
             cv2.imshow("flow_x", cv2.resize(flow_x[i], (256, 256)))
             cv2.imshow("flow_y", cv2.resize(flow_y[i], (256, 256)))
             cv2.imshow("dog", cv2.resize(dog[i], (256, 256)))
-            cv2.waitKey(10)
+            cv2.waitKey(40)
+        cv2.waitKey(0)
 
 
 def main():

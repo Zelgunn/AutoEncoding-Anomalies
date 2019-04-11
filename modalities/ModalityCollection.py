@@ -33,11 +33,15 @@ class ModalityCollection(object):
     def __len__(self):
         return len(self._modalities)
 
-    def values(self):
-        return self._modalities.values()
+    def types(self):
+        return self._modalities.keys()
 
     def items(self):
         return self._modalities.items()
+
+    def ids(self):
+        for modality_type in self._modalities:
+            yield modality_type.tfrecord_id()
 
     def get_config(self) -> Dict[str, Dict[str, Any]]:
         config = {}
@@ -68,3 +72,9 @@ class ModalityCollection(object):
         for key in keys:
             if key not in modalities_types:
                 self._modalities.pop(key)
+
+    def get_tfrecord_features(self) -> Dict[str, tuple]:
+        features = {}
+        for modality in self._modalities:
+            features.update(modality.tfrecord_features())
+        return features
