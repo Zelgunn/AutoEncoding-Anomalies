@@ -1,8 +1,8 @@
 import tensorflow as tf
 import numpy as np
-from typing import Dict, Optional, Any
+from typing import Dict, Any
 
-from modalities import Modality, ModalityShape
+from modalities import Modality
 
 
 class DoG(Modality):
@@ -10,8 +10,7 @@ class DoG(Modality):
                  frequency: float,
                  blurs=(2.0, 2.82, 4.0, 5.66, 8.0)
                  ):
-        super(DoG, self).__init__(frequency=frequency,
-                                  rank=4)
+        super(DoG, self).__init__(frequency=frequency)
         self.blurs = blurs
 
     def get_config(self) -> Dict[str, Any]:
@@ -30,3 +29,7 @@ class DoG(Modality):
     @classmethod
     def tfrecord_feature_parse_function(cls):
         return tf.VarLenFeature(tf.string)
+
+    @classmethod
+    def rank(cls) -> int:
+        return 4

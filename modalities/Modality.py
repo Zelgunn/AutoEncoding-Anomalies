@@ -31,11 +31,8 @@ class ModalityShape(object):
 
 
 class Modality(ABC):
-    def __init__(self,
-                 frequency: float,
-                 rank: int):
+    def __init__(self, frequency: float):
         self.frequency = frequency
-        self.rank = rank
         self.io_shape: Optional[ModalityShape] = None
 
     def get_config(self) -> Dict[str, Any]:
@@ -62,6 +59,10 @@ class Modality(ABC):
         raise NotImplementedError
 
     @classmethod
+    def tfrecord_shape_parse_function(cls):
+        return tf.FixedLenFeature([cls.rank()], dtype=tf.int64)
+
+    @classmethod
     def encode_raw(cls, array: np.ndarray, dtype: Union[type, str]) -> Dict[str, tf.train.Feature]:
         features = {
             cls.tfrecord_id() + "_shape": int64_list_feature(array.shape),
@@ -84,3 +85,8 @@ class Modality(ABC):
     @classmethod
     def tfrecord_id(cls):
         return cls.__name__
+
+    @classmethod
+    @abstractmethod
+    def rank(cls) -> int:
+        raise NotImplementedError

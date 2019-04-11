@@ -1,8 +1,8 @@
 import tensorflow as tf
 import numpy as np
-from typing import Dict, Optional, Any, Union
+from typing import Dict, Any, Union
 
-from modalities import Modality, ModalityShape
+from modalities import Modality
 
 
 class OpticalFlow(Modality):
@@ -15,8 +15,7 @@ class OpticalFlow(Modality):
                  iterations=5,
                  poly_n=5,
                  poly_sigma=1.2):
-        super(OpticalFlow, self).__init__(frequency=frequency,
-                                          rank=4)
+        super(OpticalFlow, self).__init__(frequency=frequency)
         self.use_polar = use_polar
         self.pyr_scale = pyr_scale
         self.levels = levels
@@ -56,3 +55,7 @@ class OpticalFlow(Modality):
     @classmethod
     def tfrecord_feature_parse_function(cls):
         return tf.VarLenFeature(tf.string)
+
+    @classmethod
+    def rank(cls) -> int:
+        return 4

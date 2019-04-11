@@ -6,8 +6,7 @@ from modalities import Modality
 
 class RawAudio(Modality):
     def __init__(self, frequency: float):
-        super(RawAudio, self).__init__(frequency=frequency,
-                                       rank=1)
+        super(RawAudio, self).__init__(frequency=frequency)
 
     @classmethod
     def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:
@@ -20,3 +19,7 @@ class RawAudio(Modality):
     @classmethod
     def tfrecord_feature_parse_function(cls):
         return tf.VarLenFeature(tf.string)
+
+    @classmethod
+    def rank(cls) -> int:
+        return 1

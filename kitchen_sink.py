@@ -7,11 +7,11 @@ from modalities import ModalityShape, RawVideo, OpticalFlow, DoG
 
 
 def parse_example(serialized_example):
-    features = {"RawVideo": tf.VarLenFeature(tf.string),
+    features = {"RawVideo": RawVideo.tfrecord_feature_parse_function(),
                 "OpticalFlow": tf.VarLenFeature(tf.string),
-                "OpticalFlow_shape": tf.FixedLenFeature([4], dtype=tf.int64),
-                "DoG": tf.VarLenFeature(tf.string),
-                "DoG_shape": tf.FixedLenFeature([4], dtype=tf.int64),
+                "OpticalFlow_shape": OpticalFlow.tfrecord_shape_parse_function(),
+                "DoG": DoG.tfrecord_feature_parse_function(),
+                "DoG_shape": DoG.tfrecord_shape_parse_function(),
                 "labels": tf.VarLenFeature(tf.float32)}
 
     parsed_features = tf.parse_single_example(serialized_example, features)
