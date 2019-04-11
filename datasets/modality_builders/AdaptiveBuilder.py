@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
-from typing import Union, List, Dict, Any, Tuple, Type
+from typing import Union, List, Tuple, Type
 
+from modalities import Modality, ModalityCollection
 from datasets.modality_builders import ModalityBuilder, VideoBuilder, AudioBuilder
 from datasets.data_readers import VideoReader, AudioReader
 
@@ -9,7 +10,7 @@ from datasets.data_readers import VideoReader, AudioReader
 class AdaptiveBuilder(ModalityBuilder):
     def __init__(self,
                  shard_duration: float,
-                 modalities: Union[str, List[str], Dict[str, Dict[str, Any]]],
+                 modalities: ModalityCollection,
                  video_source: Union[VideoReader, str, cv2.VideoCapture, np.ndarray, List[str]],
                  video_frame_size: Tuple[int, int],
                  audio_source: Union[AudioReader, str, np.ndarray]):
@@ -19,8 +20,7 @@ class AdaptiveBuilder(ModalityBuilder):
         self.builders: List[ModalityBuilder] = []
 
         # region Video
-        video_modalities = {modality: modalities[modality] for modality in modalities
-                            if modality in VideoBuilder.supported_modalities()}
+        video_modalities = ModalityCollection([modality for modality in modalities if VideoBuilder.supports(modality)])
 
         if len(video_modalities) > 0:
             if not isinstance(video_source, VideoReader):
@@ -36,8 +36,7 @@ class AdaptiveBuilder(ModalityBuilder):
         # endregion
 
         # region Audio
-        audio_modalities = {modality: modalities[modality] for modality in modalities
-                            if modality in AudioBuilder.supported_modalities()}
+        audio_modalities = ModalityCollection([modality for modality in modalities if AudioBuilder.supports(modality)])
 
         if len(audio_modalities) > 0:
             if not isinstance(video_source, VideoReader):
@@ -70,13 +69,13 @@ class AdaptiveBuilder(ModalityBuilder):
 
             yield shard
 
-    def get_modality_buffer_shape(self, modality: str):
+    def get_modality_buffer_shape(self, modality: Modality):
         for builder in self.builders:
             if modality in builder.modalities:
                 return builder.get_modality_buffer_shape(modality)
         raise ValueError("Could not find a builder with modality `{}`".format(modality))
 
-    def get_modality_frame_count(self, modality: str):
+    def get_modality_frame_count(self, modality: Modality) -> int:
         for builder in self.builders:
             if modality in builder.modalities:
                 return builder.get_modality_frame_count(modality)

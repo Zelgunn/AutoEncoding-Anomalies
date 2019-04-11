@@ -4,12 +4,6 @@ import os
 
 from datasets.loaders import DatasetConfig
 
-MODALITIES_PARSE_OPS = {"raw_video": tf.VarLenFeature(tf.string),
-                        "flow_x": tf.VarLenFeature(tf.string),
-                        "flow_y": tf.VarLenFeature(tf.string),
-                        "dog": tf.VarLenFeature(tf.string),
-                        "labels": tf.VarLenFeature(tf.float32)}
-
 
 def get_shard_count(sample_length, shard_size):
     shard_count = 1 + np.ceil((sample_length - 1) / shard_size).astype(np.int)
@@ -69,10 +63,6 @@ class SubsetLoader(object):
         return parsed_modalities, parsed_modalities_sizes
 
     def decode_raw_video(self, encoded_raw_video, max_shard_size: int):
-        # TODO : Type encoded_raw_video
-        print(type(encoded_raw_video))
-        exit()
-
         raw_video_shard_size = tf.shape(encoded_raw_video)[0]
         raw_video = tf.map_fn(lambda i: tf.cast(tf.image.decode_jpeg(encoded_raw_video[i]), tf.float32),
                               tf.range(raw_video_shard_size),
@@ -130,16 +120,7 @@ class SubsetLoader(object):
         return self.config.shard_count_per_sample
 
 
-def decode_raw(parsed_features, modality: str, dtype: tf.dtypes.DType):
-    # TODO : Type parsed_features
-    print(type(parsed_features))
-    exit()
-    encoded_modality = parsed_features[modality].values
-    modality_shape = parsed_features[modality + "_shape"]
 
-    decoded_modality = tf.decode_raw(encoded_modality, dtype)
-    decoded_modality = tf.reshape(decoded_modality, modality_shape)
-    return decoded_modality
 
 
 def main():

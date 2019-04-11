@@ -1,8 +1,9 @@
 import os
 import csv
 from tqdm import tqdm
-from typing import Dict, Tuple, Any, List
+from typing import Dict, Tuple, List
 
+from modalities import Modality, ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 
 
@@ -10,7 +11,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
     def __init__(self,
                  dataset_path: str,
                  shard_duration: float,
-                 modalities: Dict[str, Dict[str, Any]],
+                 modalities: ModalityCollection,
                  video_frame_size: Tuple[int, int],
                  verbose=1):
         super(EmolyTFRecordBuilder, self).__init__(dataset_path=dataset_path,
@@ -84,20 +85,10 @@ if __name__ == "__main__":
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
                                                    shard_duration=2.0,
                                                    modalities=
-                                                   {
-                                                       "raw_video":
-                                                           {
-                                                               "frequency": 25
-                                                           },
-                                                       "flow":
-                                                           {
-                                                               "use_polar": True,
-                                                               "frequency": "raw_video"
-                                                           },
-                                                       "dog":
-                                                           {
-                                                               "frequency": "raw_video"
-                                                           }
-                                                   },
+                                                   [
+                                                       RawVideo(frequency=25),
+                                                       OpticalFlow(frequency=25, use_polar=True),
+                                                       DoG(frequency=25),
+                                                   ],
                                                    video_frame_size=(128, 128))
     emoly_tf_record_builder.build()

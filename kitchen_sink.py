@@ -2,7 +2,8 @@ import tensorflow as tf
 import os
 import cv2
 
-from datasets.loaders import IOShape, DatasetConfig, SubsetLoader
+from datasets.loaders import DatasetConfig, SubsetLoader
+from modalities import ModalityShape
 
 
 def parse_example(serialized_example):

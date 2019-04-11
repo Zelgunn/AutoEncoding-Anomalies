@@ -4,8 +4,10 @@ import cv2
 import os
 import sys
 import json
-from typing import Union, Tuple, List, Dict, Any
+from typing import Union, Tuple, List, Dict, Type
 
+from modalities import Modality, ModalityCollection, RawVideo
+from modalities.modality_utils import float_list_feature
 from datasets.modality_builders import AdaptiveBuilder
 from datasets.data_readers import VideoReader, AudioReader
 from datasets.labels_builders import LabelsBuilder
@@ -36,7 +38,7 @@ class TFRecordBuilder(object):
     def __init__(self,
                  dataset_path: str,
                  shard_duration: float,
-                 modalities: Dict[str, Dict[str, Any]],
+                 modalities: ModalityCollection,
                  verbose=1):
 
         self.dataset_path = dataset_path
@@ -44,9 +46,6 @@ class TFRecordBuilder(object):
         self.shard_duration = shard_duration
         self.modalities = modalities
 
-        self.parse_modalities_frequency()
-
-    # region Build
     def get_dataset_sources(self) -> List[DataSource]:
         raise NotImplementedError("`get_dataset_sources` should be defined for subclasses.")
 
@@ -68,7 +67,7 @@ class TFRecordBuilder(object):
             self.build_one(data_source)
 
         tfrecords_config = {
-            "modalities": self.modalities,
+            "modalities": self.modalities.get_config(),
             "shard_duration": self.shard_duration,
             "subsets": subsets_dict
         }
@@ -89,7 +88,7 @@ class TFRecordBuilder(object):
         labels_iterator = LabelsBuilder(data_source.labels_source,
                                         shard_count=shard_count,
                                         shard_duration=self.shard_duration,
-                                        frequency=modality_builder.get_modality_frequency("raw_video"))
+                                        frequency=modality_builder.modalities[RawVideo].frequency)
 
         source_iterator = zip(modality_builder, labels_iterator)
 
@@ -99,25 +98,30 @@ class TFRecordBuilder(object):
             sys.stdout.flush()
 
             modalities, labels = shard
+            modalities: Dict[Type[Modality], np.ndarray] = modalities
 
-            features = {}
-            for modality_name, modality_value in modalities.items():
-                if modality_name == "raw_video":
-                    if modality_value.ndim == 3:
-                        modality_value = np.expand_dims(modality_value, axis=-1)
-                    features[modality_name] = video_feature(modality_value)
+            features: Dict[str, tf.train.Feature] = {}
+            for modality, modality_value in modalities.items():
+                encoded_features = modality.encode_to_tfrecord_feature(modality_value)
+                for feature_name, encoded_feature in encoded_features.items():
+                    features[feature_name] = encoded_feature
 
-                elif modality_name in ["flow", "dog"]:
-                    set_ndarray_feature(features, modality_name, modality_value.astype("float16"))
-
-                elif modality_name in ["mfcc"]:
-                    set_ndarray_feature(features, modality_name, modality_value)
-
-                elif modality_name == "raw_audio":
-                    features[modality_name] = float_list_feature(modality_value)
-
-                else:
-                    raise NotImplementedError("{} is not implemented.".format(modality_name))
+                # if modality_name == "raw_video":
+                #     if modality_value.ndim == 3:
+                #         modality_value = np.expand_dims(modality_value, axis=-1)
+                #     features[modality_name] = video_feature(modality_value)
+                #
+                # elif modality_name in ["flow", "dog"]:
+                #     set_ndarray_feature(features, modality_name, modality_value.astype("float16"))
+                #
+                # elif modality_name in ["mfcc"]:
+                #     set_ndarray_feature(features, modality_name, modality_value)
+                #
+                # elif modality_name == "raw_audio":
+                #     features[modality_name] = float_list_feature(modality_value)
+                #
+                # else:
+                #     raise NotImplementedError("{} is not implemented.".format(modality_name))
 
             features["labels"] = float_list_feature(labels)
 
@@ -129,45 +133,3 @@ class TFRecordBuilder(object):
 
         if self.verbose > 0:
             print("\r{} : Done".format(data_source.target_path))
-
-    # endregion
-
-    def parse_modalities_frequency(self):
-        for modality in self.modalities:
-            assert "frequency" in self.modalities[modality], \
-                "modalities dictionary must give `frequency` for each modality"
-
-            frequency = self.modalities[modality]["frequency"]
-            if isinstance(frequency, str):
-                names_met = []
-                while isinstance(frequency, str):
-                    names_met.append(frequency)
-                    frequency = self.modalities[frequency]["frequency"]
-
-                    if frequency in names_met:
-                        raise ValueError("Cyclic reference in modalities frequencies : " +
-                                         " -> ".join(names_met) + " -> " + frequency)
-
-                self.modalities[modality]["frequency"] = frequency
-
-
-def video_feature(video):
-    encoded_frames = [tf.compat.as_bytes(cv2.imencode(".jpg", frame)[1].tobytes()) for frame in video]
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=encoded_frames))
-
-
-def set_ndarray_feature(features: Dict, name: str, array: np.ndarray):
-    features[name + "_shape"] = int64_list_feature(array.shape)
-    features[name] = bytes_list_feature([array.tobytes()])
-
-
-def int64_list_feature(int64_list):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=int64_list))
-
-
-def float_list_feature(float_list):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=float_list))
-
-
-def bytes_list_feature(bytes_list):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=bytes_list))

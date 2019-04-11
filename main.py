@@ -81,7 +81,7 @@ def main():
     # endregion
 
     # TODO : Load config for DatasetLoader
-    # TODO : In config => Set IOShapes
+    # TODO : In config => Set ModalityShapes
     # TODO : In config => Set Normalization
     dataset = DatasetLoader(dataset_path=dataset_path,
                             config=None)

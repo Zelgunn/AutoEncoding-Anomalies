@@ -4,7 +4,7 @@ import os
 from typing import Dict, Union, List, Tuple, Any
 
 from datasets.tfrecord_builders import tfrecords_config_filename
-from datasets.loaders import IOShape
+from modalities import ModalityShape
 
 
 def get_shard_count(sample_length: int,
@@ -24,13 +24,13 @@ def get_shard_count(sample_length: int,
 class DatasetConfig(object):
     def __init__(self,
                  tfrecords_config_folder: str,
-                 modalities_io_shapes: Dict[str, IOShape]
+                 modalities_io_shapes: Dict[str, ModalityShape]
                  ):
         self.tfrecords_config_folder = tfrecords_config_folder
         tf_records_config_filepath = os.path.join(tfrecords_config_folder, tfrecords_config_filename)
         with open(tf_records_config_filepath, 'r') as file:
             self.tfrecords_config: Dict[str, Any] = json.load(file)
-            self.tfrecords_modalities: Dict[str, Dict[str, Any]] = self.tfrecords_config["modalities"]
+            self.tfrecords_modalities: ModalityCollection = self.tfrecords_config["modalities"]
             self.subsets: Dict[str, List[str]] = self.tfrecords_config["subsets"]
             self.shard_duration: float = self.tfrecords_config["shard_duration"]
 

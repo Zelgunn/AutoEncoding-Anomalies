@@ -1,7 +1,8 @@
 import numpy as np
 import cv2
-from typing import Union, List, Dict, Any, Tuple
+from typing import Union, List, Dict, Optional, Tuple
 
+from modalities import Modality, ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.modality_builders import ModalityBuilder
 from datasets.data_readers import VideoReader
 
@@ -9,21 +10,17 @@ from datasets.data_readers import VideoReader
 class VideoBuilder(ModalityBuilder):
     def __init__(self,
                  shard_duration: float,
-                 modalities: Union[str, List[str], Dict[str, Dict[str, Any]]],
+                 modalities: ModalityCollection,
                  video_reader: VideoReader,
                  default_frame_size: Union[Tuple[int, int], List[int], None]):
         super(VideoBuilder, self).__init__(shard_duration=shard_duration,
                                            modalities=modalities)
 
-        if not all([video_mod in self.supported_modalities() for video_mod in modalities]):
-            unsupported_mods = [video_mod for video_mod in modalities if video_mod not in self.supported_modalities()]
-            raise NotImplementedError(",".join(unsupported_mods) + " are not supported.")
-
         self.video_reader = video_reader
         self.default_frame_size = default_frame_size
 
         self.frame_count = video_reader.frame_count
-        if "flow" in self.modalities or "dog" in self.modalities:
+        if OpticalFlow in self.modalities or DoG in self.modalities:
             self.frame_count -= 1
             self.skip_first = True
         else:
@@ -31,50 +28,35 @@ class VideoBuilder(ModalityBuilder):
 
     @classmethod
     def supported_modalities(cls):
-        return ["raw_video", "flow", "dog"]
+        return [RawVideo, OpticalFlow, DoG]
 
     def __iter__(self):
-        shard_buffer: Dict[str, np.ndarray] = {modality: self.get_modality_buffer(modality) for modality in
-                                               self.modalities}
+        shard_buffer = self.get_shard_buffer()
         previous_frame = None
+        time = 0.0
 
         # region Parameters
-        # region Raw
-        raw_frame_size = None
+        frame_size = self.get_frame_size(none_if_reader_default=True)
 
-        if "raw_video" in self.modalities:
-            raw_frame_size = self.get_frame_size("raw_video", none_if_reader_default=True)
-        # endregion
+        optical_flow: Optional[OpticalFlow] = None
+        dog: Optional[DoG] = None
 
-        # region Flow
-        flow_frame_size, farneback_params, flow_use_polar = None, None, None
+        if OpticalFlow in self.modalities:
+            optical_flow: OpticalFlow = self.modalities[OpticalFlow]
 
-        if "flow" in self.modalities:
-            flow_frame_size = self.get_frame_size("flow", none_if_reader_default=True)
-            farneback_params, flow_use_polar = self.get_flow_params()
-
-        # endregion
-
-        # region DoG
-        dog_frame_size, dog_blurs = None, None
-        if "dog" in self.modalities:
-            dog_frame_size = self.get_frame_size("dog", none_if_reader_default=True)
-            dog_blurs = self.get_dog_params()
-
-        # endregion
+        if DoG in self.modalities:
+            dog: DoG = self.modalities[DoG]
         # endregion
 
         # region Compute initial shard size
         reference_mod = None
-        time = 0.0
 
-        for video_mod in ["raw_video", "flow", "dog"]:
+        for video_mod in [RawVideo, OpticalFlow, DoG]:
             if video_mod in shard_buffer:
                 reference_mod = video_mod
                 break
 
-        shard_sizes = {modality: self.get_modality_initial_shard_size(modality)
-                       for modality in self.modalities}
+        shard_sizes = self.get_initial_shard_sizes()
         video_shard_size = shard_sizes[reference_mod]
         # endregion
 
@@ -89,17 +71,15 @@ class VideoBuilder(ModalityBuilder):
             # endregion
 
             # region Compute video modalities
-            if "raw_video" in shard_buffer:
-                raw_video = compute_raw(frame, raw_frame_size)
-                shard_buffer["raw_video"][i] = raw_video
+            if RawVideo in shard_buffer:
+                raw_video = compute_raw(frame, frame_size)
+                shard_buffer[RawVideo][i] = raw_video
 
-            if "flow" in shard_buffer:
-                shard_buffer["flow"][i] = compute_flow(previous_frame, frame, farneback_params,
-                                                       flow_use_polar, flow_frame_size)
+            if OpticalFlow in shard_buffer:
+                shard_buffer[OpticalFlow][i] = compute_flow(previous_frame, frame, optical_flow, frame_size)
 
-            if "dog" in shard_buffer:
-                shard_buffer["dog"][i] = compute_difference_of_gaussians(frame, dog_blurs,
-                                                                         dog_frame_size)
+            if DoG in shard_buffer:
+                shard_buffer[DoG][i] = compute_difference_of_gaussians(frame, dog.blurs, frame_size)
             # endregion
 
             # region Iterate i
@@ -109,66 +89,45 @@ class VideoBuilder(ModalityBuilder):
 
             # region Yield shard
             if i % video_shard_size == 0:
-                shard = {modality: shard_buffer[modality][:shard_sizes[modality]]
-                         for modality in self.modalities}
+                shard = self.extract_shard(shard_buffer, shard_sizes)
                 yield shard
 
                 # region Prepare next shard
                 time += self.shard_duration
-
-                shard_sizes = {modality: self.get_modality_next_shard_size(modality, time)
-                               for modality in self.modalities}
+                shard_sizes = self.get_next_shard_sizes(time)
                 video_shard_size = shard_sizes[reference_mod]
                 i = 0
                 # endregion
             # endregion
 
-    def get_modality_buffer_shape(self, modality: str):
-        frame_size = self.get_frame_size(modality)
+    def get_modality_buffer_shape(self, modality: Modality):
+        frame_size = self.get_frame_size()
         max_shard_size = self.get_modality_max_shard_size(modality)
 
-        if modality == "raw_video":
+        if isinstance(modality, RawVideo):
             return [max_shard_size, *frame_size, self.video_reader.frame_channels]
-        elif modality == "flow":
+        elif isinstance(modality, OpticalFlow):
             return [max_shard_size, *frame_size, 2]
-        elif modality == "dog":
-            dog_blurs = self.get_dog_params()
-            return [max_shard_size, *frame_size, len(dog_blurs) - 1]
+        elif isinstance(modality, DoG):
+            return [max_shard_size, *frame_size, len(modality.blurs) - 1]
         else:
-            raise ValueError
+            raise ValueError("{} of type {} is not supported.".format(modality, type(modality)))
 
-    def get_frame_size(self, modality: str, none_if_reader_default=False):
+    def get_frame_size(self, none_if_reader_default=False):
         if self.default_frame_size is not None:
-            default_frame_size = self.default_frame_size
+            return self.default_frame_size
         else:
-            default_frame_size = self.video_reader.frame_size
+            if none_if_reader_default:
+                return None
+            else:
+                return self.video_reader.frame_size
 
-        frame_size = self.select_parameter(modality, "frame_size", default_frame_size)
-
-        if none_if_reader_default and self.video_reader.frame_size == frame_size:
-            frame_size = None
-
-        return frame_size
-
-    def get_modality_frame_count(self, modality: str) -> int:
+    def get_modality_frame_count(self, modality: Modality) -> int:
         return self.frame_count
 
-    # region Flow
-    def get_flow_params(self):
-        farneback_params = {"pyr_scale": 0.5,
-                            "levels": 3,
-                            "winsize": 5,
-                            "iterations": 5,
-                            "poly_n": 5,
-                            "poly_sigma": 1.2}
-        farneback_params = {param_name: self.select_parameter("flow", param_name, farneback_params[param_name])
-                            for param_name in farneback_params}
-        flow_use_polar = self.select_parameter("flow", "use_polar", default_value=False)
-        return farneback_params, flow_use_polar
-
     def pre_compute_flow_max(self) -> np.ndarray:
-        farneback_params, flow_use_polar = self.get_flow_params()
-        flow_frame_size = self.get_frame_size("flow", none_if_reader_default=True)
+        optical_flow: OpticalFlow = self.modalities[OpticalFlow]
+        flow_frame_size = self.get_frame_size(none_if_reader_default=True)
 
         previous_frame = None
         max_flow = 0.0
@@ -179,27 +138,19 @@ class VideoBuilder(ModalityBuilder):
                 previous_frame = frame
                 continue
 
-            flow = compute_flow(previous_frame, frame, farneback_params, flow_use_polar,
-                                flow_frame_size)
+            flow = compute_flow(previous_frame, frame, optical_flow, flow_frame_size)
 
-            if flow_use_polar:
+            if optical_flow.use_polar:
                 max_flow = max(max_flow, np.max(flow[:, :, 0]))
             else:
                 max_flow = max(max_flow, np.max(flow))
 
-        if flow_use_polar:
+        if optical_flow.use_polar:
             max_flow = np.array([max_flow, 360.0])
         else:
             max_flow = np.array(max_flow)
 
         return max_flow
-
-    # endregion
-
-    def get_dog_params(self):
-        assert "dog" in self.modalities
-        blurs = self.modalities["dog"]["blurs"] if "blurs" in self.modalities["dog"] else [2.0, 2.82, 4.0, 5.66, 8.0]
-        return blurs
 
 
 # region Compute modalities
@@ -219,21 +170,20 @@ def compute_raw(frame: np.ndarray,
 # TODO : Compute flow with other tools (copy from preprocessed file, from model, ...)
 def compute_flow(previous_frame: np.ndarray,
                  frame: np.ndarray,
-                 farneback_params: Dict,
-                 use_polar: bool,
+                 optical_flow: OpticalFlow,
                  frame_size: Tuple[int, int]):
     if frame.ndim == 3:
         frame = frame.mean(axis=-1)
         previous_frame = previous_frame.mean(axis=-1)
 
     flow: np.ndarray = cv2.calcOpticalFlowFarneback(prev=previous_frame, next=frame, flow=None,
-                                                    flags=0, **farneback_params)
+                                                    flags=0, **optical_flow.farneback_params)
 
     absolute_flow = np.abs(flow)
     if np.min(absolute_flow) < 1e-20:
         flow[absolute_flow < 1e-20] = 0.0
 
-    if use_polar:
+    if optical_flow.use_polar:
         flow = cv2.cartToPolar(flow[:, :, 0], flow[:, :, 1], angleInDegrees=True)
         flow = np.stack(flow, axis=-1)
 
@@ -289,20 +239,3 @@ def show_shard(shard):
 
             cv2.imshow(modality, frame)
         cv2.waitKey(40)
-
-
-def main():
-    video_reader = VideoReader(r"..\datasets\ucsd\ped2\Test\Test001")
-    video_builder = VideoBuilder(modalities={"raw_video": {},
-                                             "flow": {"use_polar": True},
-                                             "dog": {}
-                                             },
-                                 video_reader=video_reader,
-                                 default_frame_size=(512, 512))
-
-    for shard in video_builder:
-        show_shard(shard)
-
-
-if __name__ == "__main__":
-    main()
