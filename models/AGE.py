@@ -1,22 +1,24 @@
+from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Input, Reshape
 from tensorflow.python.keras.callbacks import CallbackList
 import tensorflow as tf
 import numpy as np
 import copy
+from typing import Optional
 
-from models import AutoEncoderBaseModel, KerasModel, metrics_dict
+from models import AutoEncoderBaseModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
-from datasets import Dataset
+from datasets import DatasetLoader
 
 
 class AGE(AutoEncoderBaseModel):
     def __init__(self):
         super(AGE, self).__init__()
 
-        self._encoder_real_data_trainer: KerasModel = None
-        self._encoder_fake_data_trainer: KerasModel = None
-        self._decoder_real_data_trainer: KerasModel = None
-        self._decoder_fake_data_trainer: KerasModel = None
+        self._encoder_real_data_trainer: Optional[KerasModel] = None
+        self._encoder_fake_data_trainer: Optional[KerasModel] = None
+        self._decoder_real_data_trainer: Optional[KerasModel] = None
+        self._decoder_fake_data_trainer: Optional[KerasModel] = None
 
     # region Compile
     def compile(self):
@@ -100,7 +102,7 @@ class AGE(AutoEncoderBaseModel):
                 reconstruction_loss = reconstruction_metric(y_true, y_pred, axis)
                 reconstruction_loss *= tf.constant(reconstruction_weight)
             else:
-                reconstruction_loss: tf.Tensor = None
+                reconstruction_loss: Optional[tf.Tensor] = None
 
             if divergence_weight != 0.0:
                 latent_mean = tf.reduce_mean(latent, axis=0)
@@ -110,7 +112,7 @@ class AGE(AutoEncoderBaseModel):
 
                 divergence *= tf.constant(divergence_weight)
             else:
-                divergence: tf.Tensor = None
+                divergence: Optional[tf.Tensor] = None
 
             if reconstruction_loss is None:
                 return divergence
@@ -148,7 +150,7 @@ class AGE(AutoEncoderBaseModel):
         return self._decoder_fake_data_trainer
 
     # region Training
-    def train_epoch(self, dataset: Dataset, callbacks: CallbackList = None):
+    def train_epoch(self, dataset: DatasetLoader, callbacks: CallbackList = None):
         epoch_length = len(dataset.train_subset)
 
         callbacks.on_epoch_begin(self.epochs_seen)

@@ -1,4 +1,5 @@
-from models import AutoEncoderBaseModel, KerasModel
+from tensorflow.python.keras.models import Model as KerasModel
+from models import AutoEncoderBaseModel
 
 
 class BasicAE(AutoEncoderBaseModel):

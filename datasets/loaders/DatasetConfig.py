@@ -29,11 +29,7 @@ class DatasetConfig(object):
         self.shard_duration = float(self.tfrecords_config["shard_duration"])
         self.max_labels_size: int = int(self.tfrecords_config["max_labels_size"])
 
-        modalities_ranges = self.tfrecords_config["modalities_ranges"]
-        self.modalities_ranges = {
-            ModalityCollection.modality_id_to_class(modality_id): modalities_ranges[modality_id]
-            for modality_id in modalities_ranges
-        }
+        self.modalities_ranges = self.tfrecords_config["modalities_ranges"]
 
         self.modalities.set_modalities_shapes(modalities_io_shapes, filter_missing_modalities=True)
 
@@ -45,7 +41,7 @@ class DatasetConfig(object):
 
             shard_counts.append(get_shard_count(sample_length, shard_size))
 
-        self.shard_count_per_sample: int = max(*shard_counts)
+        self.shard_count_per_sample: int = max(shard_counts)
         # endregion
 
     def list_subset_tfrecords(self,

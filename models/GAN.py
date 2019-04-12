@@ -1,10 +1,11 @@
+from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Input, Dense, Reshape
 from tensorflow.python.keras.callbacks import CallbackList
 import numpy as np
 from typing import List
 
-from models import AutoEncoderBaseModel, KerasModel, metrics_dict, LayerStack
-from datasets import Dataset
+from models import AutoEncoderBaseModel, metrics_dict, LayerStack
+from datasets import DatasetLoader
 
 
 class GAN(AutoEncoderBaseModel):
@@ -97,7 +98,7 @@ class GAN(AutoEncoderBaseModel):
                 "discriminator": self.discriminator}
 
     # region Training
-    def train_epoch(self, dataset: Dataset, callbacks: CallbackList = None):
+    def train_epoch(self, dataset: DatasetLoader, callbacks: CallbackList = None):
         # region Variables initialization
         epoch_length = len(dataset.train_subset)
         autoencoder: KerasModel = self.autoencoder

@@ -27,7 +27,7 @@ from datasets import SubsetLoader, DatasetLoader
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
 from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
-from datasets.data_augmentation import VideoAugmentation
+# from datasets.data_augmentation import VideoAugmentation
 from utils.misc_utils import to_list
 
 
@@ -176,23 +176,23 @@ class AutoEncoderBaseModel(ABC):
         self.image_summaries_max_outputs = 3
 
         self.layers_built = False
-        self.embeddings_layer: Layer = None
+        self.embeddings_layer: Optional[Layer] = None
         self.encoder_layers: List[LayerStack] = []
         self.reconstructor_layers: List[LayerStack] = []
         self.predictor_layers: List[LayerStack] = []
 
-        self._encoder: KerasModel = None
-        self._decoder: KerasModel = None
-        self._autoencoder: KerasModel = None
+        self._encoder: Optional[KerasModel] = None
+        self._decoder: Optional[KerasModel] = None
+        self._autoencoder: Optional[KerasModel] = None
         self._raw_predictions_models: Dict[Tuple, RunModel] = {}
-        self._reconstructor_model: RunModel = None
+        self._reconstructor_model: Optional[RunModel] = None
 
         self.decoder_input_layer = None
         self.reconstructor_output = None
         self.predictor_output = None
 
-        self.config: dict = None
-        self.depth: int = None
+        self.config: Optional[dict] = None
+        self.depth: Optional[int] = None
 
         self.input_shape = None
         self.output_shape = None
@@ -201,10 +201,10 @@ class AutoEncoderBaseModel(ABC):
         self.embeddings_size = None
         self.use_dense_embeddings = None
 
-        self._true_outputs_placeholder: tf.Tensor = None
-        self._auc_predictions_placeholder: tf.Tensor = None
-        self._auc_labels_placeholder: tf.Tensor = None
-        self._auc_ops: List[tf.Tensor, tf.Tensor] = None
+        self._true_outputs_placeholder: Optional[tf.Tensor] = None
+        self._auc_predictions_placeholder: Optional[tf.Tensor] = None
+        self._auc_labels_placeholder: Optional[tf.Tensor] = None
+        self._auc_ops: Optional[List[tf.Tensor, tf.Tensor]] = None
         self._auc_summary_ops = None
 
         self.default_activation = None
@@ -226,8 +226,8 @@ class AutoEncoderBaseModel(ABC):
         self.epochs_seen = 0
         self.pixel_level_labels_size = None
         self.output_range = None
-        self._min_output_constant: tf.Tensor = None
-        self._inv_output_range_constant: tf.Tensor = None
+        self._min_output_constant: Optional[tf.Tensor] = None
+        self._inv_output_range_constant: Optional[tf.Tensor] = None
         self.use_spectral_norm = False
         self.weight_decay_regularizer = None
 
@@ -302,8 +302,8 @@ class AutoEncoderBaseModel(ABC):
         self._inv_output_range_constant = tf.constant(inv_range, name="inv_output_range")
         # endregion
 
-        self.train_data_augmentations = self.build_data_augmentations(True)
-        self.test_data_augmentations = self.build_data_augmentations(False)
+        # self.train_data_augmentations = self.build_data_augmentations(True)
+        # self.test_data_augmentations = self.build_data_augmentations(False)
 
         if "seed" in self.config:
             seed = self.config["seed"]
@@ -314,40 +314,40 @@ class AutoEncoderBaseModel(ABC):
 
     # region Data Augmentation
     # TODO : Move Data Augmentation from AutoEncoderBaseModel to Datasets
-    def build_data_augmentations(self, train: bool):
-        data_preprocessors = []
-
-        section_name = "train" if train else "test"
-        section = self.config["data_generators"][section_name]
-
-        if "cropping" in section:
-            cropping_section = section["cropping"]
-            width_range = cropping_section["width_range"]
-            height_range = cropping_section["height_range"] if "height_range" in cropping_section else None
-            keep_ratio = (cropping_section["keep_ratio"] == "True") if "keep_ratio" in cropping_section else True
-            random_cropper = RandomCropper(width_range, height_range, keep_ratio)
-            data_preprocessors.append(random_cropper)
-
-        if "blurring" in section:
-            blurring_section = section["blurring"]
-            max_sigma = blurring_section["max_sigma"] if "max_sigma" in blurring_section else 5.0
-            kernel_size = tuple(blurring_section["kernel_size"]) if "kernel_size" in blurring_section else (3, 3)
-            random_blurrer = GaussianBlurrer(max_sigma, kernel_size, apply_on_outputs=False)
-            data_preprocessors.append(random_blurrer)
-
-        if "brightness" in section:
-            brightness_section = section["brightness"]
-            gain = brightness_section["gain"] if "gain" in brightness_section else None
-            bias = brightness_section["bias"] if "bias" in brightness_section else None
-            brightness_shifter = BrightnessShifter(gain=gain, bias=bias, values_range=self.output_range)
-            data_preprocessors.append(brightness_shifter)
-
-        if "dropout_rate" in section:
-            dropout_noise_rate = section["dropout_rate"]
-            dropout_noiser = DropoutNoiser(inputs_dropout_rate=dropout_noise_rate)
-            data_preprocessors.append(dropout_noiser)
-
-        return data_preprocessors
+    # def build_data_augmentations(self, train: bool):
+    #     data_preprocessors = []
+    #
+    #     section_name = "train" if train else "test"
+    #     section = self.config["data_generators"][section_name]
+    #
+    #     if "cropping" in section:
+    #         cropping_section = section["cropping"]
+    #         width_range = cropping_section["width_range"]
+    #         height_range = cropping_section["height_range"] if "height_range" in cropping_section else None
+    #         keep_ratio = (cropping_section["keep_ratio"] == "True") if "keep_ratio" in cropping_section else True
+    #         random_cropper = RandomCropper(width_range, height_range, keep_ratio)
+    #         data_preprocessors.append(random_cropper)
+    #
+    #     if "blurring" in section:
+    #         blurring_section = section["blurring"]
+    #         max_sigma = blurring_section["max_sigma"] if "max_sigma" in blurring_section else 5.0
+    #         kernel_size = tuple(blurring_section["kernel_size"]) if "kernel_size" in blurring_section else (3, 3)
+    #         random_blurrer = GaussianBlurrer(max_sigma, kernel_size, apply_on_outputs=False)
+    #         data_preprocessors.append(random_blurrer)
+    #
+    #     if "brightness" in section:
+    #         brightness_section = section["brightness"]
+    #         gain = brightness_section["gain"] if "gain" in brightness_section else None
+    #         bias = brightness_section["bias"] if "bias" in brightness_section else None
+    #         brightness_shifter = BrightnessShifter(gain=gain, bias=bias, values_range=self.output_range)
+    #         data_preprocessors.append(brightness_shifter)
+    #
+    #     if "dropout_rate" in section:
+    #         dropout_noise_rate = section["dropout_rate"]
+    #         dropout_noiser = DropoutNoiser(inputs_dropout_rate=dropout_noise_rate)
+    #         data_preprocessors.append(dropout_noiser)
+    #
+    #     return data_preprocessors
 
     # endregion
 
@@ -703,10 +703,6 @@ class AutoEncoderBaseModel(ABC):
         return {"encoder": self.encoder,
                 "decoder": self.decoder}
 
-    def resized_dataset(self, dataset: DatasetLoader) -> DatasetLoader:
-        # TODO : Datasets will be resized by changing DatasetConfig and building the iterator after
-        return dataset.resized(self.input_image_size, self.input_sequence_length, self.output_sequence_length)
-
     # endregion
 
     # region Training
@@ -721,7 +717,7 @@ class AutoEncoderBaseModel(ABC):
         self.on_train_begin(dataset)
 
         callbacks = self.build_callbacks(dataset)
-        samples_count = dataset.train_subset.samples_count
+        samples_count = None
         callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length, samples_count)
 
         callbacks.on_train_begin()
@@ -739,30 +735,27 @@ class AutoEncoderBaseModel(ABC):
                    batch_size: int,
                    epoch_length: int,
                    epochs: int):
-        dataset = self.resized_dataset(dataset)
-        dataset.train_subset.epoch_length = epoch_length
-        dataset.train_subset.batch_size = batch_size
-        dataset.test_subset.epoch_length = 64
-        dataset.test_subset.batch_size = batch_size
 
         for _ in range(epochs):
-            self.train_epoch(dataset, callbacks)
+            self.train_epoch(dataset, callbacks, batch_size, epoch_length)
 
     def train_epoch(self,
                     dataset: DatasetLoader,
-                    callbacks: CallbackList = None):
-        epoch_length = len(dataset.train_subset)
+                    callbacks: CallbackList,
+                    batch_size: int,
+                    epoch_length: int,
+                    ):
 
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
 
         for batch_index in range(epoch_length):
-            x, y = dataset.train_subset[0]
+            dataset_iterator = dataset.train_subset.get_one_shot_iterator(batch_size, output_labels=False)
 
-            batch_logs = {"batch": batch_index, "size": x.shape[0]}
+            batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            results = self.autoencoder.train_on_batch(x=x, y=y)
+            results = self.autoencoder.train_on_batch(dataset_iterator)
 
             if "metrics" in self.config:
                 batch_logs["loss"] = results[0]
@@ -773,10 +766,11 @@ class AutoEncoderBaseModel(ABC):
 
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(dataset, callbacks)
+        self.on_epoch_end(dataset, batch_size, callbacks)
 
     def on_epoch_end(self,
                      dataset: DatasetLoader,
+                     batch_size: int,
                      callbacks: CallbackList = None,
                      epoch_logs: dict = None):
 
@@ -785,12 +779,11 @@ class AutoEncoderBaseModel(ABC):
             epoch_logs = {}
 
         out_labels = self.autoencoder.metrics_names
-        val_outs = self.autoencoder.evaluate_generator(dataset.test_subset)
+        test_iterator = dataset.test_subset.get_one_shot_iterator(batch_size, output_labels=False)
+        val_outs = self.autoencoder.evaluate(test_iterator, steps=2)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
-
-        dataset.on_epoch_end()
 
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
@@ -976,7 +969,7 @@ class AutoEncoderBaseModel(ABC):
                                     max_iterations=1):
         predictions, labels = [], []
 
-        for video_index in range(subset.videos_count):
+        for video_index in range(len(subset.subset_folders)):
             video_results = self.predict_anomalies_on_video(subset, video_index, stride,
                                                             normalize_predictions=True,
                                                             convergence_threshold=convergence_threshold,
@@ -1132,6 +1125,7 @@ class AutoEncoderBaseModel(ABC):
                 pr_plot[j, i] = pr
 
             save_attractor_results(i + 1)
+
     # endregion
 
     # region Weights (Save|Load)
@@ -1193,7 +1187,6 @@ class AutoEncoderBaseModel(ABC):
 
     def build_anomaly_callbacks(self, dataset: DatasetLoader) -> List[Callback]:
         # region Getting dataset/datasets
-        dataset = self.resized_dataset(dataset)
         test_subset = dataset.test_subset
         train_subset = dataset.train_subset
         # endregion
@@ -1235,8 +1228,7 @@ class AutoEncoderBaseModel(ABC):
                                      tensorboard: TensorBoard,
                                      frequency="epoch",
                                      include_composite=False) -> ImageCallback:
-        videos = subset.get_batch(self.image_summaries_max_outputs, seed=1, apply_preprocess_step=False,
-                                  max_shard_count=self.image_summaries_max_outputs)
+        videos = subset.get_batch(batch_size=self.image_summaries_max_outputs, output_labels=False)
 
         true_outputs_placeholder = self.get_true_outputs_placeholder()
         summary_inputs = [self.autoencoder.input, true_outputs_placeholder]

@@ -10,7 +10,8 @@ def main():
     from typing import Optional
 
     from models import BasicAE, VAE, GAN, VAEGAN, AGE
-    from datasets import DatasetLoader
+    from datasets import DatasetLoader, DatasetConfig
+    from modalities import ModalityShape, RawVideo, OpticalFlow
     from utils.numpy_utils import NumpySeedContext
     # endregion
 
@@ -83,15 +84,24 @@ def main():
     # TODO : Load config for DatasetLoader
     # TODO : In config => Set ModalityShapes
     # TODO : In config => Set Normalization
+    config = DatasetConfig(tfrecords_config_folder=dataset_path,
+                           modalities_io_shapes=
+                           {
+                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
+                                                       output_shape=(32, 128, 128, 1)),
+                               # OpticalFlow: ModalityShape(input_shape=(32, 128, 128, 2),
+                               #                            output_shape=(32, 128, 128, 2)),
+                               # DoG: video_io_shape
+                           })
     dataset = DatasetLoader(dataset_path=dataset_path,
-                            config=None)
+                            config=config)
 
     # endregion
 
     # region Test subset preview
     if preview_test_subset:
         # TODO : Use Dataset Iterator
-        _, videos = dataset.test_subset.get_batch(8, seed=1, apply_preprocess_step=False, max_shard_count=8)
+        _, videos = dataset.test_subset.get_batch(8, output_labels=False)
         for video in videos:
             for frame in video:
                 cv2.imshow("frame", frame)
@@ -120,7 +130,7 @@ def main():
             print("===== Profiling activated ... =====")
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
-            auto_encoder.train(dataset, epoch_length=2, epochs=500, batch_size=6)
+            auto_encoder.train(dataset, epoch_length=1, epochs=500, batch_size=6)
 
 
 if __name__ == "__main__":

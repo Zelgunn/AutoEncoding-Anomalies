@@ -8,12 +8,14 @@ class DatasetLoader(object):
         self.dataset_path = dataset_path
         self.config = config
 
-        self.subsets: Dict[str, SubsetLoader] = None
+        self.subsets: Dict[str, SubsetLoader] = {}
+        for subset_name in config.subsets:
+            self.subsets[subset_name] = SubsetLoader(config, subset_name)
 
     @property
     def train_subset(self) -> SubsetLoader:
-        return self.subsets["train"]
+        return self.subsets["Train"]
 
     @property
     def test_subset(self) -> SubsetLoader:
-        return self.subsets["test"]
+        return self.subsets["Test"]

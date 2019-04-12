@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Dense, Lambda, Reshape, Input
 from tensorflow.python.keras import backend
 import numpy as np
@@ -6,9 +7,9 @@ import cv2
 from abc import ABC
 from tqdm import tqdm
 
-from models import AutoEncoderBaseModel, conv_type, KerasModel
+from models import AutoEncoderBaseModel, conv_type
 from callbacks import RunModel
-from datasets import Subset
+from datasets import SubsetLoader
 
 
 class VariationalBaseModel(AutoEncoderBaseModel, ABC):
@@ -102,7 +103,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     # endregion
 
     # region Testing
-    def visualize_vae_interpolation(self, subset: Subset):
+    def visualize_vae_interpolation(self, subset: SubsetLoader):
         encoder_input = self.encoder.get_input_at(0)
         _, latent_mean, latent_log_var = self.encoder(encoder_input)
 

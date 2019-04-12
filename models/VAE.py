@@ -1,4 +1,6 @@
-from models import VariationalBaseModel, KerasModel
+from tensorflow.python.keras.models import Model as KerasModel
+
+from models import VariationalBaseModel
 from models.VariationalBaseModel import kullback_leibler_divergence_mean0_var1
 
 

@@ -1,7 +1,8 @@
 import tensorflow as tf
+from tensorflow.python.keras.backend import get_session
 import numpy as np
 import os
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 from datasets.loaders import DatasetConfig
 from modalities import Modality, ModalityCollection
@@ -29,6 +30,12 @@ class SubsetLoader(object):
             if max_shard_size != initial_shard_size:
                 raise NotImplementedError("SubsetLoader doesn't support this case yet.")
 
+        self._train_tf_dataset: Optional[tf.data.Dataset] = None
+        self._test_tf_dataset: Optional[tf.data.Dataset] = None
+
+        self._train_iterators: Dict[int, tf.data.Iterator] = {}
+        self._test_iterators: Dict[int, tf.data.Iterator] = {}
+
     def shard_filepath_generator(self):
         while True:
             source_index = np.random.randint(len(self.subset_folders))
@@ -40,6 +47,7 @@ class SubsetLoader(object):
             for filepath in shards_filepath:
                 yield filepath
 
+    # region Loading methods (parsing, decoding, fusing, normalization, splitting, ...)
     def parse_shard(self, serialized_example, output_labels):
         features = self.modalities.get_tfrecord_features()
         if output_labels:
@@ -140,9 +148,28 @@ class SubsetLoader(object):
 
         return joint_shards
 
-    def get_dataset_iterator(self,
-                             output_labels: bool,
-                             batch_size: int):
+    # TODO : Normalize according to config (model output)
+    def normalize_batch(self, modalities: Dict[str, tf.Tensor]):
+        for modality_id in modalities:
+            modality_value = modalities[modality_id]
+            modality_min, modality_max = self.config.modalities_ranges[modality_id]
+            modalities[modality_id] = (modality_value - modality_min) / (modality_max - modality_min)
+        return modalities
+
+    # TODO : What about labels ?
+    def split_batch_io(self, modalities: Dict[str, tf.Tensor]):
+        inputs, outputs = [], []
+        for modality_id, modality_value in modalities.items():
+            modality_type = ModalityCollection.modality_id_to_class(modality_id)
+            input_length = self.modalities[modality_type].io_shape.input_length
+            output_length = self.modalities[modality_type].io_shape.output_length
+            inputs.append(modality_value[:input_length])
+            outputs.append(modality_value[-output_length:])
+        return tuple(inputs), tuple(outputs)
+
+    # endregion
+
+    def make_tf_dataset(self, output_labels: bool):
         dataset = tf.data.Dataset.from_generator(self.shard_filepath_generator,
                                                  output_types=tf.string,
                                                  output_shapes=())
@@ -151,9 +178,38 @@ class SubsetLoader(object):
         dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels))
         dataset = dataset.batch(self.shard_count_per_sample)
         dataset = dataset.map(self.join_shards)
-        dataset = dataset.batch(batch_size)
+        dataset = dataset.map(self.normalize_batch)
+        dataset = dataset.map(self.split_batch_io)
+        # dataset = dataset.batch(batch_size)
 
         return dataset
+
+    def get_one_shot_iterator(self, batch_size: int, output_labels: bool):
+        iterators = self._test_iterators if output_labels else self._train_iterators
+        if batch_size not in iterators:
+            tf_dataset = self.test_tf_dataset if output_labels else self.train_tf_dataset
+            iterators[batch_size] = tf_dataset.batch(batch_size).make_one_shot_iterator()
+
+        return iterators[batch_size]
+
+    def get_batch(self, batch_size: int, output_labels: bool):
+        iterator = self.get_one_shot_iterator(batch_size, output_labels)
+        session = get_session()
+        batch = session.run(iterator.get_next())
+        return batch
+
+    # region Properties
+    @property
+    def train_tf_dataset(self):
+        if self._train_tf_dataset is None:
+            self._train_tf_dataset = self.make_tf_dataset(output_labels=False)
+        return self._train_tf_dataset
+
+    @property
+    def test_tf_dataset(self):
+        if self._test_tf_dataset is None:
+            self._test_tf_dataset = self.make_tf_dataset(output_labels=True)
+        return self._test_tf_dataset
 
     @property
     def shard_count_per_sample(self) -> int:
@@ -162,6 +218,7 @@ class SubsetLoader(object):
     @property
     def modalities(self) -> ModalityCollection:
         return self.config.modalities
+    # endregion
 
 
 def main():

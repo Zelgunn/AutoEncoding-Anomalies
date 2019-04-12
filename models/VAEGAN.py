@@ -1,7 +1,8 @@
+from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Input
 import tensorflow as tf
 
-from models import GAN, VariationalBaseModel, KerasModel, metrics_dict
+from models import GAN, VariationalBaseModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
 
 
