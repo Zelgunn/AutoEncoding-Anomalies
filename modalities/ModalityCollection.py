@@ -78,3 +78,7 @@ class ModalityCollection(object):
         for modality in self._modalities:
             features.update(modality.tfrecord_features())
         return features
+
+    @staticmethod
+    def modality_id_to_class(modality_id: str) -> Type[Modality]:
+        return MODALITY_ID_TO_CLASS[modality_id]

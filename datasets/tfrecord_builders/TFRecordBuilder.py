@@ -54,22 +54,51 @@ class TFRecordBuilder(object):
 
         subsets_dict: Dict[str, Union[List[str], Dict]] = {}
 
+        min_values = None
+        max_values = None
+        max_labels_sizes = []
+
         for data_source in data_sources:
             if self.verbose > 0:
                 print("Building {}".format(data_source.target_path))
 
+            # region Fill subsets_dict with folders containing shards
             target_path = os.path.relpath(data_source.target_path, self.dataset_path)
             if data_source.subset_name in subsets_dict:
                 subsets_dict[data_source.subset_name].append(target_path)
             else:
                 subsets_dict[data_source.subset_name] = [target_path]
+            # endregion
 
-            self.build_one(data_source)
+            source_min_values, source_max_values, max_labels_size = self.build_one(data_source)
+
+            # region Modalities min/max for normalization (step 1 : get)
+            if min_values is None:
+                min_values = source_min_values
+                max_values = source_max_values
+            else:
+                for modality_type in source_min_values:
+                    min_values[modality_type] += source_min_values[modality_type]
+                    max_values[modality_type] += source_max_values[modality_type]
+            # endregion
+
+            max_labels_sizes.append(max_labels_size)
+
+        # region Modalities min/max for normalization (step 2 : compute)
+        modalities_ranges = {
+            modality_type.tfrecord_id(): [float(min(min_values[modality_type])),
+                                          float(max(max_values[modality_type]))]
+            for modality_type in min_values
+        }
+        # endregion
+        max_labels_size = max(max_labels_sizes)
 
         tfrecords_config = {
             "modalities": self.modalities.get_config(),
             "shard_duration": self.shard_duration,
-            "subsets": subsets_dict
+            "subsets": subsets_dict,
+            "modalities_ranges": modalities_ranges,
+            "max_labels_size": max_labels_size
         }
 
         with open(os.path.join(self.dataset_path, tfrecords_config_filename), 'w') as file:
@@ -92,44 +121,51 @@ class TFRecordBuilder(object):
 
         source_iterator = zip(modality_builder, labels_iterator)
 
+        min_values = {}
+        max_values = {}
+        max_labels_size = 0
+
         for i, shard in enumerate(source_iterator):
+            # region Verbose
             if self.verbose > 0:
                 print("\r{} : {}/{}".format(data_source.target_path, i, shard_count), end='')
             sys.stdout.flush()
+            # endregion
 
             modalities, labels = shard
             modalities: Dict[Type[Modality], np.ndarray] = modalities
 
             features: Dict[str, tf.train.Feature] = {}
-            for modality, modality_value in modalities.items():
-                encoded_features = modality.encode_to_tfrecord_feature(modality_value)
+            for modality_type, modality_value in modalities.items():
+                # region Encode modality
+                encoded_features = modality_type.encode_to_tfrecord_feature(modality_value)
                 for feature_name, encoded_feature in encoded_features.items():
                     features[feature_name] = encoded_feature
+                # endregion
 
-                # if modality_name == "raw_video":
-                #     if modality_value.ndim == 3:
-                #         modality_value = np.expand_dims(modality_value, axis=-1)
-                #     features[modality_name] = video_feature(modality_value)
-                #
-                # elif modality_name in ["flow", "dog"]:
-                #     set_ndarray_feature(features, modality_name, modality_value.astype("float16"))
-                #
-                # elif modality_name in ["mfcc"]:
-                #     set_ndarray_feature(features, modality_name, modality_value)
-                #
-                # elif modality_name == "raw_audio":
-                #     features[modality_name] = float_list_feature(modality_value)
-                #
-                # else:
-                #     raise NotImplementedError("{} is not implemented.".format(modality_name))
+                # region Get modality min/max for normalization
+                modality_min = modality_value.min()
+                modality_max = modality_value.max()
+                if modality_type not in min_values:
+                    min_values[modality_type] = [modality_min]
+                    max_values[modality_type] = [modality_max]
+                else:
+                    min_values[modality_type] += [modality_min]
+                    max_values[modality_type] += [modality_max]
+                # endregion
 
+            max_labels_size = max(max_labels_size, len(labels))
             features["labels"] = float_list_feature(labels)
 
             example = tf.train.Example(features=tf.train.Features(feature=features))
 
+            # region Write to disk
             shard_filepath = os.path.join(data_source.target_path, "shard_{:05d}.tfrecord".format(i))
             writer = tf.io.TFRecordWriter(shard_filepath)
             writer.write(example.SerializeToString())
+            # endregion
 
         if self.verbose > 0:
             print("\r{} : Done".format(data_source.target_path))
+
+        return min_values, max_values, max_labels_size

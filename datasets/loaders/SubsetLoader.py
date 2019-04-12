@@ -22,6 +22,13 @@ class SubsetLoader(object):
                              for folder, files in config.list_subset_tfrecords(subset_name).items()}
         self.subset_folders = list(self.subset_files.keys())
 
+        for modality in self.config.modalities:
+            shard_size = modality.frequency * self.config.shard_duration
+            max_shard_size = int(np.ceil(shard_size))
+            initial_shard_size = int(np.floor(shard_size))
+            if max_shard_size != initial_shard_size:
+                raise NotImplementedError("SubsetLoader doesn't support this case yet.")
+
     def shard_filepath_generator(self):
         while True:
             source_index = np.random.randint(len(self.subset_folders))
@@ -50,7 +57,9 @@ class SubsetLoader(object):
             features_decoded[modality_id] = decoded_modality
 
         if output_labels:
-            features_decoded["labels"] = parsed_features["labels"].values
+            labels = parsed_features["labels"].values
+            labels = self.pad_labels_if_needed(labels)
+            features_decoded["labels"] = labels
 
         return features_decoded, modalities_shard_size
 
@@ -79,6 +88,24 @@ class SubsetLoader(object):
 
         return decoded_modality, modality_size
 
+    def pad_labels_if_needed(self, labels: tf.Tensor):
+        labels_size = tf.shape(labels)[0]
+        max_labels_size = self.config.max_labels_size
+        pad_size = max_labels_size - labels_size
+
+        def pad_labels():
+            paddings = [[pad_size, 0]]
+            return tf.pad(labels, paddings)
+
+        def identity():
+            return labels
+
+        labels = tf.cond(pred=pad_size > 0,
+                         true_fn=pad_labels,
+                         false_fn=identity)
+
+        return labels
+
     def join_shards(self,
                     shards: Dict[str, tf.Tensor],
                     shard_sizes: Dict[str, tf.Tensor]):
@@ -97,8 +124,6 @@ class SubsetLoader(object):
 
             modality_shards_shape = [self.shard_count_per_sample, modality_max_size] + [None] * (modality.rank() - 1)
             modality_shards.set_shape(modality_shards_shape)
-            # TODO : Shards may have different sizes, even if not including last shard
-            # This would happen with a non-integer (floating) frequency (max_size != ceil(size))
             modality_shards = tf.unstack(modality_shards, axis=0)
             modality_shards = tf.concat(modality_shards, axis=0)
             modality_shards = modality_shards[offset:offset + modality_sample_size]
@@ -106,8 +131,12 @@ class SubsetLoader(object):
             joint_shards[modality_id] = modality_shards
 
         if "labels" in shards:
-            # TODO : Joint labels, ie: [0, 1], [0, 0.5], [0.5, 1] => [0, 0.5][0.83, 1.0]
-            joint_shards["labels"] = tf.reshape(shards["labels"], shape=[-1])
+            labels = shards["labels"]
+            shard_labels_offset = tf.range(self.shard_count_per_sample, dtype=tf.float32)
+            shard_labels_offset = tf.reshape(shard_labels_offset, [self.shard_count_per_sample, 1])
+            labels = (labels + shard_labels_offset) / self.shard_count_per_sample
+            labels = tf.reshape(labels, shape=[-1, 2])
+            joint_shards["labels"] = labels
 
         return joint_shards
 
@@ -117,8 +146,6 @@ class SubsetLoader(object):
         dataset = tf.data.Dataset.from_generator(self.shard_filepath_generator,
                                                  output_types=tf.string,
                                                  output_shapes=())
-
-        dataset = dataset.take(512)
 
         dataset = tf.data.TFRecordDataset(dataset)
         dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels))

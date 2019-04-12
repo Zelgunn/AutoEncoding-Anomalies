@@ -23,12 +23,21 @@ class DatasetConfig(object):
         tf_records_config_filepath = os.path.join(tfrecords_config_folder, tfrecords_config_filename)
         with open(tf_records_config_filepath, 'r') as file:
             self.tfrecords_config: Dict[str, Any] = json.load(file)
-            self.modalities = ModalityCollection.from_config(self.tfrecords_config["modalities"])
-            self.subsets: Dict[str, List[str]] = self.tfrecords_config["subsets"]
-            self.shard_duration: float = self.tfrecords_config["shard_duration"]
+
+        self.modalities = ModalityCollection.from_config(self.tfrecords_config["modalities"])
+        self.subsets: Dict[str, List[str]] = self.tfrecords_config["subsets"]
+        self.shard_duration = float(self.tfrecords_config["shard_duration"])
+        self.max_labels_size: int = int(self.tfrecords_config["max_labels_size"])
+
+        modalities_ranges = self.tfrecords_config["modalities_ranges"]
+        self.modalities_ranges = {
+            ModalityCollection.modality_id_to_class(modality_id): modalities_ranges[modality_id]
+            for modality_id in modalities_ranges
+        }
 
         self.modalities.set_modalities_shapes(modalities_io_shapes, filter_missing_modalities=True)
 
+        # region Compute maximum amount of shards required to build a sample
         shard_counts = []
         for modality in self.modalities:
             sample_length = modality.io_shape.sample_length
@@ -37,6 +46,7 @@ class DatasetConfig(object):
             shard_counts.append(get_shard_count(sample_length, shard_size))
 
         self.shard_count_per_sample: int = max(*shard_counts)
+        # endregion
 
     def list_subset_tfrecords(self,
                               subset_name: str
