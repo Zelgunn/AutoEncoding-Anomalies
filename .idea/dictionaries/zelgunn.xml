@@ -18,10 +18,12 @@
       <w>ffmpeg</w>
       <w>figsize</w>
       <w>filepath</w>
+      <w>filepaths</w>
       <w>fourcc</w>
       <w>gifs</w>
       <w>glorot</w>
       <w>infos</w>
+      <w>initializable</w>
       <w>keras</w>
       <w>kullback</w>
       <w>leibler</w>

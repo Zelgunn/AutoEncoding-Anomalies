@@ -11,7 +11,7 @@ def get_shard_count(sample_length: int,
                     shard_size: int
                     ) -> int:
     shard_count = 1 + np.ceil((sample_length - 1) / shard_size).astype(np.int)
-    return max(1, shard_count)
+    return max(2, shard_count)
 
 
 class DatasetConfig(object):

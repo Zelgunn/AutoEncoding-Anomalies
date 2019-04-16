@@ -1,6 +1,6 @@
 from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Activation, LeakyReLU, Dense, Dropout, Input
-from tensorflow.python.keras.layers import Layer, Reshape, Concatenate
+from tensorflow.python.keras.layers import Layer, Reshape, Concatenate, Lambda
 from tensorflow.python.keras.layers import BatchNormalization
 from tensorflow.python.keras.layers import Conv3D, Conv3DTranspose, MaxPooling3D, AveragePooling3D, UpSampling3D
 from tensorflow.python.keras.initializers import VarianceScaling
@@ -23,6 +23,7 @@ from tqdm import tqdm
 from typing import List, Union, Dict, Tuple, Optional
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
+from layers.utility_layers import RawPredictionsLayer
 from datasets import SubsetLoader, DatasetLoader
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
@@ -184,7 +185,7 @@ class AutoEncoderBaseModel(ABC):
         self._encoder: Optional[KerasModel] = None
         self._decoder: Optional[KerasModel] = None
         self._autoencoder: Optional[KerasModel] = None
-        self._raw_predictions_models: Dict[Tuple, RunModel] = {}
+        self._raw_predictions_models: Dict[Tuple, KerasModel] = {}
         self._reconstructor_model: Optional[RunModel] = None
 
         self.decoder_input_layer = None
@@ -717,8 +718,7 @@ class AutoEncoderBaseModel(ABC):
         self.on_train_begin(dataset)
 
         callbacks = self.build_callbacks(dataset)
-        samples_count = None
-        callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length, samples_count)
+        callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length)
 
         callbacks.on_train_begin()
         try:
@@ -840,7 +840,7 @@ class AutoEncoderBaseModel(ABC):
 
         video_writer.release()
 
-    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4)) -> RunModel:
+    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4)) -> KerasModel:
         if reduction_axis not in self._raw_predictions_models:
             reconstructor = KerasModel(inputs=self.decoder_input_layer, outputs=self.reconstructor_output,
                                        name="Reconstructor")
@@ -848,26 +848,19 @@ class AutoEncoderBaseModel(ABC):
             if isinstance(encoder_output, list):
                 encoder_output = encoder_output[0]
             pred_output = reconstructor(encoder_output)
-            true_output = tf.placeholder(dtype=pred_output.dtype, shape=pred_output.shape)
+            true_output = self.encoder.get_input_at(0)
+            error = RawPredictionsLayer(reduction_axis)([pred_output, true_output])
 
-            error = tf.square(pred_output - true_output)
-            error = tf.reduce_sum(error, axis=reduction_axis)
+            labels_input_layer = Input(shape=[None, 2], dtype=tf.float32, name="labels_input_layer")
+            labels_output_layer = Lambda(tf.identity, name="labels_identity")(labels_input_layer)
 
-            inputs = [self.encoder.get_input_at(0), true_output]
-            outputs = [error]
-            raw_predictions_model = RunModel(inputs, outputs)
+            inputs = [self.encoder.get_input_at(0), labels_input_layer]
+            outputs = [error, labels_output_layer]
+            raw_predictions_model = KerasModel(inputs=inputs, outputs=outputs)
 
             self._raw_predictions_models[reduction_axis] = raw_predictions_model
 
         return self._raw_predictions_models[reduction_axis]
-
-    def predict_anomalies_on_single_example(self, step_video: np.ndarray):
-        raw_predictions_model = self.get_anomalies_raw_predictions_model()
-
-        step_predictions = raw_predictions_model.predict(x=[step_video, step_video], batch_size=1)
-        step_predictions = np.squeeze(step_predictions)
-
-        return step_predictions
 
     # region Using attractors
     def get_reconstructor_run_model(self) -> RunModel:
@@ -920,47 +913,23 @@ class AutoEncoderBaseModel(ABC):
                                    normalize_predictions=False,
                                    convergence_threshold=None,
                                    max_iterations=1):
-        video_length = subset.get_video_length(video_index)
-        steps_count = 1 + (video_length - self.input_sequence_length) // stride
-        # video_length = steps_count * stride
+        from modalities import RawVideo
 
-        # region Scores arrays
-        predictions = np.zeros(shape=[video_length])
-
-        if subset.has_labels:
-            video_labels = subset.get_video_frame_labels(video_index, 0, video_length)
-        else:
-            video_labels = np.zeros(shape=[video_length], dtype=np.bool)
-
-        counts = np.zeros(shape=[video_length], dtype=np.int32)
-        # endregion
-
-        # region Compute scores for video
-        for i in range(steps_count):
-            start = i * stride
-            end = start + self.input_sequence_length
-
-            step_video = subset.get_video_frames(video_index, start, end)
-            step_video = np.expand_dims(step_video, axis=0)
-
-            if convergence_threshold is None:
-                step_predictions = self.predict_anomalies_on_single_example(step_video)
-            else:
-                step_predictions = self.predict_anomalies_on_single_example_until_convergence(step_video,
-                                                                                              convergence_threshold,
-                                                                                              max_iterations)
-
-            predictions[start: end] += step_predictions
-            counts[start:end] += 1
-        # endregion
-
-        predictions = predictions / counts
+        session = get_session()
+        raw_predictions_model = self.get_anomalies_raw_predictions_model()
+        iterator = subset.get_source_browser_iterator(video_index, RawVideo, stride)
+        session.run(iterator.initializer)
+        # TODO : Get steps count
+        steps_count = 1000
+        predictions, labels = raw_predictions_model.predict(iterator.iterator_next, steps=steps_count)
+        labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
+        labels = np.any(labels, axis=-1)
 
         if normalize_predictions:
             predictions = (predictions - predictions.min()) / predictions.max()
             # predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
 
-        return predictions, video_labels
+        return predictions, labels
 
     def predict_anomalies_on_subset(self,
                                     subset: SubsetLoader,
@@ -1042,6 +1011,7 @@ class AutoEncoderBaseModel(ABC):
         session: tf.Session = get_session()
         session.run(tf.local_variables_initializer())
 
+        labels = np.tile(labels[:, np.newaxis], [1, predictions.shape[1]])
         eval_ops = [self._auc_ops, self._auc_summary_ops] if log_in_tensorboard else [self._auc_ops]
         eval_results = session.run(eval_ops, feed_dict={self._auc_predictions_placeholder: predictions,
                                                         self._auc_labels_placeholder: labels})
@@ -1228,7 +1198,9 @@ class AutoEncoderBaseModel(ABC):
                                      tensorboard: TensorBoard,
                                      frequency="epoch",
                                      include_composite=False) -> ImageCallback:
-        videos = subset.get_batch(batch_size=self.image_summaries_max_outputs, output_labels=False)
+        inputs, outputs = subset.get_batch(batch_size=self.image_summaries_max_outputs, output_labels=False)
+        # TODO : Switch to dict to use outputs[RawVideo]
+        videos = [inputs[0], outputs[0]]
 
         true_outputs_placeholder = self.get_true_outputs_placeholder()
         summary_inputs = [self.autoencoder.input, true_outputs_placeholder]
@@ -1309,15 +1281,13 @@ class AutoEncoderBaseModel(ABC):
                         callbacks: CallbackList or List[Callback],
                         batch_size: int,
                         epochs: int,
-                        epoch_length: int,
-                        samples_count: int) -> CallbackList:
+                        epoch_length: int) -> CallbackList:
         callbacks = CallbackList(callbacks)
         callbacks.set_model(self.autoencoder)
         callbacks.set_params({
             'batch_size': batch_size,
             'epochs': epochs,
             'steps': epoch_length,
-            'samples': samples_count,
             'verbose': 1,
             'do_validation': True,
             'metrics': self.callback_metrics(),
@@ -1339,6 +1309,7 @@ class AutoEncoderBaseModel(ABC):
     def make_log_dir(cls,
                      dataset: DatasetLoader):
         project_log_dir = "../logs/AutoEncoding-Anomalies"
+        # TODO : Change the way Dataset name is chosen (no longer dataset.__class__.__name__)
         base_dir = os.path.join(project_log_dir, dataset.__class__.__name__, cls.__name__)
         log_dir = get_log_dir(base_dir)
         return log_dir

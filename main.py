@@ -100,7 +100,6 @@ def main():
 
     # region Test subset preview
     if preview_test_subset:
-        # TODO : Use Dataset Iterator
         _, videos = dataset.test_subset.get_batch(8, output_labels=False)
         for video in videos:
             for frame in video:
@@ -130,7 +129,7 @@ def main():
             print("===== Profiling activated ... =====")
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
-            auto_encoder.train(dataset, epoch_length=1, epochs=500, batch_size=6)
+            auto_encoder.train(dataset, epoch_length=2, epochs=5, batch_size=2)
 
 
 if __name__ == "__main__":
