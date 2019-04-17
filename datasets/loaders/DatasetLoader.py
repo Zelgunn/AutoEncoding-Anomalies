@@ -4,8 +4,7 @@ from datasets.loaders import SubsetLoader, DatasetConfig
 
 
 class DatasetLoader(object):
-    def __init__(self, dataset_path: str, config: DatasetConfig):
-        self.dataset_path = dataset_path
+    def __init__(self, config: DatasetConfig):
         self.config = config
 
         self.subsets: Dict[str, SubsetLoader] = {}

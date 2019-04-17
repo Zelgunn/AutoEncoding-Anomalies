@@ -8,8 +8,8 @@ import os
 from time import time
 
 from layers import ResBasicBlock3D, DenseBlock3D, ResBasicBlock3DTranspose
-from datasets import UCSDDataset, SubwayDataset
-from data_preprocessors import BrightnessShifter, DropoutNoiser
+from datasets import DatasetConfig, DatasetLoader, SubsetLoader
+from modalities import RawVideo, ModalityShape
 from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection_on_subset
 
 
@@ -145,51 +145,27 @@ def get_model(mode):
     return model
 
 
-def get_ucsd_dataset(shift_brightness, dropout_noise):
-    train_preprocessors = []
-    if shift_brightness:
-        train_preprocessors.append(BrightnessShifter(bias=0.2))
-    if dropout_noise:
-        train_preprocessors.append(DropoutNoiser(0.2, 0.0))
+def get_ucsd_dataset():
+    config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
+                           modalities_io_shapes=
+                           {
+                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
+                                                       output_shape=(32, 128, 128, 1)),
+                           })
 
-    dataset = UCSDDataset(dataset_path="../datasets/ucsd/ped2",
-                          input_sequence_length=None,
-                          output_sequence_length=None,
-                          train_preprocessors=train_preprocessors)
-    dataset.load()
-
-    dataset = dataset.resized(image_size=(128, 128), input_sequence_length=16, output_sequence_length=32)
-    dataset.normalize(0.0, 1.0)
-
-    dataset.train_subset.epoch_length = 250
-    dataset.train_subset.batch_size = 8
-    dataset.test_subset.epoch_length = 25
-    dataset.test_subset.batch_size = 2
-
+    dataset = DatasetLoader(config)
     return dataset
 
 
-def get_subway_dataset(shift_brightness, dropout_noise):
-    train_preprocessors = []
-    if shift_brightness:
-        train_preprocessors.append(BrightnessShifter(bias=0.2))
-    if dropout_noise:
-        train_preprocessors.append(DropoutNoiser(0.2, 0.0))
+def get_subway_dataset():
+    config = DatasetConfig(tfrecords_config_folder="../datasets/subway/exit",
+                           modalities_io_shapes=
+                           {
+                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 3),
+                                                       output_shape=(32, 128, 128, 3)),
+                           })
 
-    dataset = SubwayDataset(dataset_path="../datasets/subway/exit",
-                            input_sequence_length=None,
-                            output_sequence_length=None,
-                            train_preprocessors=train_preprocessors)
-    dataset.load()
-
-    dataset = dataset.resized(image_size=(96, 128), input_sequence_length=16, output_sequence_length=32)
-    dataset.normalize(0.0, 1.0)
-
-    dataset.train_subset.epoch_length = 250
-    dataset.train_subset.batch_size = 8
-    dataset.test_subset.epoch_length = 25
-    dataset.test_subset.batch_size = 2
-
+    dataset = DatasetLoader(config)
     return dataset
 
 
@@ -208,9 +184,9 @@ def main():
     mode = "conv_block"
     model = get_model(mode)
 
-    dataset = get_ucsd_dataset(True, False)
-    train_subset = dataset.train_subset
-    test_subset = dataset.test_subset
+    dataset = get_ucsd_dataset()
+    train_subset: SubsetLoader = dataset.train_subset
+    test_subset: SubsetLoader = dataset.test_subset
 
     model.compile(optimizer=Adam(lr=1e-3), loss="mse", metrics=["mse"])
 

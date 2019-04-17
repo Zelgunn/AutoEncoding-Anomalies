@@ -150,22 +150,24 @@ class AGE(AutoEncoderBaseModel):
         return self._decoder_fake_data_trainer
 
     # region Training
-    def train_epoch(self, dataset: DatasetLoader, callbacks: CallbackList = None):
-        epoch_length = len(dataset.train_subset)
-
+    def train_epoch(self,
+                    dataset: DatasetLoader,
+                    callbacks: CallbackList,
+                    batch_size: int,
+                    epoch_length: int
+                    ):
         callbacks.on_epoch_begin(self.epochs_seen)
+        dataset_iterator = dataset.train_subset.tf_dataset.batch(batch_size)
 
         for batch_index in range(epoch_length):
             decoder_steps = self.config["decoder_steps"]
-            x, y = dataset.train_subset[0]
-            batch_size = x.shape[0]
             z = np.random.normal(size=[decoder_steps + 1, batch_size, self.embeddings_size])
 
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
             # Train Encoder
-            encoder_real_data_loss = self._encoder_real_data_trainer.train_on_batch(x=x, y=y)
+            encoder_real_data_loss = self._encoder_real_data_trainer.train_on_batch(dataset_iterator)
             encoder_fake_data_loss = self._encoder_fake_data_trainer.train_on_batch(x=z[0], y=z[0])
 
             # Train Decoder
@@ -180,7 +182,7 @@ class AGE(AutoEncoderBaseModel):
             batch_logs["decoder_loss"] = decoder_fake_data_loss
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(dataset, callbacks)
+        self.on_epoch_end(dataset, batch_size, callbacks)
 
     # endregion
 

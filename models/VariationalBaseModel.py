@@ -111,8 +111,9 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         decoder_output = self.decoder.get_output_at(0)
 
         interpolation_count = 16
-        input_video, output_video = subset.get_batch(batch_size=1, seed=None, apply_preprocess_step=False,
-                                                     max_shard_count=1)
+        inputs, outputs = subset.get_batch(batch_size=1, output_labels=False)
+        # TODO : Change keys to RawVideo
+        input_video, output_video = inputs[0], outputs[0]
         session = backend.get_session()
 
         mean, log_var = session.run([latent_mean, latent_log_var], feed_dict={encoder_input: input_video})

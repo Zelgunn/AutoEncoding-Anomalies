@@ -1,5 +1,3 @@
-from typing import List, Union, Type
-
 from modalities import Modality, ModalityCollection, RawAudio, MFCCs
 from datasets.modality_builders import ModalityBuilder
 from datasets.data_readers import AudioReader

@@ -55,7 +55,7 @@ class SubsetLoader(object):
         modalities_shard_size, features_decoded = {}, {}
 
         for modality in self.modalities:
-            modality_id = modality.tfrecord_id()
+            modality_id = modality.id()
             decoded_modality = modality.decode_from_tfrecord_feature(parsed_features)
             decoded_modality, modality_size = self.pad_modality_if_needed(modality, decoded_modality)
             modalities_shard_size[modality_id] = modality_size
@@ -81,7 +81,7 @@ class SubsetLoader(object):
             size_paddings = [[0, pad_size]]
             shape_paddings = tf.zeros(shape=[paddings_rank - 1, 2], dtype=tf.int64)
             paddings = tf.concat([size_paddings, shape_paddings], axis=0,
-                                 name=modality.tfrecord_id() + "_paddings")
+                                 name=modality.id() + "_paddings")
             return tf.pad(decoded_modality, paddings)
 
         def identity():
@@ -123,7 +123,7 @@ class SubsetLoader(object):
 
         for modality in self.modalities:
             modality_type = type(modality)
-            modality_id = modality.tfrecord_id()
+            modality_id = modality.id()
             modality_shards = shards[modality_id]
             modality_shard_sizes = shard_sizes[modality_id]
 
@@ -137,7 +137,8 @@ class SubsetLoader(object):
                 modality_sample_size = tf.constant(modality_sample_size, name="modality_sample_size")
 
                 modality_effective_size = tf.cast(modality_shard_sizes[0], tf.float32, name="modality_effective_size")
-                modality_offset = tf.cast(offset * modality_effective_size, tf.int32, name="offset")
+                modality_offset_range: tf.Tensor = modality_effective_size - 1.0
+                modality_offset = tf.cast(offset * modality_offset_range, tf.int32, name="offset")
 
                 modality_shards_shape = tf.unstack(tf.shape(modality_shards), name="modality_shape")
                 shard_count, modality_size, *modality_shape = modality_shards_shape
@@ -178,18 +179,26 @@ class SubsetLoader(object):
             modalities[modality_id] = (modality_value - modality_min) / (modality_max - modality_min)
         return modalities
 
-    # TODO : What about labels ?
     def split_batch_io(self, modalities: Dict[str, tf.Tensor]):
         inputs, outputs = [], []
+        labels = None
         for modality_id, modality_value in modalities.items():
             if modality_id == "labels":
+                labels = modality_value
                 continue
+
             modality_type = ModalityCollection.modality_id_to_class(modality_id)
+
             input_length = self.modalities[modality_type].io_shape.input_length
             output_length = self.modalities[modality_type].io_shape.output_length
+
             inputs.append(modality_value[:input_length])
             outputs.append(modality_value[-output_length:])
-        return tuple(inputs), tuple(outputs)
+
+        if labels is None:
+            return tuple(inputs), tuple(outputs)
+        else:
+            return tuple(inputs), tuple(outputs), labels
 
     # endregion
 
@@ -228,21 +237,18 @@ class SubsetLoader(object):
     def get_one_shot_iterator(self, batch_size: int, output_labels: bool):
         iterators = self._test_iterators if output_labels else self._train_iterators
         if batch_size not in iterators:
-            tf_dataset = self.test_tf_dataset if output_labels else self.train_tf_dataset
-            iterators[batch_size] = tf_dataset.batch(batch_size).make_one_shot_iterator()
+            tf_dataset = self.labeled_tf_dataset if output_labels else self.tf_dataset
+            iterators[batch_size] = tf_dataset.batch(batch_size).make_one_shot_iterator().get_next()
 
         return iterators[batch_size]
 
     # endregion
 
-    # region Get batch
     def get_batch(self, batch_size: int, output_labels: bool):
         iterator = self.get_one_shot_iterator(batch_size, output_labels)
         session = get_session()
-        inputs, outputs = session.run(iterator.get_next())
+        inputs, outputs = session.run(iterator)
         return inputs, outputs
-
-    # endregion
 
     # region Read dataset in order
     def make_source_filepath_generator(self, source_index: int):
@@ -261,13 +267,13 @@ class SubsetLoader(object):
                             reference_modality: Type[Modality],
                             stride: int
                             ):
-        reference_modality_id = reference_modality.tfrecord_id()
+        reference_modality_id = reference_modality.id()
         size = shard_sizes[reference_modality_id][0]
         stride = tf.constant(stride, tf.int32, name="stride")
         result_count = size // stride
 
         def loop_body(i, step_shards_arrays: Dict[str, tf.TensorArray]):
-            step_offset = tf.cast(i * stride, tf.float32) / tf.cast(size, tf.float32)
+            step_offset = tf.cast(i * stride, tf.float32) / tf.cast(size - 1, tf.float32)
             step_joint_shards = self.join_shards(shards, shard_sizes, step_offset, sample_length="input_length")
             for modality_id in step_shards_arrays:
                 modality = step_joint_shards[modality_id]
@@ -327,13 +333,13 @@ class SubsetLoader(object):
 
     # region Properties
     @property
-    def train_tf_dataset(self) -> tf.data.Dataset:
+    def tf_dataset(self) -> tf.data.Dataset:
         if self._train_tf_dataset is None:
             self._train_tf_dataset = self.make_tf_dataset(output_labels=False)
         return self._train_tf_dataset
 
     @property
-    def test_tf_dataset(self) -> tf.data.Dataset:
+    def labeled_tf_dataset(self) -> tf.data.Dataset:
         if self._test_tf_dataset is None:
             self._test_tf_dataset = self.make_tf_dataset(output_labels=True)
         return self._test_tf_dataset
@@ -353,10 +359,43 @@ class SubsetLoader(object):
 
 
 def main():
-    # TODO : Put kitchen sink code here when done
-    pass
+    import cv2
+    from modalities import RawVideo, OpticalFlow, ModalityShape
+
+    tf.enable_eager_execution()
+
+    config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
+                           modalities_io_shapes=
+                           {
+                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
+                                                       output_shape=(32, 128, 128, 1)),
+                               OpticalFlow: ModalityShape(input_shape=(16, 128, 128, 1),
+                                                          output_shape=(32, 128, 128, 2)),
+                               # DoG: video_io_shape
+                           })
+
+    loader = SubsetLoader(config, "Test")
+
+    for source_index in range(loader.source_count):
+        dataset = loader.get_source_browser(source_index, RawVideo, 1)
+
+        for batch in dataset.batch(1000):
+            raw_video = np.squeeze(batch[RawVideo.id()])
+
+            labels = np.squeeze(batch["labels"], axis=1)
+            labels_not_equal: np.ndarray = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
+            labels_not_equal = np.any(labels_not_equal, axis=-1)
+
+            for i in range(len(labels)):
+                frame = raw_video[i][-1]
+
+                if labels_not_equal[i]:
+                    frame *= 0.5
+
+                frame = cv2.resize(frame, (512, 512))
+                cv2.imshow("frame", frame)
+                cv2.waitKey(1000 // 25)
 
 
 if __name__ == "__main__":
-    tf.enable_eager_execution()
     main()

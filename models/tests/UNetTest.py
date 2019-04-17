@@ -8,7 +8,8 @@ from time import time
 import os
 
 from layers import DenseBlock3D
-from datasets import SubwayDataset
+from datasets import DatasetLoader, DatasetConfig
+from modalities import RawVideo, ModalityShape
 
 
 def get_conv_model():
@@ -172,20 +173,15 @@ def get_dense_block_model():
 
 
 def get_dataset():
-    subway_dataset = SubwayDataset(dataset_path="../datasets/subway/exit",
-                                   input_sequence_length=None,
-                                   output_sequence_length=None)
-    subway_dataset.load()
+    config = DatasetConfig(tfrecords_config_folder="../datasets/subway/exit",
+                           modalities_io_shapes=
+                           {
+                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 3),
+                                                       output_shape=(32, 128, 128, 3)),
+                           })
 
-    subway_dataset = subway_dataset.resized(image_size=(96, 128), input_sequence_length=8, output_sequence_length=8)
-    subway_dataset.normalize(0.0, 1.0)
-
-    subway_dataset.train_subset.epoch_length = 250
-    subway_dataset.train_subset.batch_size = 16
-    subway_dataset.test_subset.epoch_length = 25
-    subway_dataset.test_subset.batch_size = 2
-
-    return subway_dataset
+    dataset = DatasetLoader(config)
+    return dataset
 
 
 def main():
@@ -213,7 +209,7 @@ def main():
         if key != -1:
             seed += 1
 
-            x, y_true = dataset.test_subset.get_batch(seed=seed)
+            x, y_true = dataset.test_subset.get_batch(batch_size=1, output_labels=False)
             y_pred = model.predict(x)
             i = 0
 

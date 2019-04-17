@@ -3,7 +3,7 @@ from typing import Dict, Type, List, Optional, Any
 from modalities import Modality, RawVideo, OpticalFlow, DoG, RawAudio, MFCCs, ModalityShape
 
 EXISTING_MODALITIES: List[Type[Modality]] = [RawVideo, OpticalFlow, DoG, RawAudio, MFCCs]
-MODALITY_ID_TO_CLASS: Dict[str, Type[Modality]] = {modality_type.tfrecord_id(): modality_type
+MODALITY_ID_TO_CLASS: Dict[str, Type[Modality]] = {modality_type.id(): modality_type
                                                    for modality_type in EXISTING_MODALITIES}
 
 
@@ -41,12 +41,12 @@ class ModalityCollection(object):
 
     def ids(self):
         for modality_type in self._modalities:
-            yield modality_type.tfrecord_id()
+            yield modality_type.id()
 
     def get_config(self) -> Dict[str, Dict[str, Any]]:
         config = {}
         for modality in self._modalities.values():
-            config[modality.tfrecord_id()] = modality.get_config()
+            config[modality.id()] = modality.get_config()
         return config
 
     @classmethod

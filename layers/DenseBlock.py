@@ -4,7 +4,7 @@ from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
 from tensorflow.python.keras.layers import BatchNormalization, concatenate
 from tensorflow.python.keras.utils import conv_utils
 from tensorflow.python.keras import activations, initializers, regularizers, constraints
-from typing import List
+from typing import List, Optional
 
 from layers import CompositeLayer
 
@@ -171,7 +171,7 @@ class DenseBlockND(CompositeLayer):
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
 
-        self.composite_function_blocks: List[CompositeFunctionBlock] = None
+        self.composite_function_blocks: Optional[List[CompositeFunctionBlock]] = None
         self.transition_layer = None
 
         self.input_spec = InputSpec(ndim=self.rank + 2)

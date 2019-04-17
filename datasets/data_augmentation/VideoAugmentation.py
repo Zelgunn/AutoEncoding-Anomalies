@@ -15,22 +15,4 @@ class VideoAugmentation(DataAugmentation):
         self.apply_on_outputs = apply_on_outputs
 
     def process(self, inputs: tf.data.Dataset, outputs: tf.data.Dataset):
-        size = [len(inputs)] + [1] * (inputs.ndim - 1)
-        if self.gain is not None:
-            gain = random_range_value(self.gain, size=size)
-            inputs *= gain
-            if self.apply_on_outputs:
-                outputs *= gain
-
-        if self.bias is not None:
-            bias = random_range_value(self.bias, center=0.0, size=size)
-            inputs += bias
-            if self.apply_on_outputs:
-                outputs += bias
-
-        if (self.gain is not None) or (self.bias is not None):
-            inputs.clip(self.values_range[0], self.values_range[1], out=inputs)
-            if self.apply_on_outputs:
-                outputs.clip(self.values_range[0], self.values_range[1], out=outputs)
-
-        return inputs, outputs
+        raise NotImplementedError

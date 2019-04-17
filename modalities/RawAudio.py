@@ -18,7 +18,7 @@ class RawAudio(Modality):
 
     @classmethod
     def tfrecord_features(cls) -> Dict[str, tuple]:
-        return {cls.tfrecord_id(): tf.VarLenFeature(tf.string)}
+        return {cls.id(): tf.VarLenFeature(tf.string)}
 
     @classmethod
     def rank(cls) -> int:

@@ -1,7 +1,7 @@
 import os
 from typing import Tuple, List
 
-from modalities import Modality, ModalityCollection, RawVideo, OpticalFlow, DoG
+from modalities import ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 from datasets.data_readers import VideoReader
 
@@ -57,12 +57,13 @@ class SubwayTFRecordBuilder(TFRecordBuilder):
 if __name__ == "__main__":
     subway_tf_record_builder = SubwayTFRecordBuilder(dataset_path="../datasets/subway/exit",
                                                      shard_duration=2.0,
-                                                     modalities=
-                                                     [
-                                                         RawVideo(frequency=25),
-                                                         OpticalFlow(frequency=25, use_polar=True),
-                                                         DoG(frequency=25),
-                                                     ],
+                                                     modalities=ModalityCollection(
+                                                         [
+                                                             RawVideo(frequency=25),
+                                                             OpticalFlow(frequency=25, use_polar=True),
+                                                             DoG(frequency=25),
+                                                         ]
+                                                     ),
                                                      video_frame_size=(128, 128)
                                                      )
     subway_tf_record_builder.build()

@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from typing import Union, List, Dict, Optional, Tuple
+from typing import Union, List, Optional, Tuple
 
 from modalities import Modality, ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.modality_builders import ModalityBuilder

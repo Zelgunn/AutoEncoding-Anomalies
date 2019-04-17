@@ -1,7 +1,7 @@
 import os
 from typing import Tuple, List
 
-from modalities import Modality, ModalityCollection, RawVideo, OpticalFlow, DoG
+from modalities import ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 from datasets.data_readers import VideoReader
 

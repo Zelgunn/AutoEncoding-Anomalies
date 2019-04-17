@@ -3,7 +3,7 @@ import csv
 from tqdm import tqdm
 from typing import Dict, Tuple, List
 
-from modalities import Modality, ModalityCollection, RawVideo, OpticalFlow, DoG
+from modalities import ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 
 
@@ -84,11 +84,12 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 if __name__ == "__main__":
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
                                                    shard_duration=2.0,
-                                                   modalities=
-                                                   [
-                                                       RawVideo(frequency=25),
-                                                       OpticalFlow(frequency=25, use_polar=True),
-                                                       DoG(frequency=25),
-                                                   ],
+                                                   modalities=ModalityCollection(
+                                                       [
+                                                           RawVideo(frequency=25),
+                                                           OpticalFlow(frequency=25, use_polar=True),
+                                                           DoG(frequency=25),
+                                                       ]
+                                                   ),
                                                    video_frame_size=(128, 128))
     emoly_tf_record_builder.build()

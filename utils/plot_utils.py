@@ -1,6 +1,6 @@
-import matplotlib
+# import matplotlib
 
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
@@ -30,6 +30,7 @@ def plot_line2d_to_array(x: np.ndarray, y: np.ndarray,
     canvas = FigureCanvasAgg(figure)
     canvas.draw()
 
+    # noinspection PyTypeChecker
     canvas_as_str: str = canvas.tostring_rgb()
     image = np.fromstring(canvas_as_str, dtype="uint8")
     image = np.reshape(image, [output_size[0], output_size[1], 3])

@@ -11,7 +11,7 @@ def main():
 
     from models import BasicAE, VAE, GAN, VAEGAN, AGE
     from datasets import DatasetLoader, DatasetConfig
-    from modalities import ModalityShape, RawVideo, OpticalFlow
+    from modalities import ModalityShape, RawVideo  # , OpticalFlow, DoG
     from utils.numpy_utils import NumpySeedContext
     # endregion
 
@@ -93,8 +93,7 @@ def main():
                                #                            output_shape=(32, 128, 128, 2)),
                                # DoG: video_io_shape
                            })
-    dataset = DatasetLoader(dataset_path=dataset_path,
-                            config=config)
+    dataset = DatasetLoader(config=config)
 
     # endregion
 
@@ -135,6 +134,8 @@ def main():
 if __name__ == "__main__":
     # TODO : Use command line args
     main()
+
+# TODO : Remove inspection rules (i.e. test_utils.py)
 
 # TODO : Residual Scaling
 

@@ -19,16 +19,15 @@ from abc import ABC, abstractmethod
 import os
 import json
 import copy
-from tqdm import tqdm
 from typing import List, Union, Dict, Tuple, Optional
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
 from layers.utility_layers import RawPredictionsLayer
 from datasets import SubsetLoader, DatasetLoader
+from modalities import RawVideo
+from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
 from utils.train_utils import get_log_dir
 from utils.summary_utils import image_summary
-from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
-# from datasets.data_augmentation import VideoAugmentation
 from utils.misc_utils import to_list
 
 
@@ -748,10 +747,9 @@ class AutoEncoderBaseModel(ABC):
 
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
+        dataset_iterator = dataset.train_subset.tf_dataset.batch(batch_size)
 
         for batch_index in range(epoch_length):
-            dataset_iterator = dataset.train_subset.get_one_shot_iterator(batch_size, output_labels=False)
-
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
@@ -779,8 +777,9 @@ class AutoEncoderBaseModel(ABC):
             epoch_logs = {}
 
         out_labels = self.autoencoder.metrics_names
-        test_iterator = dataset.test_subset.get_one_shot_iterator(batch_size, output_labels=False)
-        val_outs = self.autoencoder.evaluate(test_iterator, steps=2)
+        test_iterator = dataset.test_subset.tf_dataset.batch(batch_size)
+        # TODO : Change validation steps
+        val_outs = self.autoencoder.evaluate(test_iterator, steps=100, verbose=0)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
@@ -820,23 +819,24 @@ class AutoEncoderBaseModel(ABC):
                          subset: SubsetLoader,
                          video_index: int,
                          output_video_filepath: str,
-                         fps=25.0):
-        video_length = subset.get_video_length(video_index)
-        window_length = self.input_sequence_length
+                         fps=25.0,
+                         max_frame_count=1000):
 
         frame_size = tuple(self.output_image_size)
         fourcc = cv2.VideoWriter_fourcc(*"DIVX")
         video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
 
-        for i in tqdm(range(video_length - window_length)):
-            input_shard = subset.get_video_frames(video_index, i, i + window_length)
-            input_shard = np.expand_dims(input_shard, axis=0)
-            predicted_shard = self.autoencoder.predict_on_batch(input_shard)
+        session = get_session()
 
-            output_frame = predicted_shard[0][1]
-            output_frame = (output_frame * 255).astype(np.uint8)
-            output_frame = np.repeat(output_frame, 3, axis=-1)
-            video_writer.write(output_frame)
+        iterator = subset.get_source_browser_iterator(video_index, RawVideo, stride=1)
+        session.run(iterator.initializer)
+        predicted = self.autoencoder.predict(iterator.iterator_next, steps=max_frame_count)
+
+        predicted = (predicted * 255).astype(np.uint8)
+        predicted = np.repeat(predicted, 3, axis=-1)
+
+        for frame in predicted:
+            video_writer.write(frame)
 
         video_writer.release()
 
@@ -906,6 +906,8 @@ class AutoEncoderBaseModel(ABC):
 
     # endregion
 
+    # TODO : Re-implement attractors
+    # noinspection PyUnusedLocal
     def predict_anomalies_on_video(self,
                                    subset: SubsetLoader,
                                    video_index: int,
@@ -913,7 +915,6 @@ class AutoEncoderBaseModel(ABC):
                                    normalize_predictions=False,
                                    convergence_threshold=None,
                                    max_iterations=1):
-        from modalities import RawVideo
 
         session = get_session()
         raw_predictions_model = self.get_anomalies_raw_predictions_model()

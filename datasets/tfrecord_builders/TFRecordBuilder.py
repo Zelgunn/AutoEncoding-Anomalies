@@ -86,8 +86,8 @@ class TFRecordBuilder(object):
 
         # region Modalities min/max for normalization (step 2 : compute)
         modalities_ranges = {
-            modality_type.tfrecord_id(): [float(min(min_values[modality_type])),
-                                          float(max(max_values[modality_type]))]
+            modality_type.id(): [float(min(min_values[modality_type])),
+                                 float(max(max_values[modality_type]))]
             for modality_type in min_values
         }
         # endregion

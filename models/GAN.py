@@ -98,9 +98,15 @@ class GAN(AutoEncoderBaseModel):
                 "discriminator": self.discriminator}
 
     # region Training
-    def train_epoch(self, dataset: DatasetLoader, callbacks: CallbackList = None):
+    # TODO : Try to merge AutoEncoder, AdversarialGenerator and Discriminator together, to have 1 train step in 1 model
+    def train_epoch(self,
+                    dataset: DatasetLoader,
+                    callbacks: CallbackList,
+                    batch_size: int,
+                    epoch_length: int
+                    ):
         # region Variables initialization
-        epoch_length = len(dataset.train_subset)
+        dataset_iterator = dataset.train_subset.tf_dataset.batch(batch_size)
         autoencoder: KerasModel = self.autoencoder
         decoder: KerasModel = self.decoder
         adversarial_generator: KerasModel = self.adversarial_generator
@@ -110,10 +116,10 @@ class GAN(AutoEncoderBaseModel):
 
         callbacks.on_epoch_begin(self.epochs_seen)
         # discriminator_metrics = [1.0, 0.75]
+        # TODO : Turn multiple models into one
         for batch_index in range(epoch_length):
             # region Generate batch data (common)
-            noisy_x, x = dataset.train_subset[0]
-            batch_size = x.shape[0]
+            # noisy_x, x = dataset.train_subset[0]
             x_real = [x]
             z = np.random.normal(size=[discriminator_steps, batch_size, *self.compute_decoder_input_shape()])
             zeros = np.random.normal(size=[discriminator_steps, batch_size], loc=0.1, scale=0.1)
@@ -169,7 +175,7 @@ class GAN(AutoEncoderBaseModel):
             callbacks.on_batch_end(batch_index, batch_logs)
             # endregion
 
-        self.on_epoch_end(dataset, callbacks)
+        self.on_epoch_end(dataset, batch_size, callbacks)
 
     # endregion
 

@@ -65,27 +65,27 @@ class Modality(ABC):
     @classmethod
     def encode_raw(cls, array: np.ndarray, dtype: Union[type, str]) -> Dict[str, tf.train.Feature]:
         features = {
-            cls.tfrecord_shape_id(): int64_list_feature(array.shape),
-            cls.tfrecord_id(): bytes_list_feature([array.astype(dtype).tobytes()])
+            cls.shape_id(): int64_list_feature(array.shape),
+            cls.id(): bytes_list_feature([array.astype(dtype).tobytes()])
         }
         return features
 
     @classmethod
     def decode_raw(cls, parsed_features: Dict[str, tf.SparseTensor], dtype: tf.dtypes.DType):
-        encoded_modality = parsed_features[cls.tfrecord_id()].values
-        modality_shape = parsed_features[cls.tfrecord_shape_id()]
+        encoded_modality = parsed_features[cls.id()].values
+        modality_shape = parsed_features[cls.shape_id()]
 
         decoded_modality = tf.decode_raw(encoded_modality, dtype)
         decoded_modality = tf.reshape(decoded_modality, modality_shape)
         return decoded_modality
 
     @classmethod
-    def tfrecord_id(cls):
+    def id(cls):
         return cls.__name__
 
     @classmethod
-    def tfrecord_shape_id(cls):
-        return cls.tfrecord_id() + "_shape"
+    def shape_id(cls):
+        return cls.id() + "_shape"
 
     @classmethod
     @abstractmethod
