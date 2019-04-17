@@ -2,7 +2,7 @@ from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Input, Dense, Reshape
 from tensorflow.python.keras.callbacks import CallbackList
 import numpy as np
-from typing import List
+from typing import List, Optional
 
 from models import AutoEncoderBaseModel, metrics_dict, LayerStack
 from datasets import DatasetLoader
@@ -16,6 +16,18 @@ class GAN(AutoEncoderBaseModel):
         self._discriminator = None
         self._adversarial_generator = None
 
+        self.discriminator_depth: Optional[int] = None
+
+        self.raw_true_inputs_layer: Input = None
+        self.augmented_inputs_layer: Input = None
+        self.predicted_inputs_layer: Input = None
+        self.embeddings_inputs_layer: Input = None
+
+    def load_config(self, config_file: str, alt_config_file: str):
+        super(GAN, self).load_config(config_file, alt_config_file)
+        
+        self.discriminator_depth = len(self.config["discriminator"])
+
     def build_layers(self):
         super(GAN, self).build_layers()
 
@@ -27,14 +39,14 @@ class GAN(AutoEncoderBaseModel):
 
     # region Compile
     def compile(self):
-        encoder_input = Input(self.input_shape)
-        autoencoded = self.decoder(self.encoder(encoder_input))
-        autoencoder = KerasModel(inputs=encoder_input, outputs=autoencoded,
+        self.init_input_layers()
+
+        autoencoded = self.decoder(self.encoder(self.augmented_inputs_layer))
+        autoencoder = KerasModel(inputs=self.augmented_inputs_layer, outputs=autoencoded,
                                  name="Autoencoder")
 
-        decoder_input = Input(self.compute_decoder_input_shape())
-        generator_discriminated = self.discriminator(self.decoder(decoder_input))
-        adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
+        generator_discriminated = self.discriminator(self.decoder(self.embeddings_inputs_layer))
+        adversarial_generator = KerasModel(inputs=self.embeddings_inputs_layer, outputs=generator_discriminated,
                                            name="Adversarial_Generator")
 
         discriminator_loss_metric = metrics_dict[self.config["losses"]["discriminator"]]
@@ -62,16 +74,24 @@ class GAN(AutoEncoderBaseModel):
         self._autoencoder = autoencoder
         self._adversarial_generator = adversarial_generator
 
+    def init_input_layers(self):
+        if self.raw_true_inputs_layer is None:
+            self.raw_true_inputs_layer = Input(self.input_shape, name="raw_true_inputs")
+            self.augmented_inputs_layer = Input(self.input_shape, name="augmented_inputs")
+            self.predicted_inputs_layer = Input(self.input_shape, name="predicted_inputs")
+            self.embeddings_inputs_layer = Input(self.compute_decoder_input_shape(), name="embeddings_inputs")
+
     def compile_discriminator(self):
         discriminator_name = "Discriminator"
         input_layer = Input(self.input_shape)
         layer = input_layer
 
-        for i in range(self.depth):
-            use_dropout = i < (self.depth - 1)
-            layer = self.discriminator_layers[i](input_layer, use_dropout)
+        for i in range(self.discriminator_depth):
+            use_dropout = i < (self.discriminator_depth - 1)
+            layer = self.discriminator_layers[i](layer, use_dropout)
 
-        layer = Reshape([-1])(layer)
+        output_total_dim = np.prod(layer.shape[1:])
+        layer = Reshape([output_total_dim])(layer)
         layer = self.discriminator_regression_layer(layer)
 
         outputs = layer

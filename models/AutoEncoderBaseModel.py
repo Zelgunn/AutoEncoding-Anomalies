@@ -192,7 +192,8 @@ class AutoEncoderBaseModel(ABC):
         self.predictor_output = None
 
         self.config: Optional[dict] = None
-        self.depth: Optional[int] = None
+        self.encoder_depth: Optional[int] = None
+        self.decoder_depth: Optional[int] = None
 
         self.input_shape = None
         self.output_shape = None
@@ -252,7 +253,8 @@ class AutoEncoderBaseModel(ABC):
         self.use_dense_embeddings = self.config["use_dense_embeddings"] == "True"
         # endregion
 
-        self.depth = len(self.config["encoder"])
+        self.encoder_depth = len(self.config["encoder"])
+        self.decoder_depth = len(self.config["decoder"])
         self._true_outputs_placeholder = None
 
         # region I/O shapes
@@ -541,7 +543,8 @@ class AutoEncoderBaseModel(ABC):
         if self.use_dense_embeddings:
             embeddings_shape = embeddings_shape[:-1]
             embeddings_shape_prod = np.prod(embeddings_shape)
-            assert (self.embeddings_size % embeddings_shape_prod) == 0
+            assert (self.embeddings_size % embeddings_shape_prod) == 0,\
+                "embeddings_size = {}, embeddings_shape_prod = {}".format(self.embeddings_size, embeddings_shape_prod)
             embeddings_filters = self.embeddings_size // embeddings_shape_prod
             embeddings_shape = (*embeddings_shape, embeddings_filters)
         else:
@@ -579,7 +582,7 @@ class AutoEncoderBaseModel(ABC):
         input_layer = Input(self.input_shape)
         layer = input_layer
 
-        for i in range(self.depth):
+        for i in range(self.encoder_depth):
             use_dropout = i > 0
             layer = self.encoder_layers[i](layer, use_dropout)
 
@@ -601,8 +604,8 @@ class AutoEncoderBaseModel(ABC):
         layer = input_layer
 
         layers = self.predictor_layers if predictor_half else self.reconstructor_layers
-        for i in range(self.depth):
-            use_dropout = i < (self.depth - 1)
+        for i in range(self.decoder_depth):
+            use_dropout = i < (self.decoder_depth - 1)
             layer = layers[i](layer, use_dropout)
 
         transition_layer_class = conv_type["conv_block"][False]

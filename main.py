@@ -30,7 +30,7 @@ def main():
                      }
     # endregion
 
-    model_used = "BasicAE"
+    model_used = "GAN"
     dataset_used = "UCSD_Ped2"
     alt_config_suffix_used = None
     use_flow = False
@@ -136,6 +136,7 @@ if __name__ == "__main__":
     main()
 
 # TODO : Remove inspection rules (i.e. test_utils.py)
+# TODO : Type hints EVERYWHERE !
 
 # TODO : Residual Scaling
 

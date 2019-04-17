@@ -58,7 +58,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         input_layer = Input(self.input_shape)
         layer = input_layer
 
-        for i in range(self.depth):
+        for i in range(self.encoder_depth):
             use_dropout = i > 0
             layer = self.encoder_layers[i](layer, use_dropout)
 

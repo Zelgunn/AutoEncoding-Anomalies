@@ -5,7 +5,7 @@ import os
 from typing import Dict, Tuple, Optional, Type, NamedTuple
 
 from datasets.loaders import DatasetConfig
-from modalities import Modality, ModalityCollection
+from modalities import Modality, ModalityCollection, RawVideo
 
 
 def get_shard_count(sample_length, shard_size):
@@ -175,8 +175,12 @@ class SubsetLoader(object):
                 continue
 
             modality_value = modalities[modality_id]
-            modality_min, modality_max = self.config.modalities_ranges[modality_id]
-            modalities[modality_id] = (modality_value - modality_min) / (modality_max - modality_min)
+            if modality_id == RawVideo.id():
+                modality_value = modality_value / tf.constant(255.0, modality_value.dtype)
+            else:
+                modality_min, modality_max = self.config.modalities_ranges[modality_id]
+                modality_value = (modality_value - modality_min) / (modality_max - modality_min)
+            modalities[modality_id] = modality_value
         return modalities
 
     def split_batch_io(self, modalities: Dict[str, tf.Tensor]):
