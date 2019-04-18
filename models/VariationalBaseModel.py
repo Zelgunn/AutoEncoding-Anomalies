@@ -47,8 +47,8 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
             embeddings_shape = (*embeddings_shape, embeddings_filters)
         else:
             embeddings_shape = (None, *embeddings_shape)
-            embeddings_shape = self.latent_mean_layer.compute_output_shape(embeddings_shape)
-            embeddings_shape = embeddings_shape[1:]
+            embeddings_shape: tf.TensorShape = self.latent_mean_layer.compute_output_shape(embeddings_shape)
+            embeddings_shape = embeddings_shape.as_list()[1:]
         return embeddings_shape
 
     # endregion
@@ -76,7 +76,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
             layer = self.embeddings_layer([latent_mean, latent_log_var])
             layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
-            layer = Reshape(self.compute_embeddings_output_shape())(layer)
+            layer = Reshape(self.compute_embeddings_output_shape(), name="embeddings")(layer)
         # endregion
 
         outputs = [layer, latent_mean, latent_log_var]

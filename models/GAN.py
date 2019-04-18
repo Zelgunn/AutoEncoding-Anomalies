@@ -192,7 +192,7 @@ class GAN(AutoEncoderBaseModel):
     @property
     def z_dataset(self) -> tf.data.Dataset:
         if self._z_dataset is None:
-            decoder_input_shape = self.compute_decoder_input_shape().as_list()
+            decoder_input_shape = self.compute_decoder_input_shape()
             decoder_input_shape = tf.constant(decoder_input_shape, dtype=tf.int32, name="decoder_input_shape")
             dataset = tf.data.Dataset.from_tensors(decoder_input_shape)
             dataset = dataset.repeat(-1)

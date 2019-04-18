@@ -78,16 +78,16 @@ class LayerBlock(object):
 
         return layer
 
-    def compute_output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape: Tuple) -> Tuple:
         if self.upsampling_layer is not None:
-            input_shape = self.upsampling_layer.compute_output_shape(input_shape)
+            input_shape: tf.TensorShape = self.upsampling_layer.compute_output_shape(input_shape)
 
-        input_shape = self.conv.compute_output_shape(input_shape)
+        input_shape: tf.TensorShape = self.conv.compute_output_shape(input_shape)
 
         if self.pooling is not None:
-            input_shape = self.pooling.compute_output_shape(input_shape)
+            input_shape: tf.TensorShape = self.pooling.compute_output_shape(input_shape)
 
-        return input_shape
+        return tuple(input_shape.as_list())
 
 
 class LayerStack(object):
@@ -109,9 +109,9 @@ class LayerStack(object):
 
         return output_layer
 
-    def compute_output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape: Tuple) -> Tuple:
         for layer in self.layers:
-            input_shape = layer.compute_output_shape(input_shape)
+            input_shape: Tuple = layer.compute_output_shape(input_shape)
         return input_shape
 
 
@@ -198,9 +198,9 @@ class AutoEncoderBaseModel(ABC):
         self.encoder_depth: Optional[int] = None
         self.decoder_depth: Optional[int] = None
 
-        self.input_shape = None
-        self.output_shape = None
-        self.channels_count = None
+        self.input_shape: Optional[List[int]] = None
+        self.output_shape: Optional[List[int]] = None
+        self.channels_count: Optional[int] = None
 
         self.embeddings_size = None
         self.use_dense_embeddings = None
@@ -262,11 +262,10 @@ class AutoEncoderBaseModel(ABC):
         self._true_outputs_placeholder = None
 
         # region I/O shapes
-        self.input_shape = self.config["input_shape"]
+        self.input_shape = tuple(self.config["input_shape"])
         assert 3 <= len(self.input_shape) <= 4
         self.channels_count = self.input_shape[-1]
-        self.output_shape = copy.copy(self.input_shape)
-        self.output_shape[0] *= 2
+        self.output_shape = (self.input_shape[0] * 2, *self.input_shape[1:])
         # endregion
 
         # region Activations
@@ -536,30 +535,31 @@ class AutoEncoderBaseModel(ABC):
 
         return conv_type[self.block_type_name][transpose]
 
-    def compute_embeddings_input_shape(self):
+    def compute_embeddings_input_shape(self) -> Tuple:
         embeddings_shape = (None, *self.input_shape)
 
         for stack in self.encoder_layers:
-            embeddings_shape = stack.compute_output_shape(embeddings_shape)
+            embeddings_shape: tuple = stack.compute_output_shape(embeddings_shape)
 
         return embeddings_shape[1:]
 
-    def compute_embeddings_output_shape(self):
-        embeddings_shape = self.compute_embeddings_input_shape()
+    def compute_embeddings_output_shape(self) -> tuple:
+        embeddings_shape: tuple = self.compute_embeddings_input_shape()
         if self.use_dense_embeddings:
             embeddings_shape = embeddings_shape[:-1]
             embeddings_shape_prod = np.prod(embeddings_shape)
-            assert (self.embeddings_size % embeddings_shape_prod) == 0,\
+            assert (self.embeddings_size % embeddings_shape_prod) == 0, \
                 "embeddings_size = {}, embeddings_shape_prod = {}".format(self.embeddings_size, embeddings_shape_prod)
             embeddings_filters = self.embeddings_size // embeddings_shape_prod
             embeddings_shape = (*embeddings_shape, embeddings_filters)
         else:
             embeddings_shape = (None, *embeddings_shape)
-            embeddings_shape = self.embeddings_layer.compute_output_shape(embeddings_shape)
-            embeddings_shape = embeddings_shape[1:]
+            embeddings_shape: tf.TensorShape = self.embeddings_layer.compute_output_shape(embeddings_shape)
+            embeddings_shape: tf.TensorShape = embeddings_shape[1:]
+            embeddings_shape = tuple(embeddings_shape.as_list())
         return embeddings_shape
 
-    def compute_decoder_input_shape(self) -> tf.TensorShape:
+    def compute_decoder_input_shape(self) -> tuple:
         return self.compute_embeddings_output_shape()
 
     def build_optimizer(self):

@@ -32,9 +32,9 @@
     "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",
     "metrics": {
-        "discriminator": ["mean_squared_error"],
+        "discriminator": [],
         "autoencoder": ["mean_squared_error"],
-        "generator": ["mean_squared_error"]
+        "generator": []
     },
     "pixel_level_labels_size": [8, 16],
     "data_generators":
@@ -54,5 +54,6 @@
     "losses": {"discriminator": "bce", "autoencoder": "L1", "generator": "bce"},
     "loss_weights": {"reconstruction": 100.0, "adversarial": 1.0},
     "lr_schedule": {"drop_epochs": 200, "drop_factor": 0.25},
-    "seed": 2027815536
+    "seed": 2027815536,
+    "discriminator_steps": 1
 }
