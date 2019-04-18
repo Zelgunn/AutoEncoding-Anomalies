@@ -181,6 +181,9 @@ class AutoEncoderBaseModel(ABC):
         self.reconstructor_layers: List[LayerStack] = []
         self.predictor_layers: List[LayerStack] = []
 
+        self.encoder_input_layer: Input = None
+        self.decoder_input_layer: Input = None
+
         self._encoder: Optional[KerasModel] = None
         self._decoder: Optional[KerasModel] = None
         self._autoencoder: Optional[KerasModel] = None
@@ -228,6 +231,7 @@ class AutoEncoderBaseModel(ABC):
         self.pixel_level_labels_size = None
         self.output_range = None
         self._min_output_constant: Optional[tf.Tensor] = None
+        self._max_output_constant: Optional[tf.Tensor] = None
         self._inv_output_range_constant: Optional[tf.Tensor] = None
         self.use_spectral_norm = False
         self.weight_decay_regularizer = None
@@ -269,6 +273,12 @@ class AutoEncoderBaseModel(ABC):
         self.default_activation = self.config["default_activation"]
         self.embeddings_activation = self.config["embeddings_activation"]
         self.output_activation = self.config["output_activation"]
+
+        self.output_range = output_activation_ranges[self.output_activation["name"]]
+        self._min_output_constant = tf.constant(self.output_range[0], name="min_output")
+        self._max_output_constant = tf.constant(self.output_range[1], name="max_output")
+        inv_range = 1.0 / (self.output_range[1] - self.output_range[0])
+        self._inv_output_range_constant = tf.constant(inv_range, name="inv_output_range")
         # endregion
 
         # region Weights initialization
@@ -296,23 +306,19 @@ class AutoEncoderBaseModel(ABC):
         self.build_optimizer()
         # endregion
 
-        # region Callbacks
         self.pixel_level_labels_size = tuple(self.config["pixel_level_labels_size"])
-        self.output_range = output_activation_ranges[self.output_activation["name"]]
-        self._min_output_constant = tf.constant(self.output_range[0], name="min_output")
-        inv_range = 1.0 / (self.output_range[1] - self.output_range[0])
-        self._inv_output_range_constant = tf.constant(inv_range, name="inv_output_range")
-        # endregion
 
         # self.train_data_augmentations = self.build_data_augmentations(True)
         # self.test_data_augmentations = self.build_data_augmentations(False)
 
+        # region Seed
         if "seed" in self.config:
             seed = self.config["seed"]
         else:
             seed = np.random.randint(2147483647)
             self.config["seed"] = seed
         tf.set_random_seed(seed)
+        # endregion
 
     # region Data Augmentation
     # TODO : Move Data Augmentation from AutoEncoderBaseModel to Datasets
@@ -553,7 +559,7 @@ class AutoEncoderBaseModel(ABC):
             embeddings_shape = embeddings_shape[1:]
         return embeddings_shape
 
-    def compute_decoder_input_shape(self):
+    def compute_decoder_input_shape(self) -> tf.TensorShape:
         return self.compute_embeddings_output_shape()
 
     def build_optimizer(self):
@@ -579,8 +585,8 @@ class AutoEncoderBaseModel(ABC):
         raise NotImplementedError
 
     def compile_encoder(self):
-        input_layer = Input(self.input_shape)
-        layer = input_layer
+        self.encoder_input_layer = Input(self.input_shape, name="encoder_input_layer")
+        layer = self.encoder_input_layer
 
         for i in range(self.encoder_depth):
             use_dropout = i > 0
@@ -598,10 +604,12 @@ class AutoEncoderBaseModel(ABC):
 
         output_layer = layer
 
-        self._encoder = KerasModel(inputs=input_layer, outputs=output_layer, name="Encoder")
+        self._encoder = KerasModel(inputs=self.encoder_input_layer,
+                                   outputs=output_layer,
+                                   name="Encoder")
 
-    def compile_decoder_half(self, input_layer, predictor_half):
-        layer = input_layer
+    def compile_decoder_half(self, predictor_half):
+        layer = self.decoder_input_layer
 
         layers = self.predictor_layers if predictor_half else self.reconstructor_layers
         for i in range(self.decoder_depth):
@@ -616,10 +624,10 @@ class AutoEncoderBaseModel(ABC):
         return output_layer
 
     def compile_decoder(self):
-        self.decoder_input_layer = Input(self.compute_decoder_input_shape())
+        self.decoder_input_layer = Input(self.compute_decoder_input_shape(), name="decoder_input_layer")
 
-        self.reconstructor_output = self.compile_decoder_half(self.decoder_input_layer, False)
-        self.predictor_output = self.compile_decoder_half(self.decoder_input_layer, True)
+        self.reconstructor_output = self.compile_decoder_half(False)
+        self.predictor_output = self.compile_decoder_half(True)
 
         output_layer = Concatenate(axis=1)([self.reconstructor_output, self.predictor_output])
 

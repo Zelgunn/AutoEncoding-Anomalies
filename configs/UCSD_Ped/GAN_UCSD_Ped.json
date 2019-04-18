@@ -42,13 +42,13 @@
         "train":
         {
             "_blurring" : {"max_sigma" : 2.0, "kernel_size" : [5, 5]},
-            "cropping" : {"width_range" : 0.25},
-            "brightness" : {"bias" : 0.2},
-            "dropout_rate": 0.05
+            "_cropping" : {"width_range" : 0.25},
+            "_brightness" : {"bias" : 0.2},
+            "_dropout_rate": 0.05
         },
         "test":
         {
-            "dropout_rate": 0.0
+            "_dropout_rate": 0.0
         }
     },
     "losses": {"discriminator": "bce", "autoencoder": "L1", "generator": "bce"},

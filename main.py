@@ -55,6 +55,7 @@ def main():
 
     # region Model/Dataset initialization
     # region Model
+
     auto_encoder_class = models_dict[model_used]
     auto_encoder = auto_encoder_class()
     auto_encoder.image_summaries_max_outputs = 4
@@ -128,7 +129,7 @@ def main():
             print("===== Profiling activated ... =====")
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
-            auto_encoder.train(dataset, epoch_length=2, epochs=5, batch_size=2)
+            auto_encoder.train(dataset, epoch_length=2, epochs=5, batch_size=3)
 
 
 if __name__ == "__main__":

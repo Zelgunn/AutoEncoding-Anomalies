@@ -74,6 +74,8 @@ def main():
 
     loader = SubsetLoader(config, "Test")
     dataset = loader.tf_dataset.batch(6)
+    print(dataset)
+    exit()
 
     model = make_test_model()
     model.train_on_batch(dataset)
@@ -82,5 +84,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # import tensorflow as tf
     # tf.enable_eager_execution()
     main()

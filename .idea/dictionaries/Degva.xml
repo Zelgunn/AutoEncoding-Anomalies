@@ -27,6 +27,7 @@
       <w>ndim</w>
       <w>paddings</w>
       <w>pixar</w>
+      <w>pwet</w>
       <w>resampling</w>
       <w>softmax</w>
       <w>spatio</w>
