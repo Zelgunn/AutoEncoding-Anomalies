@@ -180,6 +180,8 @@ class SubsetLoader(object):
             else:
                 modality_min, modality_max = self.config.modalities_ranges[modality_id]
                 modality_value = (modality_value - modality_min) / (modality_max - modality_min)
+            modality_value *= (self.config.output_range[1] - self.config.output_range[0])
+            modality_value += self.config.output_range[0]
             modalities[modality_id] = modality_value
         return modalities
 

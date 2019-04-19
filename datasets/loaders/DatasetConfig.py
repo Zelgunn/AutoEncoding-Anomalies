@@ -1,7 +1,7 @@
 import numpy as np
 import json
 import os
-from typing import Dict, Type, List, Any
+from typing import Dict, Type, List, Any, Tuple
 
 from datasets.tfrecord_builders import tfrecords_config_filename
 from modalities import Modality, ModalityCollection, ModalityShape
@@ -17,7 +17,8 @@ def get_shard_count(sample_length: int,
 class DatasetConfig(object):
     def __init__(self,
                  tfrecords_config_folder: str,
-                 modalities_io_shapes: Dict[Type[Modality], ModalityShape]
+                 modalities_io_shapes: Dict[Type[Modality], ModalityShape],
+                 output_range: Tuple[float, float],
                  ):
         self.tfrecords_config_folder = tfrecords_config_folder
         tf_records_config_filepath = os.path.join(tfrecords_config_folder, tfrecords_config_filename)
@@ -32,6 +33,7 @@ class DatasetConfig(object):
         self.modalities_ranges = self.tfrecords_config["modalities_ranges"]
 
         self.modalities.set_modalities_shapes(modalities_io_shapes, filter_missing_modalities=True)
+        self.output_range = output_range
 
         # region Compute maximum amount of shards required to build a sample
         shard_counts = []

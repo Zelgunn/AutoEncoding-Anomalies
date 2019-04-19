@@ -119,8 +119,8 @@ class LayerStack(object):
 
 # region Output activations
 
-output_activation_ranges = {"sigmoid": [0.0, 1.0],
-                            "tanh": [-1.0, 1.0]}
+output_activation_ranges = {"sigmoid": (0.0, 1.0),
+                            "tanh": (-1.0, 1.0)}
 
 
 # endregion
@@ -1211,6 +1211,9 @@ class AutoEncoderBaseModel(ABC):
         inputs, outputs = subset.get_batch(batch_size=self.image_summaries_max_outputs, output_labels=False)
         # TODO : Switch to dict to use outputs[RawVideo]
         videos = [inputs[0], outputs[0]]
+        print(np.min(videos[0]), np.min(videos[1]))
+        print(np.max(videos[0]), np.max(videos[1]))
+        exit()
 
         true_outputs_placeholder = self.get_true_outputs_placeholder()
         summary_inputs = [self.autoencoder.input, true_outputs_placeholder]

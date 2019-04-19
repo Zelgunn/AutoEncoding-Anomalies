@@ -93,7 +93,8 @@ def main():
                                # OpticalFlow: ModalityShape(input_shape=(32, 128, 128, 2),
                                #                            output_shape=(32, 128, 128, 2)),
                                # DoG: video_io_shape
-                           })
+                           },
+                           output_range=auto_encoder.output_range)
     dataset = DatasetLoader(config=config)
 
     # endregion
