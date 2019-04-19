@@ -30,7 +30,7 @@ def main():
                      }
     # endregion
 
-    model_used = "VAEGAN"
+    model_used = "GAN"
     dataset_used = "UCSD_Ped2"
     alt_config_suffix_used = None
     use_flow = False
@@ -129,7 +129,7 @@ def main():
             print("===== Profiling activated ... =====")
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
-            auto_encoder.train(dataset, epoch_length=2, epochs=5, batch_size=3)
+            auto_encoder.train(dataset, epoch_length=1000, epochs=500, batch_size=8)
 
 
 if __name__ == "__main__":

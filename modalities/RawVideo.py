@@ -25,18 +25,6 @@ class RawVideo(Modality):
         raw_video = tf.map_fn(lambda i: tf.cast(tf.image.decode_jpeg(encoded_raw_video[i]), tf.float32),
                               tf.range(raw_video_shard_size),
                               dtype=tf.float32)
-        # raw_video_pad_size = max_shard_size - raw_video_shard_size
-        #
-        # def images_padded():
-        #     paddings = [[0, raw_video_pad_size], [0, 0], [0, 0], [0, 0]]
-        #     return tf.pad(raw_video, paddings)
-        #
-        # def images_identity():
-        #     return raw_video
-        #
-        # raw_video = tf.cond(pred=raw_video_pad_size > 0,
-        #                     true_fn=images_padded,
-        #                     false_fn=images_identity)
 
         return raw_video
 
