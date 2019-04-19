@@ -129,14 +129,15 @@ def main():
             print("===== Profiling activated ... =====")
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
-            auto_encoder.train(dataset, epoch_length=1000, epochs=500, batch_size=8)
+            auto_encoder.train(dataset, epoch_length=250, epochs=500, batch_size=8)
 
 
 if __name__ == "__main__":
     # TODO : Use command line args
+    # import tensorflow as tf
+    # tf.enable_eager_execution()
     main()
 
-# TODO : Remove inspection rules (i.e. test_utils.py)
 # TODO : Type hints EVERYWHERE !
 
 # TODO : Residual Scaling

@@ -790,9 +790,7 @@ class AutoEncoderBaseModel(ABC):
         out_labels = self.autoencoder.metrics_names
         test_iterator = dataset.test_subset.tf_dataset.batch(batch_size)
         # TODO : Change validation steps
-        val_outs = self.autoencoder.evaluate(test_iterator, steps=100, verbose=0)
-        test_iterator = dataset.test_subset.get_one_shot_iterator(batch_size, output_labels=False)
-        val_outs = self.autoencoder.evaluate(test_iterator, steps=64)
+        val_outs = self.autoencoder.evaluate(test_iterator, steps=64, verbose=0)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
@@ -802,7 +800,7 @@ class AutoEncoderBaseModel(ABC):
 
         self.epochs_seen += 1
 
-        if self.epochs_seen % 1 == 0:
+        if self.epochs_seen % 10 == 0:
             predictions, labels, lengths = self.predict_anomalies(dataset)
             roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
             print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
