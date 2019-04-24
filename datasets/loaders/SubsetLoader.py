@@ -136,8 +136,9 @@ class SubsetLoader(object):
                     modality_sample_size = self.modalities[modality_type].io_shape.input_length
                 modality_sample_size = tf.constant(modality_sample_size, name="modality_sample_size")
 
-                modality_effective_size = tf.cast(modality_shard_sizes[0], tf.float32, name="modality_effective_size")
-                modality_offset_range: tf.Tensor = modality_effective_size - 1.0
+                modality_effective_size = modality_shard_sizes[0]
+                modality_offset_range = tf.minimum(modality_effective_size, total_size - modality_sample_size)
+                modality_offset_range = tf.cast(modality_offset_range, tf.float32)
                 modality_offset = tf.cast(offset * modality_offset_range, tf.int32, name="offset")
 
                 modality_shards_shape = tf.unstack(tf.shape(modality_shards), name="modality_shape")

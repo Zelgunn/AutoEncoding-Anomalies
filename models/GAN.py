@@ -108,7 +108,7 @@ class GAN(AutoEncoderBaseModel):
             use_dropout = i < (self.discriminator_depth - 1)
             layer = self.discriminator_layers[i](layer, use_dropout)
 
-        output_total_dim = np.prod(layer.shape[1:])
+        output_total_dim = np.prod(layer.shape[1:].as_list())
         layer = Reshape([output_total_dim], name="flatten_for_regression")(layer)
         layer = self.discriminator_regression_layer(layer)
 
@@ -184,6 +184,11 @@ class GAN(AutoEncoderBaseModel):
                 "decoder": self.decoder,
                 "discriminator": self.discriminator}
 
+    @property
+    def models_with_saved_info(self) -> List[KerasModel]:
+        gan_models = [self.discriminator, self.adversarial_generator, self.adversarial_discriminator]
+        return super(GAN, self).models_with_saved_info + gan_models
+
     # endregion
 
     # region Training
@@ -205,6 +210,13 @@ class GAN(AutoEncoderBaseModel):
         z_dataset = self.z_dataset
         real_x_dataset = self.get_real_data_discriminator_dataset(base_dataset)
 
+        def dropout_inputs(inputs, outputs):
+            inputs = [tf.nn.dropout(one_input, rate=0.05) for one_input in inputs]
+            inputs = tuple(inputs)
+            return inputs, outputs
+
+        autoencoder_dataset = autoencoder_dataset.map(dropout_inputs)
+
         autoencoder_dataset = autoencoder_dataset.batch(batch_size).prefetch(1)
         z_dataset = z_dataset.batch(batch_size).prefetch(1)
         real_x_dataset = real_x_dataset.batch(batch_size).prefetch(1)
@@ -214,7 +226,6 @@ class GAN(AutoEncoderBaseModel):
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
-
             autoencoder_metrics = autoencoder.train_on_batch(autoencoder_dataset)
             generator_metrics = adversarial_generator.train_on_batch(z_dataset)
 

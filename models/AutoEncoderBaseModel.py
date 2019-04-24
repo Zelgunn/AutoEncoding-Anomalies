@@ -228,7 +228,6 @@ class AutoEncoderBaseModel(ABC):
         self.log_dir = None
         self.tensorboard = None
         self.epochs_seen = 0
-        self.pixel_level_labels_size = None
         self.output_range = None
         self._min_output_constant: Optional[tf.Tensor] = None
         self._max_output_constant: Optional[tf.Tensor] = None
@@ -304,8 +303,6 @@ class AutoEncoderBaseModel(ABC):
         # region Optimizer
         self.build_optimizer()
         # endregion
-
-        self.pixel_level_labels_size = tuple(self.config["pixel_level_labels_size"])
 
         # self.train_data_augmentations = self.build_data_augmentations(True)
         # self.test_data_augmentations = self.build_data_augmentations(False)
@@ -554,9 +551,9 @@ class AutoEncoderBaseModel(ABC):
             embeddings_shape = (*embeddings_shape, embeddings_filters)
         else:
             embeddings_shape = (None, *embeddings_shape)
-            embeddings_shape: tf.TensorShape = self.embeddings_layer.compute_output_shape(embeddings_shape)
-            embeddings_shape: tf.TensorShape = embeddings_shape[1:]
-            embeddings_shape = tuple(embeddings_shape.as_list())
+            embeddings_tensor_shape: tf.TensorShape = self.embeddings_layer.compute_output_shape(embeddings_shape)
+            embeddings_tensor_shape: tf.TensorShape = embeddings_tensor_shape[1:]
+            embeddings_shape = tuple(embeddings_tensor_shape.as_list())
         return embeddings_shape
 
     def compute_decoder_input_shape(self) -> tuple:
@@ -710,7 +707,7 @@ class AutoEncoderBaseModel(ABC):
         return self._decoder
 
     @property
-    def saved_models(self):
+    def saved_models(self) -> Dict[str, KerasModel]:
         return {"encoder": self.encoder,
                 "decoder": self.decoder}
 
@@ -800,7 +797,7 @@ class AutoEncoderBaseModel(ABC):
 
         self.epochs_seen += 1
 
-        if self.epochs_seen % 10 == 0:
+        if self.epochs_seen % 2 == 0:
             predictions, labels, lengths = self.predict_anomalies(dataset)
             roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
             print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
@@ -1150,7 +1147,7 @@ class AutoEncoderBaseModel(ABC):
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
-        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq="epoch")
+        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq=200)
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
@@ -1211,9 +1208,6 @@ class AutoEncoderBaseModel(ABC):
         inputs, outputs = subset.get_batch(batch_size=self.image_summaries_max_outputs, output_labels=False)
         # TODO : Switch to dict to use outputs[RawVideo]
         videos = [inputs[0], outputs[0]]
-        print(np.min(videos[0]), np.min(videos[1]))
-        print(np.max(videos[0]), np.max(videos[1]))
-        exit()
 
         true_outputs_placeholder = self.get_true_outputs_placeholder()
         summary_inputs = [self.autoencoder.input, true_outputs_placeholder]
@@ -1327,13 +1321,16 @@ class AutoEncoderBaseModel(ABC):
         log_dir = get_log_dir(base_dir)
         return log_dir
 
+    @property
+    def models_with_saved_info(self) -> List[KerasModel]:
+        return [self.encoder, self.decoder, self.autoencoder]
+
     def save_models_info(self, log_dir: str):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
-        AutoEncoderBaseModel.save_model_info(log_dir, self.encoder)
-        AutoEncoderBaseModel.save_model_info(log_dir, self.decoder)
-        AutoEncoderBaseModel.save_model_info(log_dir, self.autoencoder)
+        for model in self.models_with_saved_info:
+            AutoEncoderBaseModel.save_model_info(log_dir, model)
 
         config_filename = os.path.join(log_dir, "global_config.json")
         with open(config_filename, "w") as file:
