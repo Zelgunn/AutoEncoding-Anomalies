@@ -2,14 +2,12 @@
     "input_shape": [16, 128, 128, 1],
     "embeddings_size": 64,
     "use_dense_embeddings": "False",
-    "encoder":
-    [
+    "encoder": [
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1}
     ],
-    "decoder":
-    [
+    "decoder": [
         {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1}
@@ -33,26 +31,23 @@
     "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",
     "metrics": {
-        "discriminator": ["acc"],
+        "discriminator": [],
         "autoencoder": ["mean_squared_error"],
-        "generator": ["acc"]
+        "generator": []
     },
-    "data_generators":
-    {
-        "train":
-        {
-            "_blurring" : {"max_sigma" : 2.0, "kernel_size" : [5, 5]},
-            "_cropping" : {"width_range" : 0.25},
-            "_brightness" : {"bias" : 0.2},
-            "dropout_rate": 0.05
+    "data_generators": {
+        "train": {
+            "_blurring": {"max_sigma": 2.0, "kernel_size": [5, 5]},
+            "_cropping": {"width_range": 0.25},
+            "_brightness": {"bias": 0.2},
+            "_dropout_rate": 0.05
         },
-        "test":
-        {
+        "test": {
             "_dropout_rate": 0.0
         }
     },
     "losses": {"discriminator": "bce", "autoencoder": "L2", "generator": "bce"},
-    "loss_weights": {"reconstruction": 10.0, "adversarial": 0.01},
+    "loss_weights": {"reconstruction": 1.0, "adversarial": 0.001},
     "lr_schedule": {"drop_epochs": 200, "drop_factor": 0.25},
     "discriminator_steps": 1
 }

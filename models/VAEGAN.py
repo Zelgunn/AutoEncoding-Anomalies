@@ -1,5 +1,4 @@
 from tensorflow.python.keras.models import Model as KerasModel
-from tensorflow.python.keras.layers import Input
 import tensorflow as tf
 
 from models import GAN, VariationalBaseModel, metrics_dict
@@ -12,29 +11,50 @@ class VAEGAN(GAN, VariationalBaseModel):
         VariationalBaseModel.compile_encoder(self)
 
     def compile(self):
+        # region KerasModel (init)
         with tf.name_scope("Autoencoder"):
-            encoder_input = Input(self.input_shape)
-            encoded, latent_mean, latent_log_var = self.encoder(encoder_input)
+            encoded, latent_mean, latent_log_var = self.encoder(self.encoder_input_layer)
             autoencoded = self.decoder(encoded)
-            autoencoder = KerasModel(inputs=encoder_input, outputs=autoencoded,
+            autoencoder = KerasModel(inputs=self.encoder_input_layer, outputs=autoencoded,
                                      name="Autoencoder")
 
+        # region Adversarial generator (train generator with discriminator)
         with tf.name_scope("Adversarial_Generator"):
-            decoder_input = Input(self.compute_decoder_input_shape())
-            generator_discriminated = self.discriminator(self.decoder(decoder_input))
-            adversarial_generator = KerasModel(inputs=decoder_input, outputs=generator_discriminated,
+            decoder_trainable = KerasModel(inputs=self.decoder.input,
+                                           outputs=self.decoder.output,
+                                           name="decoder_trainable")
+            decoder_trainable.trainable = True
+
+            discriminator_non_trainable = KerasModel(inputs=self.discriminator.input,
+                                                     outputs=self.discriminator.output,
+                                                     name="discriminator_non_trainable")
+            discriminator_non_trainable.trainable = False
+
+            adversarial_generator_output = discriminator_non_trainable(decoder_trainable(self.decoder_input_layer))
+            adversarial_generator = KerasModel(inputs=self.decoder_input_layer,
+                                               outputs=adversarial_generator_output,
                                                name="Adversarial_Generator")
+        # endregion
+
+        # region Adversarial discriminator (train discriminator with fake data)
+        with tf.name_scope("Adversarial_Discriminator"):
+            decoder_non_trainable = KerasModel(inputs=self.decoder.input,
+                                               outputs=self.decoder.output,
+                                               name="decoder_non_trainable")
+            decoder_non_trainable.trainable = False
+
+            discriminator_trainable = KerasModel(inputs=self.discriminator.input,
+                                                 outputs=self.discriminator.output,
+                                                 name="discriminator_trainable")
+            discriminator_trainable.trainable = True
+            adversarial_discriminator_output = discriminator_trainable(decoder_non_trainable(self.decoder_input_layer))
+            adversarial_discriminator = KerasModel(inputs=self.decoder_input_layer,
+                                                   outputs=adversarial_discriminator_output,
+                                                   name="Adversarial_Discriminator")
+        # endregion
+        # endregion
 
         with tf.name_scope("Training"):
-            with tf.name_scope("Discriminator"):
-                discriminator_loss_metric = metrics_dict[self.config["losses"]["discriminator"]]
-
-                def discriminator_loss(y_true, y_pred):
-                    return discriminator_loss_metric(y_true, y_pred) * self.config["loss_weights"]["adversarial"]
-
-                discriminator_metrics = self.config["metrics"]["discriminator"]
-                self.discriminator.compile(self.optimizer, loss=discriminator_loss, metrics=discriminator_metrics)
-
             with tf.name_scope("Autoencoder"):
                 with tf.name_scope("autoencoder_loss"):
                     reconstruction_metric = metrics_dict[self.config["losses"]["autoencoder"]]
@@ -50,11 +70,18 @@ class VAEGAN(GAN, VariationalBaseModel):
                 autoencoder.compile(self.optimizer, loss=autoencoder_loss, metrics=autoencoder_metrics)
 
             with tf.name_scope("Adversarial_Generator"):
-                self.discriminator.trainable = False
                 adversarial_generator_metrics = self.config["metrics"]["generator"]
-                adversarial_generator.compile(self.optimizer, loss=discriminator_loss,
+                adversarial_generator.add_loss(self.discriminator_loss_real_data(adversarial_generator_output))
+                adversarial_generator.compile(self.optimizer,
                                               metrics=adversarial_generator_metrics)
+
+            with tf.name_scope("Adversarial_Discriminator"):
+                adversarial_discriminator_metrics = self.config["metrics"]["discriminator"]
+                adversarial_discriminator.add_loss(self.discriminator_loss_fake_data(adversarial_discriminator_output))
+                adversarial_discriminator.compile(self.optimizer,
+                                                  metrics=adversarial_discriminator_metrics)
 
         self._autoencoder = autoencoder
         self._adversarial_generator = adversarial_generator
+        self._adversarial_discriminator = adversarial_discriminator
     # endregion

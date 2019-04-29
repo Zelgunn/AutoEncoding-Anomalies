@@ -37,7 +37,6 @@
         "autoencoder": ["mse"],
         "generator": []
     },
-    "pixel_level_labels_size": [8, 16],
     "data_generators": {
         "train": {"dropout_rate": 0.0},
         "test": {"dropout_rate": 0.0}

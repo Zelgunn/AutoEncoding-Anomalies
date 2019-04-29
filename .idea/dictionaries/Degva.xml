@@ -17,8 +17,11 @@
       <w>imshow</w>
       <w>induit</w>
       <w>iptc</w>
+      <w>kanerva</w>
+      <w>kgdm</w>
       <w>lenght</w>
       <w>lerp</w>
+      <w>logits</w>
       <w>lstm</w>
       <w>matplotlib</w>
       <w>mcidas</w>
@@ -35,6 +38,7 @@
       <w>tfrecord</w>
       <w>tfrecords</w>
       <w>tqdm</w>
+      <w>unflatten</w>
       <w>winsize</w>
     </words>
   </dictionary>

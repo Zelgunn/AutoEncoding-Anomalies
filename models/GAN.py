@@ -50,24 +50,34 @@ class GAN(AutoEncoderBaseModel):
                                  name="Autoencoder")
 
         # region Adversarial generator (train generator with discriminator)
+        decoder_trainable = KerasModel(inputs=self.decoder.input,
+                                       outputs=self.decoder.output,
+                                       name="decoder_trainable")
+        decoder_trainable.trainable = True
+
         discriminator_non_trainable = KerasModel(inputs=self.discriminator.input,
                                                  outputs=self.discriminator.output,
                                                  name="discriminator_non_trainable")
         discriminator_non_trainable.trainable = False
 
-        adversarial_generator_output = discriminator_non_trainable(self.decoder(self.decoder_input_layer))
+        adversarial_generator_output = discriminator_non_trainable(decoder_trainable(self.decoder_input_layer))
         adversarial_generator = KerasModel(inputs=self.decoder_input_layer,
                                            outputs=adversarial_generator_output,
                                            name="Adversarial_Generator")
         # endregion
 
         # region Adversarial discriminator (train discriminator with fake data)
+        decoder_non_trainable = KerasModel(inputs=self.decoder.input,
+                                           outputs=self.decoder.output,
+                                           name="decoder_non_trainable")
+        decoder_non_trainable.trainable = False
+
         discriminator_trainable = KerasModel(inputs=self.discriminator.input,
                                              outputs=self.discriminator.output,
                                              name="discriminator_trainable")
         discriminator_trainable.trainable = True
 
-        adversarial_discriminator_output = discriminator_trainable(self.decoder(self.decoder_input_layer))
+        adversarial_discriminator_output = discriminator_trainable(decoder_non_trainable(self.decoder_input_layer))
         adversarial_discriminator = KerasModel(inputs=self.decoder_input_layer,
                                                outputs=adversarial_discriminator_output,
                                                name="Adversarial_Discriminator")
@@ -89,7 +99,7 @@ class GAN(AutoEncoderBaseModel):
         adversarial_generator.compile(self.optimizer,
                                       metrics=adversarial_generator_metrics)
 
-        adversarial_discriminator_metrics = None
+        adversarial_discriminator_metrics = self.config["metrics"]["discriminator"]
         adversarial_discriminator.add_loss(self.discriminator_loss_fake_data(adversarial_discriminator_output))
         adversarial_discriminator.compile(self.optimizer,
                                           metrics=adversarial_discriminator_metrics)
@@ -210,16 +220,25 @@ class GAN(AutoEncoderBaseModel):
         z_dataset = self.z_dataset
         real_x_dataset = self.get_real_data_discriminator_dataset(base_dataset)
 
-        def dropout_inputs(inputs, outputs):
-            inputs = [tf.nn.dropout(one_input, rate=0.05) for one_input in inputs]
-            inputs = tuple(inputs)
-            return inputs, outputs
-
-        autoencoder_dataset = autoencoder_dataset.map(dropout_inputs)
+        # def add_gaussian_noise_to_inputs(inputs, outputs):
+        #     inputs = [one_input + tf.random.normal(shape=tf.shape(one_input), stddev=0.05)
+        #               for one_input in inputs]
+        #     inputs = tuple(inputs)
+        #     return inputs, outputs
+        #
+        # def dropout_inputs(inputs, outputs):
+        #     inputs = [tf.nn.dropout(one_input, rate=0.05)
+        #               for one_input in inputs]
+        #     inputs = tuple(inputs)
+        #     return inputs, outputs
+        #
+        # autoencoder_dataset = autoencoder_dataset.map(add_gaussian_noise_to_inputs)
+        # autoencoder_dataset = autoencoder_dataset.map(dropout_inputs)
 
         autoencoder_dataset = autoencoder_dataset.batch(batch_size).prefetch(1)
-        z_dataset = z_dataset.batch(batch_size).prefetch(1)
-        real_x_dataset = real_x_dataset.batch(batch_size).prefetch(1)
+        generator_z_dataset = z_dataset.batch(batch_size).prefetch(1)
+        discriminator_z_dataset = z_dataset.batch(batch_size // 2).prefetch(1)
+        real_x_dataset = real_x_dataset.batch(batch_size // 2).prefetch(1)
         # endregion
 
         callbacks.on_epoch_begin(self.epochs_seen)
@@ -227,12 +246,12 @@ class GAN(AutoEncoderBaseModel):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
             autoencoder_metrics = autoencoder.train_on_batch(autoencoder_dataset)
-            generator_metrics = adversarial_generator.train_on_batch(z_dataset)
+            generator_metrics = adversarial_generator.train_on_batch(generator_z_dataset)
 
             discriminator_metrics = []
             for i in range(discriminator_steps):
                 real_data_discriminator_metrics = discriminator.train_on_batch(real_x_dataset)
-                fake_data_discriminator_metrics = adversarial_discriminator.train_on_batch(z_dataset)
+                fake_data_discriminator_metrics = adversarial_discriminator.train_on_batch(discriminator_z_dataset)
                 discriminator_metrics += [real_data_discriminator_metrics, fake_data_discriminator_metrics]
             discriminator_metrics = np.mean(discriminator_metrics, axis=0)
 

@@ -27,7 +27,6 @@
     "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L1",
     "metrics": ["mean_squared_error"],
-    "pixel_level_labels_size": [8, 16],
     "data_generators": {
         "train": {"dropout_rate": 0.0},
         "test": {"dropout_rate": 0.0}

@@ -1,100 +1,110 @@
-# import tensorflow as tf
-# import numpy as np
-# import os
-# import cv2
-# from typing import List
-# from tensorflow.python.framework import errors
+import tensorflow as tf
+from tensorflow.python.keras.optimizers import Adam
+from tensorflow.python.keras.callbacks import TensorBoard
+from tensorflow.python.keras import backend
+import os
+from time import time
 
 from datasets.loaders import DatasetConfig, SubsetLoader
-from modalities import ModalityShape, RawVideo, OpticalFlow  # , DoG
+from modalities import ModalityShape, RawVideo
 
 
-def make_test_model():
+def make_test_model(input_shape):
     from tensorflow.python.keras.models import Model
-    from tensorflow.python.keras.layers import Input, Conv3D, Conv3DTranspose, Flatten, Reshape, Concatenate, Dense
+    from tensorflow.python.keras.layers import Input, Conv3D, Conv3DTranspose, Flatten, Reshape, Concatenate, \
+        TimeDistributed
 
-    def make_encoder(input_layer):
-        layer = input_layer
-        layer = Conv3D(filters=16, kernel_size=3, strides=2, padding="same", activation="relu")(layer)
-        layer = Conv3D(filters=32, kernel_size=3, strides=2, padding="same", activation="relu")(layer)
-        layer = Conv3D(filters=32, kernel_size=3, strides=2, padding="same", activation="relu")(layer)
-        layer = Conv3D(filters=32, kernel_size=3, strides=2, padding="same", activation="relu")(layer)
-        layer = Conv3D(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same", activation="relu")(layer)
+    from KanervaMemory import Memory
 
-        return Flatten()(layer)
+    def make_encoder(encoder_input_layer):
+        layer = encoder_input_layer
+        layer = Conv3D(filters=16, kernel_size=3, strides=(1, 2, 2), padding="same",
+                       activation="relu")(layer)
+        layer = Conv3D(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                       activation="relu")(layer)
+        layer = Conv3D(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                       activation="relu")(layer)
+        layer = Conv3D(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                       activation="relu")(layer)
+        layer = Conv3D(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                       activation="relu")(layer)
 
-    def make_decoder(input_layer, output_filters):
-        layer = input_layer
-        layer = Reshape([1, 4, 4, 32])(layer)
-        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same", activation="relu")(layer)
-        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=2, padding="same", activation="relu")(layer)
-        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=2, padding="same", activation="relu")(layer)
-        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=2, padding="same", activation="relu")(layer)
-        layer = Conv3DTranspose(filters=output_filters, kernel_size=3, strides=2, padding="same",
+        return TimeDistributed(Flatten(), name="flatten")(layer)
+
+    def make_decoder(decoder_input_layer, output_filters):
+        layer = decoder_input_layer
+        layer = Reshape([16, 4, 4, 32])(layer)
+        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                                activation="relu")(layer)
+        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                                activation="relu")(layer)
+        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                                activation="relu")(layer)
+        layer = Conv3DTranspose(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same",
+                                activation="relu")(layer)
+        layer = Conv3DTranspose(filters=output_filters, kernel_size=3, strides=(1, 2, 2), padding="same",
                                 activation="sigmoid")(layer)
         return layer
 
-    raw_video_input_layer = Input(shape=(16, 128, 128, 1))
-    optical_flow_input_layer = Input(shape=(16, 128, 128, 2))
+    input_layer = Input(shape=input_shape)
 
-    raw_video_embeddings = make_encoder(raw_video_input_layer)
-    optical_flow_embeddings = make_encoder(optical_flow_input_layer)
+    embeddings = make_encoder(input_layer)
 
-    embeddings = Concatenate()([raw_video_embeddings, optical_flow_embeddings])
-    embeddings = Dense(units=512)(embeddings)
+    memory = Memory(code_size=512, memory_size=32)
+    embeddings = memory(embeddings)
 
-    raw_video_decoder = make_decoder(embeddings, 1)
-    optical_flow_decoder = make_decoder(embeddings, 2)
+    decoder = make_decoder(embeddings, 1)
+    predictor = make_decoder(embeddings, 1)
 
-    raw_video_predictor = make_decoder(embeddings, 1)
-    optical_flow_predictor = make_decoder(embeddings, 2)
+    output_layer = Concatenate(axis=1)([decoder, predictor])
 
-    raw_video_output_layer = Concatenate(axis=1)([raw_video_decoder, raw_video_predictor])
-    optical_flow_output_layer = Concatenate(axis=1)([optical_flow_decoder, optical_flow_predictor])
-
-    inputs = [raw_video_input_layer, optical_flow_input_layer]
-    outputs = [raw_video_output_layer, optical_flow_output_layer]
+    inputs = [input_layer]
+    outputs = [output_layer]
 
     model = Model(inputs=inputs, outputs=outputs)
-    model.compile("adam", loss="mse")
+
+    def reconstruction_loss(y_true, y_pred):
+        return backend.mean(backend.sum(backend.square(y_true - y_pred), axis=[2, 3, 4]))
+
+    model.compile(Adam(lr=1e-4), loss=reconstruction_loss, metrics=["mse"])
 
     return model
 
 
 def main():
+    input_shape = (16, 128, 128, 1)
+    output_shape = (input_shape[0] * 2, *input_shape[1:])
+
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
                            modalities_io_shapes=
                            {
-                               RawVideo: ModalityShape(input_shape=(64, 128, 128, 1),
-                                                       output_shape=(32, 128, 128, 1)),
-                               # OpticalFlow: ModalityShape(input_shape=(16, 128, 128, 1),
-                               #                            output_shape=(32, 128, 128, 2)),
-                               # DoG: video_io_shape
+                               RawVideo: ModalityShape(input_shape=input_shape,
+                                                       output_shape=output_shape),
                            },
                            output_range=(0.0, 1.0))
 
-    import tensorflow as tf
+    loader = SubsetLoader(config, "Test")
+    dataset = loader.tf_dataset.batch(32)
+
+    model = make_test_model(input_shape=input_shape)
+
+    log_dir = "../logs/KanervaMachine/log_{}".format(int(time()))
+    os.makedirs(log_dir)
+    tensorboard = TensorBoard(log_dir=log_dir, update_freq="batch")
+
+    model.fit(dataset, steps_per_epoch=500, epochs=6, callbacks=[tensorboard])
+
     import cv2
 
-    loader = SubsetLoader(config, "Test")
-    dataset = loader.tf_dataset.batch(6)
-    dataset = dataset.map(lambda x, y:
-                          (
-                              tf.nn.dropout(x, rate=tf.random.uniform([], 0.0, 0.2)),
-                              y
-                          )
-                          )
-    iterator = dataset.make_one_shot_iterator().get_next()
+    predictions = model.predict(loader.get_batch(32, output_labels=False)[0])
 
-    with tf.Session() as session:
-        for i in range(500):
-            inputs, outputs = session.run(iterator)
-            inputs = inputs[0]
-            for j in range(len(inputs)):
-                for k in range(len(inputs[0])):
-                    frame = cv2.resize(inputs[j][k], dsize=(512, 512), interpolation=cv2.INTER_NEAREST)
-                    cv2.imshow("frame", frame)
-                    cv2.waitKey(50)
+    k = 0
+    for video in predictions:
+        for frame in video:
+            frame = cv2.resize(frame, (512, 512))
+            cv2.imshow("frame", frame)
+            cv2.waitKey(k)
+            k = 40
 
 
 if __name__ == "__main__":

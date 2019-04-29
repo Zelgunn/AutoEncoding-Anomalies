@@ -55,8 +55,8 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
     # region Compile
     def compile_encoder(self):
-        input_layer = Input(self.input_shape)
-        layer = input_layer
+        self.encoder_input_layer = Input(self.input_shape, name="encoder_input_layer")
+        layer = self.encoder_input_layer
 
         for i in range(self.encoder_depth):
             use_dropout = i > 0
@@ -82,7 +82,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         outputs = [layer, latent_mean, latent_log_var]
         self._latent_mean = latent_mean
         self._latent_log_var = latent_log_var
-        self._encoder = KerasModel(inputs=input_layer, outputs=outputs, name="Encoder")
+        self._encoder = KerasModel(inputs=self.encoder_input_layer, outputs=outputs, name="Encoder")
 
     # endregion
 

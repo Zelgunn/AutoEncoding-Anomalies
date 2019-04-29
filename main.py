@@ -30,7 +30,7 @@ def main():
                      }
     # endregion
 
-    model_used = "VAE"
+    model_used = "VAEGAN"
     dataset_used = "UCSD_Ped2"
     alt_config_suffix_used = None
     use_flow = False
@@ -38,6 +38,7 @@ def main():
     previous_weights_to_load: Optional[str] = None
     # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/BasicAE/"
     # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/VAE/"
+    # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/DatasetLoader/GAN/log_1556118478"
 
     # region Config/Dataset selection
     dataset_path, dataset_config_alias = datasets_dict[dataset_used]
@@ -120,7 +121,7 @@ def main():
     if previous_weights_to_load is not None:
         previous_weights_to_load: str = previous_weights_to_load
         print("=> Loading weights from :", previous_weights_to_load)
-        auto_encoder.load_weights(previous_weights_to_load, epoch=40)
+        auto_encoder.load_weights(previous_weights_to_load, epoch=3)
     # endregion
 
     with NumpySeedContext(seed=auto_encoder.seed):
@@ -130,7 +131,7 @@ def main():
             print("===== Profiling activated ... =====")
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
-            auto_encoder.train(dataset, epoch_length=250, epochs=500, batch_size=8)
+            auto_encoder.train(dataset, epoch_length=500, epochs=500, batch_size=3)
 
 
 if __name__ == "__main__":

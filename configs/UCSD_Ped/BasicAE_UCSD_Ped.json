@@ -17,16 +17,15 @@
     "block_type": "conv_block",
     "pooling": "average",
     "upsampling": "upsampling",
-    "use_batch_normalization": "False",
+    "use_batch_normalization": "True",
     "use_spectral_norm": "False",
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
     "output_activation": {"name": "sigmoid"},
-    "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "truncated_normal"},
-    "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
+    "weights_initializer": {"mode": "fan_in", "scale": 0.1, "distribution": "normal"},
+    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",
     "metrics": ["mean_squared_error"],
-    "pixel_level_labels_size": [8, 16],
     "data_generators":
     {
         "train":
@@ -41,6 +40,5 @@
             "_dropout_rate": 0.0
         }
     },
-    "lr_schedule": {"drop_epochs": 200, "drop_factor": 0.25},
-    "seed": 2027815536
+    "lr_schedule": {"drop_epochs": 200, "drop_factor": 0.25}
 }
