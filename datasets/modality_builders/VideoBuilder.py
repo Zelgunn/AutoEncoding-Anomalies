@@ -62,6 +62,7 @@ class VideoBuilder(ModalityBuilder):
 
         i = 0
         for frame in self.video_reader:
+            print("- - :", i)
             frame = frame.astype("float64")
 
             # region Skip first

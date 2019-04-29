@@ -13,7 +13,7 @@ class LabelsBuilderMode(IntEnum):
 
 class LabelsBuilder(object):
     def __init__(self,
-                 labels_source: Union[str, np.ndarray, List[str], bool, int, float, List[Tuple[float, float]]],
+                 labels_source: Union[str, np.ndarray, bool, int, float, List[Tuple[float, float]]],
                  shard_count: int,
                  shard_duration: float,
                  frequency: float,
@@ -31,6 +31,9 @@ class LabelsBuilder(object):
                 isinstance(labels_source, bool):
             mode = LabelsBuilderMode.SINGLE_VALUE
 
+        elif isinstance(labels_source, list):
+            labels_source = np.asarray(labels_source)
+
         if isinstance(labels_source, np.ndarray):
             if labels_source.ndim == 0:
                 mode = LabelsBuilderMode.SINGLE_VALUE
@@ -44,7 +47,7 @@ class LabelsBuilder(object):
             else:
                 mode = LabelsBuilderMode.FRAMES
 
-        assert mode is not None
+        assert mode is not None, "mode could not be determined from source of type {}".format(type(labels_source))
         self.mode = mode
 
         self.shard_count = shard_count

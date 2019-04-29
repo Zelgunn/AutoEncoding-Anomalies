@@ -21,7 +21,28 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
         self.video_frame_size = video_frame_size
 
     def get_dataset_sources(self) -> List[DataSource]:
-        raise NotImplementedError
+        labels = self.get_labels()
+
+        strength_split_value = 0
+
+        data_sources: List[DataSource] = []
+        for sample, (start, end, strength) in labels.items():
+            video_path = os.path.join(self.videos_folder, sample + ".mp4")
+            subset_name = "Train" if strength <= strength_split_value else "Test"
+            target_path = os.path.join(self.dataset_path, subset_name, sample)
+
+            if not os.path.isdir(target_path):
+                os.makedirs(target_path)
+
+            data_source = DataSource(labels_source=[(start, end)],
+                                     target_path=target_path,
+                                     subset_name=subset_name,
+                                     video_source=video_path,
+                                     video_frame_size=self.video_frame_size,
+                                     audio_source=video_path)
+            data_sources.append(data_source)
+
+        return data_sources
 
     def list_videos_filenames(self):
         elements = os.listdir(self.videos_folder)
@@ -71,6 +92,19 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
                 labels[sample] = (start, end, strength)
         return labels
+
+    @staticmethod
+    def split_labels_by_strength(labels: Dict[str, Tuple[int, int, int]]
+                                 ) -> Dict[int, Dict[str, Tuple[int, int]]]:
+        output_labels: Dict[int, Dict[str, Tuple[int, int]]] = {}
+
+        for sample, (start, end, strength) in labels.items():
+            if strength in output_labels:
+                output_labels[strength][sample] = (start, end)
+            else:
+                output_labels[strength] = {sample: (start, end)}
+
+        return output_labels
 
     @property
     def videos_folder(self):

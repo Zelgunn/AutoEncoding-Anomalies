@@ -65,22 +65,36 @@ def main():
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
                            modalities_io_shapes=
                            {
-                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
+                               RawVideo: ModalityShape(input_shape=(64, 128, 128, 1),
                                                        output_shape=(32, 128, 128, 1)),
-                               OpticalFlow: ModalityShape(input_shape=(16, 128, 128, 1),
-                                                          output_shape=(32, 128, 128, 2)),
+                               # OpticalFlow: ModalityShape(input_shape=(16, 128, 128, 1),
+                               #                            output_shape=(32, 128, 128, 2)),
                                # DoG: video_io_shape
-                           })
+                           },
+                           output_range=(0.0, 1.0))
+
+    import tensorflow as tf
+    import cv2
 
     loader = SubsetLoader(config, "Test")
     dataset = loader.tf_dataset.batch(6)
-    print(dataset)
-    exit()
+    dataset = dataset.map(lambda x, y:
+                          (
+                              tf.nn.dropout(x, rate=tf.random.uniform([], 0.0, 0.2)),
+                              y
+                          )
+                          )
+    iterator = dataset.make_one_shot_iterator().get_next()
 
-    model = make_test_model()
-    model.train_on_batch(dataset)
-    print(dataset)
-    exit()
+    with tf.Session() as session:
+        for i in range(500):
+            inputs, outputs = session.run(iterator)
+            inputs = inputs[0]
+            for j in range(len(inputs)):
+                for k in range(len(inputs[0])):
+                    frame = cv2.resize(inputs[j][k], dsize=(512, 512), interpolation=cv2.INTER_NEAREST)
+                    cv2.imshow("frame", frame)
+                    cv2.waitKey(50)
 
 
 if __name__ == "__main__":

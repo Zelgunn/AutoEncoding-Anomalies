@@ -30,7 +30,7 @@ def main():
                      }
     # endregion
 
-    model_used = "GAN"
+    model_used = "VAE"
     dataset_used = "UCSD_Ped2"
     alt_config_suffix_used = None
     use_flow = False
