@@ -716,13 +716,14 @@ class AutoEncoderBaseModel(ABC):
     # region Training
     def train(self,
               dataset: DatasetLoader,
+              dataset_name: str,
               epoch_length: int,
               batch_size: int = 64,
               epochs: int = 1):
         assert isinstance(batch_size, int) or isinstance(batch_size, list)
         assert isinstance(epochs, int) or isinstance(epochs, list)
 
-        self.on_train_begin(dataset)
+        self.on_train_begin(dataset_name)
 
         callbacks = self.build_callbacks(dataset)
         callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length)
@@ -802,13 +803,13 @@ class AutoEncoderBaseModel(ABC):
             roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
             print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
 
-    def on_train_begin(self, dataset: DatasetLoader):
+    def on_train_begin(self, dataset_name: str):
         if not self.layers_built:
             self.build_layers()
 
         if self.log_dir is not None:
             return
-        self.log_dir = self.__class__.make_log_dir(dataset)
+        self.log_dir = self.make_log_dir(dataset_name)
         print("Logs directory : '{}'".format(self.log_dir))
 
         self.save_models_info(self.log_dir)
@@ -1314,10 +1315,10 @@ class AutoEncoderBaseModel(ABC):
 
     @classmethod
     def make_log_dir(cls,
-                     dataset: DatasetLoader):
+                     dataset_name: str,
+                     ) -> str:
         project_log_dir = "../logs/AutoEncoding-Anomalies"
-        # TODO : Change the way Dataset name is chosen (no longer dataset.__class__.__name__)
-        base_dir = os.path.join(project_log_dir, dataset.__class__.__name__, cls.__name__)
+        base_dir = os.path.join(project_log_dir, dataset_name, cls.__name__)
         log_dir = get_log_dir(base_dir)
         return log_dir
 
