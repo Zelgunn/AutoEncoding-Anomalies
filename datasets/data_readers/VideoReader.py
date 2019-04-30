@@ -71,8 +71,6 @@ class VideoReader(object):
         else:
             self.start = min(start, max_frame_count)
 
-        print(self.start, self.end, self.frame_count, max_frame_count)
-
         assert self.end > self.start
         # endregion
 
@@ -81,10 +79,10 @@ class VideoReader(object):
             self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, self.start)
 
         for i in range(self.start, self.end):
-            print(i, self.video_capture.get(cv2.CAP_PROP_POS_FRAMES), self.video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
             if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
                 ret, frame = self.video_capture.read()
-                print(ret, frame is None)
+                if not ret:
+                    break
             elif self.mode == VideoReaderMode.NP_ARRAY:
                 frame = self.video_array[i]
             else:

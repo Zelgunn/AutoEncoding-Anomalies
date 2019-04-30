@@ -50,7 +50,7 @@ class SubwayTFRecordBuilder(TFRecordBuilder):
                                       video_source=test_video_reader,
                                       video_frame_size=self.video_frame_size)
 
-        data_sources = [test_data_source]
+        data_sources = [train_data_source, test_data_source]
         return data_sources
 
 
