@@ -26,19 +26,18 @@ def main():
     datasets_dict = {"UCSD_Ped2": ("ucsd/ped2", "UCSD_Ped"),
                      "UCSD_Ped1": ("ucsd/ped1", "UCSD_Ped"),
                      "Subway_Exit": ("subway/exit", "Subway"),
-                     "Subway_Entrance": ("subway/entrance", "Subway")
+                     "Subway_Entrance": ("subway/entrance", "Subway"),
+                     "Emoly": ("emoly", "Emoly")
                      }
     # endregion
 
-    model_used = "VAE"
-    dataset_used = "UCSD_Ped2"
+    model_used = "BasicAE"
+    dataset_used = "Emoly"
     alt_config_suffix_used = None
     use_flow = False
     use_patches = False
     previous_weights_to_load: Optional[str] = None
-    # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/BasicAE/"
-    # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/UCSDDataset/VAE/"
-    # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/DatasetLoader/GAN/log_1556118478"
+    # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/emoly/BasicAE/log_1557096030"
 
     # region Config/Dataset selection
     dataset_name, dataset_config_alias = datasets_dict[dataset_used]
@@ -115,14 +114,13 @@ def main():
     # region Session initialization
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = allow_gpu_growth
-    # config.gpu_options.per_process_gpu_memory_fraction = 0.95
     session = tf.Session(config=config)
     backend.set_session(session)
 
     if previous_weights_to_load is not None:
         previous_weights_to_load: str = previous_weights_to_load
         print("=> Loading weights from :", previous_weights_to_load)
-        auto_encoder.load_weights(previous_weights_to_load, epoch=3)
+        auto_encoder.load_weights(previous_weights_to_load, epoch=114)
     # endregion
 
     with NumpySeedContext(seed=auto_encoder.seed):
@@ -133,7 +131,7 @@ def main():
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
             auto_encoder.train(dataset, dataset_name=dataset_name,
-                               epoch_length=500, epochs=500, batch_size=3)
+                               epoch_length=500, epochs=500, batch_size=64)
 
 
 if __name__ == "__main__":

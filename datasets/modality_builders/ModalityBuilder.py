@@ -93,7 +93,10 @@ class ModalityBuilder(ABC):
             modality_duration = frame_count / modality.frequency
             modality_durations.append(modality_duration)
 
-        min_duration = min(*modality_durations)
+        if len(modality_durations) == 1:
+            min_duration = modality_durations[0]
+        else:
+            min_duration = min(*modality_durations)
         shard_count = int(np.ceil(min_duration / self.shard_duration))
 
         return shard_count

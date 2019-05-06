@@ -1,5 +1,5 @@
 {
-    "input_shape": [16, 128, 128, 1],
+    "input_shape": [16, 128, 128, 3],
     "embeddings_size": 64,
     "use_dense_embeddings": "False",
     "encoder": [
@@ -46,8 +46,8 @@
             "_dropout_rate": 0.0
         }
     },
-    "losses": {"discriminator": "bce", "autoencoder": "L1", "generator": "bce"},
-    "loss_weights": {"reconstruction": 1.0, "adversarial": 0.1, "divergence": 0.01},
+    "losses": {"discriminator": "bce", "autoencoder": "L2", "generator": "bce"},
+    "loss_weights": {"reconstruction": 1.0, "adversarial": 0.001},
     "lr_schedule": {"drop_epochs": 200, "drop_factor": 0.25},
     "discriminator_steps": 1
 }

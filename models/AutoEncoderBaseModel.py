@@ -10,6 +10,7 @@ from tensorflow.python.keras.callbacks import TensorBoard, CallbackList, Callbac
 from tensorflow.python.keras.callbacks import LearningRateScheduler
 from tensorflow.python.keras.backend import binary_crossentropy, get_session, set_learning_phase
 from tensorboard.plugins.pr_curve import summary as pr_summary
+from tensorflow.python.client import timeline
 
 import tensorflow as tf
 import numpy as np
@@ -176,7 +177,7 @@ class AutoEncoderBaseModel(ABC):
         self.image_summaries_max_outputs = 3
 
         self.layers_built = False
-        self.embeddings_layer: Optional[Layer] = None
+        self.embeddings_layer: Optional[Union[Layer, LayerStack]] = None
         self.encoder_layers: List[LayerStack] = []
         self.reconstructor_layers: List[LayerStack] = []
         self.predictor_layers: List[LayerStack] = []
@@ -198,6 +199,7 @@ class AutoEncoderBaseModel(ABC):
         self.encoder_depth: Optional[int] = None
         self.decoder_depth: Optional[int] = None
 
+        self.channels_first = True
         self.input_shape: Optional[List[int]] = None
         self.output_shape: Optional[List[int]] = None
         self.channels_count: Optional[int] = None
@@ -226,7 +228,13 @@ class AutoEncoderBaseModel(ABC):
         self.optimizer = None
 
         self.log_dir = None
-        self.tensorboard = None
+        self.tensorboard: Optional[tf.python.keras.callbacks.TensorBoard] = None
+        # self.run_options = None
+        self.run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE,
+                                         report_tensor_allocations_upon_oom=True
+                                         )
+        # self.run_metadata = None
+        self.run_metadata = tf.RunMetadata()
         self.epochs_seen = 0
         self.output_range = None
         self._min_output_constant: Optional[tf.Tensor] = None
@@ -252,7 +260,7 @@ class AutoEncoderBaseModel(ABC):
         # endregion
 
         # region Embeddings
-        self.embeddings_size = self.config["embeddings_size"]
+        self.embeddings_size = self.config["embeddings_layer"]["filters"]
         self.use_dense_embeddings = self.config["use_dense_embeddings"] == "True"
         # endregion
 
@@ -261,10 +269,20 @@ class AutoEncoderBaseModel(ABC):
         self._true_outputs_placeholder = None
 
         # region I/O shapes
+        if "data_format" in self.config:
+            data_format = self.config["data_format"]
+            assert data_format in ["channels_first",
+                                   "channels_last"], "data_format `{}` not in [channels_first, channels_last]"
+            self.channels_first = data_format == "channels_first"
+
         self.input_shape = tuple(self.config["input_shape"])
-        assert 3 <= len(self.input_shape) <= 4
-        self.channels_count = self.input_shape[-1]
-        self.output_shape = (self.input_shape[0] * 2, *self.input_shape[1:])
+        if self.channels_first:
+            self.input_shape = (self.input_shape[-1], *self.input_shape[:-1])
+        if self.channels_first:
+            self.output_shape = (self.input_shape[0], self.input_shape[1] * 2, *self.input_shape[2:])
+        else:
+            self.output_shape = (self.input_shape[0] * 2, *self.input_shape[1:])
+        self.channels_count = self.input_shape[self.channels_axis]
         # endregion
 
         # region Activations
@@ -372,7 +390,11 @@ class AutoEncoderBaseModel(ABC):
             self.embeddings_layer = conv(filters=self.embeddings_size, kernel_size=3, padding="same",
                                          kernel_initializer=self.weights_initializer,
                                          kernel_regularizer=self.weight_decay_regularizer,
-                                         bias_regularizer=self.weight_decay_regularizer)
+                                         bias_regularizer=self.weight_decay_regularizer,
+                                         data_format=self.data_format,
+                                         name="embeddings_layer")
+            embeddings_layer_info = self.config["embeddings_layer"]
+            self.embeddings_layer = self.build_conv_stack(embeddings_layer_info)
 
         for stack_info in self.config["decoder"]:
             stack = self.build_deconv_stack(stack_info)
@@ -466,31 +488,35 @@ class AutoEncoderBaseModel(ABC):
 
     def build_layer_stack(self, stack_info: dict, transpose=False) -> LayerStack:
         depth: int = stack_info["depth"]
+        stack_strides = stack_info["strides"] if "strides" in stack_info else 1
+        if isinstance(stack_strides, int):
+            stack_strides_is_one = stack_strides == 1
+        else:
+            stack_strides_is_one = all([stride == 1 for stride in stack_strides])
+
         stack = LayerStack()
-
         for i in range(depth):
-
             # region Pooling/Upsampling layer
-            if i < (depth - 1):
+            if (i < (depth - 1)) or stack_strides_is_one:
                 conv_layer_strides = 1
                 pool_layer = None
                 upsampling_layer = None
             elif transpose:
                 pool_layer = None
                 if self.upsampling == "strides":
-                    conv_layer_strides = stack_info["strides"]
+                    conv_layer_strides = stack_strides
                     upsampling_layer = None
                 else:
                     conv_layer_strides = 1
-                    upsampling_layer = UpSampling3D(size=stack_info["strides"])
+                    upsampling_layer = UpSampling3D(size=stack_strides)
             else:
                 upsampling_layer = None
                 if self.pooling == "strides":
-                    conv_layer_strides = stack_info["strides"]
+                    conv_layer_strides = stack_strides
                     pool_layer = None
                 else:
                     conv_layer_strides = 1
-                    pool_layer = pool_type[self.pooling](pool_size=stack_info["strides"])
+                    pool_layer = pool_type[self.pooling](pool_size=stack_strides)
             # endregion
 
             # region Convolutional layer
@@ -499,7 +525,8 @@ class AutoEncoderBaseModel(ABC):
                                  "strides": conv_layer_strides,
                                  "kernel_initializer": self.weights_initializer,
                                  "kernel_regularizer": self.weight_decay_regularizer,
-                                 "bias_regularizer": self.weight_decay_regularizer}
+                                 "bias_regularizer": self.weight_decay_regularizer,
+                                 "data_format": self.data_format}
 
             if self.block_type_name == "residual_block":
                 conv_layer_kwargs["use_batch_normalization"] = self.use_batch_normalization
@@ -551,9 +578,11 @@ class AutoEncoderBaseModel(ABC):
             embeddings_shape = (*embeddings_shape, embeddings_filters)
         else:
             embeddings_shape = (None, *embeddings_shape)
-            embeddings_tensor_shape: tf.TensorShape = self.embeddings_layer.compute_output_shape(embeddings_shape)
-            embeddings_tensor_shape: tf.TensorShape = embeddings_tensor_shape[1:]
-            embeddings_shape = tuple(embeddings_tensor_shape.as_list())
+            embeddings_tensor_shape = self.embeddings_layer.compute_output_shape(embeddings_shape)
+            embeddings_tensor_shape = embeddings_tensor_shape[1:]
+            if isinstance(embeddings_tensor_shape, tf.TensorShape):
+                embeddings_tensor_shape = embeddings_tensor_shape.as_list()
+            embeddings_shape = tuple(embeddings_tensor_shape)
         return embeddings_shape
 
     def compute_decoder_input_shape(self) -> tuple:
@@ -593,7 +622,7 @@ class AutoEncoderBaseModel(ABC):
         with tf.name_scope("embeddings"):
             if self.use_dense_embeddings:
                 layer = Reshape([-1])(layer)
-            layer = self.embeddings_layer(layer)
+            layer = self.embeddings_layer(layer, use_dropout=False)
             layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
             if self.use_dense_embeddings:
                 layer = Reshape(self.compute_embeddings_output_shape())(layer)
@@ -650,6 +679,7 @@ class AutoEncoderBaseModel(ABC):
 
     def get_reconstruction_loss(self, reconstruction_metric_name: str):
         def loss_function(y_true, y_pred):
+            print(y_true, y_pred)
             metric_function = metrics_dict[reconstruction_metric_name]
             reduction_axis = list(range(2, len(y_true.shape)))
             loss = metric_function(y_true, y_pred, axis=reduction_axis)
@@ -756,7 +786,7 @@ class AutoEncoderBaseModel(ABC):
 
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
-        dataset_iterator = dataset.train_subset.tf_dataset.batch(batch_size)
+        dataset_iterator = dataset.train_subset.tf_dataset.batch(batch_size).prefetch(1)
 
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}
@@ -796,12 +826,22 @@ class AutoEncoderBaseModel(ABC):
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
 
+        self.tensorboard.writer.add_run_metadata(self.run_metadata,
+                                                 "metadata_{}".format(self.epochs_seen),
+                                                 global_step=self.epochs_seen)
+
+        if self.run_metadata is not None:
+            epoch_timeline = timeline.Timeline(self.run_metadata.step_stats)
+            chrome_trace_format = epoch_timeline.generate_chrome_trace_format(show_memory=True)
+            with open(os.path.join(self.log_dir, "timeline.json"), 'w') as timeline_file:
+                timeline_file.write(chrome_trace_format)
+
         self.epochs_seen += 1
 
-        if self.epochs_seen % 2 == 0:
-            predictions, labels, lengths = self.predict_anomalies(dataset)
-            roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
-            print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
+        # if self.epochs_seen % 5 == 0:
+        #     predictions, labels, lengths = self.predict_anomalies(dataset)
+        #     roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
+        #     print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
 
     def on_train_begin(self, dataset_name: str):
         if not self.layers_built:
@@ -943,10 +983,12 @@ class AutoEncoderBaseModel(ABC):
                                     subset: SubsetLoader,
                                     stride: int,
                                     convergence_threshold=None,
-                                    max_iterations=1):
+                                    max_iterations=1,
+                                    max_videos=10):
         predictions, labels = [], []
 
-        for video_index in range(len(subset.subset_folders)):
+        video_count = min(max_videos, len(subset.subset_folders))
+        for video_index in range(video_count):
             video_results = self.predict_anomalies_on_video(subset, video_index, stride,
                                                             normalize_predictions=True,
                                                             convergence_threshold=convergence_threshold,
@@ -962,11 +1004,13 @@ class AutoEncoderBaseModel(ABC):
                           stride=1,
                           normalize_predictions=True,
                           convergence_threshold=None,
-                          max_iterations=1):
+                          max_iterations=1,
+                          max_videos=10):
         predictions, labels = self.predict_anomalies_on_subset(dataset.test_subset,
                                                                stride,
                                                                convergence_threshold,
-                                                               max_iterations)
+                                                               max_iterations,
+                                                               max_videos)
 
         lengths = np.empty(shape=[len(labels)], dtype=np.int32)
         for i in range(len(labels)):
@@ -1241,7 +1285,7 @@ class AutoEncoderBaseModel(ABC):
         repeated_summary_model = RunModel(summary_inputs, repeated_summaries, output_is_summary=True)
 
         return ImageCallback(one_shot_summary_model, repeated_summary_model, videos, tensorboard, frequency,
-                             epoch_freq=2)
+                             epoch_freq=1)
 
     def normalize_image_tensor(self, tensor: tf.Tensor) -> tf.Tensor:
         with tf.name_scope("normalize_image_tensor"):
@@ -1351,8 +1395,16 @@ class AutoEncoderBaseModel(ABC):
 
     # region Properties
     @property
+    def channels_axis(self):
+        return 0 if self.channels_first else -1
+
+    @property
+    def data_format(self):
+        return "channels_first" if self.channels_first else "channels_last"
+
+    @property
     def input_image_size(self):
-        return self.input_shape[1:-1]
+        return self.input_shape[2:] if self.channels_first else self.input_shape[1:-1]
 
     @property
     def input_sequence_length(self):
@@ -1360,11 +1412,11 @@ class AutoEncoderBaseModel(ABC):
 
     @property
     def output_image_size(self):
-        return self.output_shape[1:-1]
+        return self.output_shape[2:] if self.channels_first else self.output_shape[1:-1]
 
     @property
     def output_sequence_length(self):
-        return self.output_shape[0]
+        return self.output_shape[1] if self.channels_first else self.output_shape[0]
 
     @property
     def seed(self) -> int:

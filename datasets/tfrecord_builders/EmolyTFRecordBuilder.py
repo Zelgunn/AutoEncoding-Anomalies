@@ -21,15 +21,23 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
         self.video_frame_size = video_frame_size
 
     def get_dataset_sources(self) -> List[DataSource]:
+        video_filenames = self.list_videos_filenames()
         labels = self.get_labels()
 
         strength_split_value = 0
 
         data_sources: List[DataSource] = []
-        for sample, (start, end, strength) in labels.items():
-            video_path = os.path.join(self.videos_folder, sample + ".mp4")
-            subset_name = "Train" if strength <= strength_split_value else "Test"
-            target_path = os.path.join(self.dataset_path, subset_name, sample)
+        for video_filename in video_filenames:
+            sample_name = video_filename[:-4]
+            if sample_name in labels:
+                start, end, strength = labels[sample_name]
+                is_train_sample = strength <= strength_split_value
+            else:
+                start = end = 0.0
+                is_train_sample = True
+            video_path = os.path.join(self.videos_folder, video_filename)
+            subset_name = "Train" if is_train_sample else "Test"
+            target_path = os.path.join(self.dataset_path, subset_name, sample_name)
 
             if not os.path.isdir(target_path):
                 os.makedirs(target_path)
@@ -48,7 +56,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
         elements = os.listdir(self.videos_folder)
         videos_filenames = []
         for video_filename in elements:
-            if ".mp4" in video_filename and os.path.isfile(os.path.join(self.videos_folder, video_filename)):
+            if video_filename.endswith(".mp4") and os.path.isfile(os.path.join(self.videos_folder, video_filename)):
                 videos_filenames.append(video_filename)
         return videos_filenames
 
@@ -121,8 +129,8 @@ if __name__ == "__main__":
                                                    modalities=ModalityCollection(
                                                        [
                                                            RawVideo(frequency=25),
-                                                           OpticalFlow(frequency=25, use_polar=True),
-                                                           DoG(frequency=25),
+                                                           # OpticalFlow(frequency=25, use_polar=True),
+                                                           # DoG(frequency=25),
                                                        ]
                                                    ),
                                                    video_frame_size=(128, 128))

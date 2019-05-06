@@ -58,9 +58,9 @@ class TFRecordBuilder(object):
         max_values = None
         max_labels_sizes = []
 
-        for data_source in data_sources:
+        for i, data_source in enumerate(data_sources):
             if self.verbose > 0:
-                print("Building {}".format(data_source.target_path))
+                print("Building {}/{} - {}".format(i + 1, len(data_sources), data_source.target_path))
 
             # region Fill subsets_dict with folders containing shards
             target_path = os.path.relpath(data_source.target_path, self.dataset_path)

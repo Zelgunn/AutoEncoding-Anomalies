@@ -7,6 +7,8 @@ class BasicAE(AutoEncoderBaseModel):
         autoencoded = self.decoder(self.encoder(self.encoder.input))
         autoencoder = KerasModel(inputs=self.encoder.inputs, outputs=autoencoded)
         reconstruction_loss = self.get_reconstruction_loss(self.config["reconstruction_loss"])
-        autoencoder.compile(self.optimizer, reconstruction_loss, metrics=self.config["metrics"])
+
+        autoencoder.compile(self.optimizer, reconstruction_loss, metrics=self.config["metrics"],
+                            options=self.run_options, run_metadata=self.run_metadata)
 
         self._autoencoder = autoencoder
