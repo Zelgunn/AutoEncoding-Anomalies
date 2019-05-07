@@ -1,29 +1,29 @@
 {
     "input_shape": [16, 128, 128, 1],
-    "embeddings_size": 64,
+    "data_format": "channels_last",
     "use_dense_embeddings": "False",
     "encoder":
     [
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1}
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1}
     ],
+    "embeddings_layer" : {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1},
     "decoder":
     [
+        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1}
     ],
     "block_type": "conv_block",
-    "pooling": "average",
-    "upsampling": "upsampling",
-    "use_batch_normalization": "True",
+    "pooling": "strides",
+    "upsampling": "strides",
+    "use_batch_normalization": "False",
     "use_spectral_norm": "False",
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
     "output_activation": {"name": "sigmoid"},
     "weights_initializer": {"mode": "fan_in", "scale": 0.1, "distribution": "normal"},
-    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
+    "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",
     "metrics": ["mean_squared_error"],
     "data_generators":

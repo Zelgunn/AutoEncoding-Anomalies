@@ -32,7 +32,7 @@ def main():
     # endregion
 
     model_used = "BasicAE"
-    dataset_used = "Emoly"
+    dataset_used = "UCSD_Ped2"
     alt_config_suffix_used = None
     use_flow = False
     use_patches = False

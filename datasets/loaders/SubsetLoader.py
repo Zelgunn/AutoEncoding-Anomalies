@@ -254,8 +254,13 @@ class SubsetLoader(object):
     def get_batch(self, batch_size: int, output_labels: bool):
         iterator = self.get_one_shot_iterator(batch_size, output_labels)
         session = get_session()
-        inputs, outputs = session.run(iterator)
-        return inputs, outputs
+        results = session.run(iterator)
+        if output_labels:
+            inputs, outputs, labels = results
+            return inputs, outputs, labels
+        else:
+            inputs, outputs = results
+            return inputs, outputs
 
     # region Read dataset in order
     def make_source_filepath_generator(self, source_index: int):
@@ -362,7 +367,37 @@ class SubsetLoader(object):
     @property
     def source_count(self) -> int:
         return len(self.subset_folders)
+
     # endregion
+
+    @staticmethod
+    def timestamps_labels_to_frame_labels(timestamps: np.ndarray, frame_count: int):
+        # [batch_size, pairs_count, 2] => [batch_size, frame_count]
+        # start, end = timestamps[:,:,0], timestamps[:,:,1]
+        batch_size, timestamps_per_sample, _ = timestamps.shape
+        epsilon = 1e-7
+        starts = timestamps[:, :, 0]
+        ends = timestamps[:, :, 1]
+        labels_are_not_equal = np.abs(starts - ends) > epsilon  # [batch_size, pairs_count]
+        labels_are_not_equal = np.any(labels_are_not_equal, axis=1)  # [batch_size]
+        labels_are_not_equal = np.expand_dims(labels_are_not_equal, axis=1)  # [batch_size, 1]
+
+        frame_labels = np.empty(shape=[batch_size, frame_count], dtype=np.bool)
+
+        frame_duration = 1.0 / frame_count
+        for frame_id in range(frame_count):
+            start_time = frame_id / frame_count
+            end_time = start_time + frame_duration
+
+            start_in = np.all([end_time > starts, starts >= start_time], axis=0)
+            end_in = np.all([end_time > ends, ends >= start_time], axis=0)
+
+            frame_in = np.any([start_in, end_in], axis=(0, 2))
+
+            frame_labels[:, frame_id] = frame_in
+
+        frame_labels = np.logical_and(frame_labels, labels_are_not_equal)
+        return frame_labels
 
 
 def main():
@@ -379,7 +414,9 @@ def main():
                                OpticalFlow: ModalityShape(input_shape=(16, 128, 128, 1),
                                                           output_shape=(32, 128, 128, 2)),
                                # DoG: video_io_shape
-                           })
+                           },
+                           output_range=(0.0, 1.0)
+                           )
 
     loader = SubsetLoader(config, "Test")
 

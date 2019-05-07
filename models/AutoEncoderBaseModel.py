@@ -1148,7 +1148,6 @@ class AutoEncoderBaseModel(ABC):
                 pr_plot[j, i] = pr
 
             save_attractor_results(i + 1)
-
     # endregion
 
     # region Weights (Save|Load)
@@ -1219,27 +1218,19 @@ class AutoEncoderBaseModel(ABC):
 
         anomaly_callbacks = [train_image_callback, test_image_callback]
 
-        # region AUC callbacks
-        # samples = test_subset.sample(batch_size=512, seed=16, sampled_videos_count=8, return_labels=True)
-        # videos, frame_labels, pixel_labels = samples
-        # videos = test_subset.divide_batch_io(videos)
+        # region AUC callback
+        # TODO : Parameter for batch_size here
+        from callbacks import AUCCallback
+        inputs, outputs, labels = test_subset.get_batch(batch_size=512, output_labels=True)
+        inputs = inputs[0]
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
 
-        # frame_predictions_model = self.build_frame_level_error_callback_model()
-        # frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
-        #                                  videos, frame_labels,
-        #                                  plot_size=(128, 128), batch_size=8,
-        #                                  name="Frame_Level_Error_AUC", epoch_freq=5)
-        # anomaly_callbacks.append(frame_auc_callback)
-
-        # region Pixel level error AUC (ROC)
-        # if pixel_labels is not None:
-        #     pixel_auc_callback = AUCCallback(pixel_predictions_model, self.tensorboard,
-        #                                      videos, pixel_labels,
-        #                                      plot_size=(128, 128), batch_size=8,
-        #                                      num_thresholds=20, name="Pixel_Level_Error_AUC", epoch_freq=5)
-        #     anomaly_callbacks.append(pixel_auc_callback)
-        # endregion
-
+        frame_predictions_model = self.build_frame_level_error_callback_model()
+        frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
+                                         inputs, labels,
+                                         plot_size=(128, 128), batch_size=8,
+                                         name="Frame_Level_Error_AUC", epoch_freq=5)
+        anomaly_callbacks.append(frame_auc_callback)
         # endregion
 
         return anomaly_callbacks

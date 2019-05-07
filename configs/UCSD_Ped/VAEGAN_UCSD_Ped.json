@@ -1,12 +1,12 @@
 {
     "input_shape": [16, 128, 128, 1],
-    "embeddings_size": 64,
+    "data_format": "channels_last",
     "use_dense_embeddings": "False",
     "encoder": [
         {"filters": 32, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
-        {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1}
+        {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1}
     ],
+    "embeddings_layer" : {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1},
     "decoder": [
         {"filters": 64, "kernel_size": 3, "strides": 2, "depth": 1},
         {"filters": 48, "kernel_size": 3, "strides": 2, "depth": 1},
