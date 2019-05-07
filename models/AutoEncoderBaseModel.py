@@ -786,7 +786,8 @@ class AutoEncoderBaseModel(ABC):
 
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
-        dataset_iterator = dataset.train_subset.tf_dataset.batch(batch_size).prefetch(1)
+        dataset_iterator = dataset.train_subset.tf_dataset
+        dataset_iterator = dataset_iterator.batch(batch_size).prefetch(1)
 
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}

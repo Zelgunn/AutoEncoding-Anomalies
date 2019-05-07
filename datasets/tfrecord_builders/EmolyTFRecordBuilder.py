@@ -94,8 +94,8 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
                     end = 0
                     strength = strength_ids["absent"]
                 else:
-                    start = int(25.0 * float(start))
-                    end = int(25.0 * float(end))
+                    start = float(start)
+                    end = float(end)
                     strength = strength_ids[strength]
 
                 labels[sample] = (start, end, strength)
