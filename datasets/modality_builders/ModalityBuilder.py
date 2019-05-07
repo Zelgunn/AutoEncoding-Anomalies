@@ -5,6 +5,9 @@ from typing import Type, Dict
 from modalities import Modality, ModalityCollection
 
 
+EPSILON = 1e-5
+
+
 class ModalityBuilder(ABC):
     def __init__(self,
                  shard_duration: float,
@@ -46,7 +49,7 @@ class ModalityBuilder(ABC):
         raise NotImplementedError
 
     def get_modality_max_shard_size(self, modality: Modality):
-        return int(np.ceil(self.shard_duration * modality.frequency))
+        return int(np.ceil(self.shard_duration * modality.frequency - EPSILON))
 
     def get_initial_shard_sizes(self) -> Dict[Type[Modality], int]:
         shard_sizes = {type(modality): self.get_modality_initial_shard_size(modality)
@@ -54,20 +57,31 @@ class ModalityBuilder(ABC):
         return shard_sizes
 
     def get_modality_initial_shard_size(self, modality: Modality):
-        return int(np.floor(self.shard_duration * modality.frequency))
+        return int(np.floor(self.shard_duration * modality.frequency + EPSILON))
 
     def get_modality_next_shard_size(self,
                                      modality: Modality,
                                      time: float):
-        yielded_frame_count = int(np.floor(time * modality.frequency))
+        yielded_frame_count = int(np.floor(time * modality.frequency + EPSILON))
 
-        total_frame_count_yielded_next_time = int(np.floor(modality.frequency * (time + self.shard_duration)))
+        total_frame_count_yielded_next_time = int(np.floor(modality.frequency * (time + self.shard_duration) + EPSILON))
 
         frame_count = self.get_modality_frame_count(modality)
         if total_frame_count_yielded_next_time > frame_count:
             total_frame_count_yielded_next_time = frame_count
 
         shard_size = total_frame_count_yielded_next_time - yielded_frame_count
+
+        if shard_size != 32:
+            print("time:", time)
+            print("modality.frequency:", modality.frequency)
+            print("yielded_frame_count:", yielded_frame_count)
+            print("time + self.shard_duration:", time + self.shard_duration)
+            print("modality.frequency * (time + self.shard_duration):", modality.frequency * (time + self.shard_duration))
+            print("total_frame_count_yielded_next_time:", total_frame_count_yielded_next_time)
+            print("frame_count:", frame_count)
+            print("shard_size:", shard_size)
+
         return shard_size
 
     def get_next_shard_sizes(self, time: float) -> Dict[Type[Modality], int]:
@@ -97,6 +111,6 @@ class ModalityBuilder(ABC):
             min_duration = modality_durations[0]
         else:
             min_duration = min(*modality_durations)
-        shard_count = int(np.ceil(min_duration / self.shard_duration))
+        shard_count = int(np.ceil(min_duration / self.shard_duration - EPSILON))
 
         return shard_count

@@ -125,7 +125,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
 if __name__ == "__main__":
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
-                                                   shard_duration=2.0,
+                                                   shard_duration=1.28,
                                                    modalities=ModalityCollection(
                                                        [
                                                            RawVideo(frequency=25),

@@ -56,7 +56,7 @@ class SubwayTFRecordBuilder(TFRecordBuilder):
 
 if __name__ == "__main__":
     subway_tf_record_builder = SubwayTFRecordBuilder(dataset_path="../datasets/subway/exit",
-                                                     shard_duration=2.0,
+                                                     shard_duration=1.28,
                                                      modalities=ModalityCollection(
                                                          [
                                                              RawVideo(frequency=25),
