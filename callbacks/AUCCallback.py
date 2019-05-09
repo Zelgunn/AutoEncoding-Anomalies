@@ -1,17 +1,18 @@
 from tensorflow.python.keras.callbacks import TensorBoard
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras.models import Model as KerasModel
 from tensorboard.plugins.pr_curve import summary as pr_summary
 import cv2
 from typing import Tuple
 
-from callbacks import TensorBoardPlugin, RunModel
+from callbacks import TensorBoardPlugin
 from utils.plot_utils import plot_line2d_to_array
 
 
 class AUCCallback(TensorBoardPlugin):
     def __init__(self,
-                 predictions_model: RunModel,
+                 predictions_model: KerasModel,
                  tensorboard: TensorBoard,
                  images: np.ndarray,
                  labels: np.ndarray,

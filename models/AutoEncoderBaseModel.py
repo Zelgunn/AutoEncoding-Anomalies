@@ -191,7 +191,7 @@ class AutoEncoderBaseModel(ABC):
         self._encoder: Optional[KerasModel] = None
         self._decoder: Optional[KerasModel] = None
         self._autoencoder: Optional[KerasModel] = None
-        self._raw_predictions_models: Dict[Tuple, KerasModel] = {}
+        self._raw_predictions_models: Dict[bool, Dict[Tuple, KerasModel]] = {False: {}, True: {}}
         self._reconstructor_model: Optional[RunModel] = None
 
         self.decoder_input_layer = None
@@ -842,6 +842,7 @@ class AutoEncoderBaseModel(ABC):
 
         get_session().run(dataset_initializer)
         return dataset_iterator
+
     # endregion
 
     def write_run_metadata(self, batch_index):
@@ -934,7 +935,7 @@ class AutoEncoderBaseModel(ABC):
 
         video_writer.release()
 
-    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4)) -> KerasModel:
+    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4), include_labels_io=False) -> KerasModel:
         if reduction_axis not in self._raw_predictions_models:
             reconstructor = KerasModel(inputs=self.decoder_input_layer, outputs=self.reconstructor_output,
                                        name="Reconstructor")
@@ -948,13 +949,17 @@ class AutoEncoderBaseModel(ABC):
             labels_input_layer = Input(shape=[None, 2], dtype=tf.float32, name="labels_input_layer")
             labels_output_layer = Lambda(tf.identity, name="labels_identity")(labels_input_layer)
 
-            inputs = [self.encoder.get_input_at(0), labels_input_layer]
-            outputs = [error, labels_output_layer]
+            inputs = [self.encoder.get_input_at(0)]
+            outputs = [error]
+            if include_labels_io:
+                inputs += [labels_input_layer]
+                outputs += [labels_output_layer]
+
             raw_predictions_model = KerasModel(inputs=inputs, outputs=outputs)
 
-            self._raw_predictions_models[reduction_axis] = raw_predictions_model
+            self._raw_predictions_models[include_labels_io][reduction_axis] = raw_predictions_model
 
-        return self._raw_predictions_models[reduction_axis]
+        return self._raw_predictions_models[include_labels_io][reduction_axis]
 
     # region Using attractors
     def get_reconstructor_run_model(self) -> RunModel:
@@ -1011,7 +1016,7 @@ class AutoEncoderBaseModel(ABC):
                                    max_iterations=1):
 
         session = get_session()
-        raw_predictions_model = self.get_anomalies_raw_predictions_model()
+        raw_predictions_model = self.get_anomalies_raw_predictions_model(include_labels_io=True)
         iterator = subset.get_source_browser_iterator(video_index, RawVideo, stride)
         session.run(iterator.initializer)
         # TODO : Get steps count
@@ -1267,17 +1272,17 @@ class AutoEncoderBaseModel(ABC):
 
         # region AUC callback
         # TODO : Parameter for batch_size here
-        # from callbacks import AUCCallback
-        # inputs, outputs, labels = test_subset.get_batch(batch_size=512, output_labels=True)
-        # inputs = inputs[0]
-        # labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
-        #
-        # frame_predictions_model = self.build_frame_level_error_callback_model()
-        # frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
-        #                                  inputs, labels,
-        #                                  plot_size=(128, 128), batch_size=8,
-        #                                  name="Frame_Level_Error_AUC", epoch_freq=5)
-        # anomaly_callbacks.append(frame_auc_callback)
+        from callbacks import AUCCallback
+        inputs, outputs, labels = test_subset.get_batch(batch_size=16, output_labels=True)
+        inputs = inputs[0]
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
+
+        raw_predictions_model = self.get_anomalies_raw_predictions_model()
+        frame_auc_callback = AUCCallback(raw_predictions_model, self.tensorboard,
+                                         inputs, labels,
+                                         plot_size=(128, 128), batch_size=4,
+                                         name="Frame_Level_Error_AUC", epoch_freq=1)
+        anomaly_callbacks.append(frame_auc_callback)
         # endregion
 
         return anomaly_callbacks
@@ -1331,25 +1336,6 @@ class AutoEncoderBaseModel(ABC):
             normalized = (tensor - self._min_output_constant) * self._inv_output_range_constant
             normalized = tf.cast(normalized * uint8_max_constant, tf.uint8)
         return normalized
-
-    def build_pixel_level_error_callback_model(self):
-        true_outputs = self.get_true_outputs_placeholder()
-
-        error = tf.square(self.autoencoder.output - true_outputs)
-
-        pixel_predictions_model = RunModel([self.autoencoder.input, true_outputs], error)
-
-        return pixel_predictions_model
-
-    def build_frame_level_error_callback_model(self):
-        true_outputs = self.get_true_outputs_placeholder()
-
-        squared_delta = tf.square(self.autoencoder.output - true_outputs)
-        average_error = tf.reduce_sum(squared_delta, axis=[2, 3, 4])
-
-        frame_predictions_model = RunModel([self.autoencoder.input, true_outputs], average_error)
-
-        return frame_predictions_model
 
     # endregion
 

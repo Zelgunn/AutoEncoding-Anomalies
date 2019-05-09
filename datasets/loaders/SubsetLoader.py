@@ -414,7 +414,7 @@ class SubsetLoader(object):
         return frame_labels
 
 
-# region Utils
+# region Random video flip
 def random_video_vertical_flip(video: tf.Tensor,
                                seed: int = None,
                                scope_name: str = "random_video_vertical_flip"
@@ -482,7 +482,6 @@ def main():
 
     tf.enable_eager_execution()
 
-    batch_size = 2
     video_length = 32
 
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
