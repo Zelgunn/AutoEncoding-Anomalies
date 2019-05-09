@@ -120,7 +120,7 @@ def main():
     if previous_weights_to_load is not None:
         previous_weights_to_load: str = previous_weights_to_load
         print("=> Loading weights from :", previous_weights_to_load)
-        auto_encoder.load_weights(previous_weights_to_load, epoch=26)
+        auto_encoder.load_weights(previous_weights_to_load, epoch=54)
     # endregion
 
     with NumpySeedContext(seed=auto_encoder.seed):
@@ -131,7 +131,7 @@ def main():
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
             auto_encoder.train(dataset, dataset_name=dataset_name,
-                               epoch_length=500, epochs=500, batch_size=16)
+                               epoch_length=500, epochs=200, batch_size=16)
 
 
 if __name__ == "__main__":

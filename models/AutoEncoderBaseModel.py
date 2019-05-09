@@ -1273,15 +1273,15 @@ class AutoEncoderBaseModel(ABC):
         # region AUC callback
         # TODO : Parameter for batch_size here
         from callbacks import AUCCallback
-        inputs, outputs, labels = test_subset.get_batch(batch_size=16, output_labels=True)
+        inputs, outputs, labels = test_subset.get_batch(batch_size=512, output_labels=True)
         inputs = inputs[0]
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
 
         raw_predictions_model = self.get_anomalies_raw_predictions_model()
         frame_auc_callback = AUCCallback(raw_predictions_model, self.tensorboard,
                                          inputs, labels,
-                                         plot_size=(128, 128), batch_size=4,
-                                         name="Frame_Level_Error_AUC", epoch_freq=1)
+                                         plot_size=(128, 128), batch_size=16,
+                                         name="Frame_Level_Error_AUC", epoch_freq=5)
         anomaly_callbacks.append(frame_auc_callback)
         # endregion
 

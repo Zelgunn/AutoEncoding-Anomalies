@@ -25,7 +25,7 @@
     "embeddings_activation": {"name": "linear"},
     "output_activation": {"name": "sigmoid"},
     "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "normal"},
-    "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.999, "decay": 0.0},
+    "optimizer": {"name": "Adam", "lr": 1e-4, "beta_1": 0.9, "beta_2": 0.999, "decay": 0.0},
     "reconstruction_loss": "L2",
     "metrics": [],
     "data_generators":
