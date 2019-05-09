@@ -32,16 +32,16 @@ def main():
     # endregion
 
     model_used = "BasicAE"
-    dataset_used = "UCSD_Ped2"
+    dataset_used = "Emoly"
     alt_config_suffix_used = None
     use_flow = False
     use_patches = False
     previous_weights_to_load: Optional[str] = None
-    # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/emoly/BasicAE/log_1557358383"
+    previous_weights_to_load = "../logs/AutoEncoding-Anomalies/emoly/BasicAE/log_1557395333"
 
     # region Config/Dataset selection
     dataset_name, dataset_config_alias = datasets_dict[dataset_used]
-    dataset_path = os.path.join("../datasets", dataset_name)
+    dataset_path = os.path.join("C:/datasets", dataset_name)
     config_used = "configs/{dataset}/{model}_{dataset}.json".format(model=model_used, dataset=dataset_config_alias)
     if alt_config_suffix_used is None:
         alt_config_used = None
@@ -120,7 +120,7 @@ def main():
     if previous_weights_to_load is not None:
         previous_weights_to_load: str = previous_weights_to_load
         print("=> Loading weights from :", previous_weights_to_load)
-        auto_encoder.load_weights(previous_weights_to_load, epoch=6)
+        auto_encoder.load_weights(previous_weights_to_load, epoch=26)
     # endregion
 
     with NumpySeedContext(seed=auto_encoder.seed):
@@ -131,7 +131,7 @@ def main():
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
             auto_encoder.train(dataset, dataset_name=dataset_name,
-                               epoch_length=2, epochs=500, batch_size=8)
+                               epoch_length=500, epochs=500, batch_size=16)
 
 
 if __name__ == "__main__":

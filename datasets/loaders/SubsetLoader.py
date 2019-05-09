@@ -252,6 +252,8 @@ class SubsetLoader(object):
 
         raw_video = random_video_vertical_flip(raw_video)
         raw_video = random_video_horizontal_flip(raw_video)
+        raw_video = tf.image.random_hue(raw_video, max_delta=0.5)
+        raw_video = tf.image.random_brightness(raw_video, max_delta=0.1)
 
         modalities[RawVideo.id()] = raw_video
         return modalities
@@ -484,7 +486,7 @@ def main():
 
     video_length = 32
 
-    config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
+    config = DatasetConfig(tfrecords_config_folder="../datasets/emoly",
                            modalities_io_shapes=
                            {
                                RawVideo: ModalityShape(input_shape=(video_length, 128, 128, 1),
@@ -518,8 +520,9 @@ def main():
                 cv2.imshow("frame", frame)
                 cv2.waitKey(1000 // 25)
 
-    for source_index in range(56, loader.source_count):
-        print(loader.subset_folders[source_index])
+    start_index = loader.subset_folders.index("..\\datasets\\emoly\\Test\\Sujet4.Segment8.induced")
+    for source_index in range(start_index, loader.source_count):
+        print(source_index, loader.subset_folders[source_index])
         dataset = loader.get_source_browser(source_index, RawVideo, 1)
 
         for batch in dataset.batch(1000):

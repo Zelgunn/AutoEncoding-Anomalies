@@ -1307,8 +1307,10 @@ class AutoEncoderBaseModel(ABC):
         io_delta = (pred_outputs - true_outputs) * (tf.cast(pred_outputs < true_outputs, dtype=tf.uint8) * 254 + 1)
 
         max_outputs = self.image_summaries_max_outputs
-        one_shot_summaries = [image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=8)]
+        one_shot_summaries = [image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=8),
+                              image_summary(name + "_true_outputs_full_speed", true_outputs, max_outputs, fps=25)]
         repeated_summaries = [image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=8),
+                              image_summary(name + "_pred_outputs_full_speed", pred_outputs, max_outputs, fps=25),
                               image_summary(name + "_delta", io_delta, max_outputs, fps=8)]
 
         if include_composite:
