@@ -209,7 +209,7 @@ class SubsetLoader(object):
 
     # endregion
 
-    # region Random sampling
+    # region Sample dataset
     def random_shard_filepath_generator(self):
         while True:
             source_index = np.random.randint(len(self.subset_folders))
@@ -235,11 +235,26 @@ class SubsetLoader(object):
         dataset = tf.data.TFRecordDataset(dataset)
         dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels))
         dataset = dataset.batch(self.shards_per_sample)
+        dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.join_shards_randomly)
         dataset = dataset.map(self.normalize_batch)
         dataset = dataset.map(self.split_batch_io)
 
         return dataset
+
+    @staticmethod
+    def augment_raw_video(modalities: Dict[str, tf.Tensor]
+                          ) -> Dict[str, tf.Tensor]:
+        if RawVideo.id() not in modalities:
+            return modalities
+
+        raw_video = modalities[RawVideo.id()]
+
+        raw_video = random_video_vertical_flip(raw_video)
+        raw_video = random_video_horizontal_flip(raw_video)
+
+        modalities[RawVideo.id()] = raw_video
+        return modalities
 
     def get_one_shot_iterator(self, batch_size: int, output_labels: bool):
         iterators = self._test_iterators if output_labels else self._train_iterators
@@ -262,7 +277,7 @@ class SubsetLoader(object):
             inputs, outputs = results
             return inputs, outputs
 
-    # region Read dataset in order
+    # region Browse dataset
     def make_source_filepath_generator(self, source_index: int):
         def generator():
             source_folder = self.subset_folders[source_index]
@@ -375,12 +390,10 @@ class SubsetLoader(object):
         # [batch_size, pairs_count, 2] => [batch_size, frame_count]
         # start, end = timestamps[:,:,0], timestamps[:,:,1]
         batch_size, timestamps_per_sample, _ = timestamps.shape
-        epsilon = 1e-7
+        epsilon = 1e-4
         starts = timestamps[:, :, 0]
         ends = timestamps[:, :, 1]
         labels_are_not_equal = np.abs(starts - ends) > epsilon  # [batch_size, pairs_count]
-        labels_are_not_equal = np.any(labels_are_not_equal, axis=1)  # [batch_size]
-        labels_are_not_equal = np.expand_dims(labels_are_not_equal, axis=1)  # [batch_size, 1]
 
         frame_labels = np.empty(shape=[batch_size, frame_count], dtype=np.bool)
 
@@ -389,51 +402,116 @@ class SubsetLoader(object):
             start_time = frame_id / frame_count
             end_time = start_time + frame_duration
 
-            start_in = np.all([end_time > starts, starts >= start_time], axis=0)
-            end_in = np.all([end_time > ends, ends >= start_time], axis=0)
+            start_in = np.all([start_time >= starts, start_time <= ends], axis=0)
+            end_in = np.all([end_time >= starts, end_time <= ends], axis=0)
 
-            frame_in = np.any([start_in, end_in], axis=(0, 2))
+            frame_in = np.any([start_in, end_in], axis=0)
+            frame_in = np.logical_and(frame_in, labels_are_not_equal)
+            frame_in = np.any(frame_in, axis=1)
 
             frame_labels[:, frame_id] = frame_in
 
-        frame_labels = np.logical_and(frame_labels, labels_are_not_equal)
         return frame_labels
+
+
+def random_video_vertical_flip(video: tf.Tensor,
+                               seed: int = None,
+                               scope_name: str = "random_video_vertical_flip"
+                               ) -> tf.Tensor:
+    return random_video_flip(video, 1, seed, scope_name)
+
+
+def random_video_horizontal_flip(video: tf.Tensor,
+                                 seed: int = None,
+                                 scope_name: str = "random_video_horizontal_flip"
+                                 ) -> tf.Tensor:
+    return random_video_flip(video, 2, seed, scope_name)
+
+
+def random_video_flip(video: tf.Tensor,
+                      flip_index: int,
+                      seed: int,
+                      scope_name: str
+                      ) -> tf.Tensor:
+    """Randomly (50% chance) flip an video along axis `flip_index`.
+    Args:
+        video: 5-D Tensor of shape `[batch, time, height, width, channels]`
+        flip_index: Dimension along which to flip video. Time: 0, Vertical: 1, Horizontal: 2
+        seed: A Python integer. Used to create a random seed. See `tf.set_random_seed` for behavior.
+        scope_name: Name of the scope in which the ops are added.
+    Returns:
+        A tensor of the same type and shape as `video`.
+    Raises:
+        ValueError: if the shape of `video` not supported.
+    """
+    with tf.name_scope(None, scope_name, [video]):
+        video = tf.convert_to_tensor(video, name="video")
+        shape = video.get_shape()
+        if shape.ndims != 5:
+            raise ValueError("`video` must have 5 dimensions but has {} dimensions.".format(shape.ndims))
+
+        batch_size = tf.shape(video)[0]
+        uniform_random = tf.random.uniform(shape=[batch_size], minval=0.0, maxval=1.0, seed=seed)
+        uniform_random = tf.reshape(uniform_random, [batch_size, 1, 1, 1, 1])
+        flips = tf.round(uniform_random)
+        flips = tf.cast(flips, video.dtype)
+        flipped = tf.reverse(video, [flip_index + 1])
+        return flips * flipped + (1.0 - flips) * video
 
 
 def main():
     import cv2
-    from modalities import RawVideo, OpticalFlow, ModalityShape
+    from modalities import RawVideo, ModalityShape
 
     tf.enable_eager_execution()
 
-    config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
+    batch_size = 2
+    video_length = 32
+
+    config = DatasetConfig(tfrecords_config_folder="C:/datasets/emoly",
                            modalities_io_shapes=
                            {
-                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
-                                                       output_shape=(32, 128, 128, 1)),
-                               OpticalFlow: ModalityShape(input_shape=(16, 128, 128, 1),
-                                                          output_shape=(32, 128, 128, 2)),
-                               # DoG: video_io_shape
+                               RawVideo: ModalityShape(input_shape=(video_length, 128, 128, 1),
+                                                       output_shape=(video_length, 128, 128, 1)),
                            },
                            output_range=(0.0, 1.0)
                            )
 
     loader = SubsetLoader(config, "Test")
 
-    for source_index in range(loader.source_count):
+    # while True:
+    #     batch = loader.get_batch(batch_size=batch_size, output_labels=True)
+    #     inputs, outputs, labels = batch
+    #     labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, video_length)
+    #
+    #     for i in range(batch_size):
+    #         print(labels[i])
+    #         for j in range(video_length):
+    #             frame = inputs[0][i][j]
+    #             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    #
+    #             if labels[i][j]:
+    #                 frame *= 0.5
+    #
+    #             frame = cv2.resize(frame, (512, 512))
+    #             cv2.imshow("frame", frame)
+    #             cv2.waitKey(1000 // 25)
+
+    for source_index in range(56, loader.source_count):
+        print(loader.subset_folders[source_index])
         dataset = loader.get_source_browser(source_index, RawVideo, 1)
 
         for batch in dataset.batch(1000):
             raw_video = np.squeeze(batch[RawVideo.id()])
 
             labels = np.squeeze(batch["labels"], axis=1)
-            labels_not_equal: np.ndarray = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
-            labels_not_equal = np.any(labels_not_equal, axis=-1)
+            labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, video_length)
 
             for i in range(len(labels)):
                 frame = raw_video[i][-1]
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-                if labels_not_equal[i]:
+                if labels[i][-1]:
                     frame *= 0.5
 
                 frame = cv2.resize(frame, (512, 512))

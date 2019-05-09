@@ -24,17 +24,16 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
         video_filenames = self.list_videos_filenames()
         labels = self.get_labels()
 
-        strength_split_value = 0
-
         data_sources: List[DataSource] = []
         for video_filename in video_filenames:
             sample_name = video_filename[:-4]
             if sample_name in labels:
-                start, end, strength = labels[sample_name]
-                is_train_sample = strength <= strength_split_value
+                sample_labels = labels[sample_name]
+                is_train_sample = False
             else:
-                start = end = 0.0
+                sample_labels = [(0.0, 0.0)]
                 is_train_sample = True
+
             video_path = os.path.join(self.videos_folder, video_filename)
             subset_name = "Train" if is_train_sample else "Test"
             target_path = os.path.join(self.dataset_path, subset_name, sample_name)
@@ -42,7 +41,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
             if not os.path.isdir(target_path):
                 os.makedirs(target_path)
 
-            data_source = DataSource(labels_source=[(start, end)],
+            data_source = DataSource(labels_source=sample_labels,
                                      target_path=target_path,
                                      subset_name=subset_name,
                                      video_source=video_path,
@@ -73,9 +72,10 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
                 target_filepath = video_filepath.replace("induit", "induced")
                 os.rename(video_filepath, target_filepath)
 
-    def get_labels(self) -> Dict[str, Tuple[int, int, int]]:
+    def get_labels(self) -> Dict[str, List[Tuple[float, float]]]:
         strength_ids = {"absent": 0, "trace": 1, "light": 2, "marked": 3, "severe": 4, "maximum": 5}
-        labels = {}
+        strength_split_value = strength_ids["trace"]
+        labels: Dict[str, List[Tuple[float, float]]] = {}
 
         with open(self.labels, 'r') as labels_file:
             reader = csv.reader(labels_file, delimiter=',')
@@ -90,15 +90,22 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
                     continue
 
                 if len(start) == 0 or len(end) == 0 or strength not in strength_ids:
-                    start = 0
-                    end = 0
-                    strength = strength_ids["absent"]
+                    start = 0.0
+                    end = 0.0
                 else:
-                    start = float(start)
-                    end = float(end)
                     strength = strength_ids[strength]
+                    if strength <= strength_split_value:
+                        start = 0.0
+                        end = 0.0
+                    else:
+                        start = float(start)
+                        end = float(end)
 
-                labels[sample] = (start, end, strength)
+                sample_labels = (start, end)
+                if sample in labels:
+                    labels[sample].append(sample_labels)
+                else:
+                    labels[sample] = [sample_labels]
         return labels
 
     @staticmethod
@@ -129,7 +136,7 @@ if __name__ == "__main__":
                                                    modalities=ModalityCollection(
                                                        [
                                                            RawVideo(frequency=25),
-                                                           # OpticalFlow(frequency=25, use_polar=True),
+                                                           OpticalFlow(frequency=25, use_polar=True),
                                                            # DoG(frequency=25),
                                                        ]
                                                    ),

@@ -16,7 +16,7 @@
         {"filters": 16, "kernel_size": [5, 5, 5], "strides": 2, "depth": 1},
         {"filters": 8, "kernel_size": [5, 5, 5], "strides": 2, "depth": 1}
     ],
-    "block_type": "conv_block",
+    "block_type": "residual_block",
     "pooling": "strides",
     "upsampling": "strides",
     "use_batch_normalization": "False",
@@ -24,10 +24,10 @@
     "default_activation": {"name": "leaky_relu", "alpha": 0.2},
     "embeddings_activation": {"name": "linear"},
     "output_activation": {"name": "sigmoid"},
-    "weights_initializer": {"mode": "fan_in", "scale": 0.1, "distribution": "normal"},
-    "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
+    "weights_initializer": {"mode": "fan_in", "scale": 1.0, "distribution": "normal"},
+    "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.999, "decay": 0.0},
     "reconstruction_loss": "L2",
-    "metrics": ["mean_squared_error"],
+    "metrics": [],
     "data_generators":
     {
         "train":

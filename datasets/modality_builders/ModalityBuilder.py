@@ -72,16 +72,6 @@ class ModalityBuilder(ABC):
 
         shard_size = total_frame_count_yielded_next_time - yielded_frame_count
 
-        if shard_size != 32:
-            print("time:", time)
-            print("modality.frequency:", modality.frequency)
-            print("yielded_frame_count:", yielded_frame_count)
-            print("time + self.shard_duration:", time + self.shard_duration)
-            print("modality.frequency * (time + self.shard_duration):", modality.frequency * (time + self.shard_duration))
-            print("total_frame_count_yielded_next_time:", total_frame_count_yielded_next_time)
-            print("frame_count:", frame_count)
-            print("shard_size:", shard_size)
-
         return shard_size
 
     def get_next_shard_sizes(self, time: float) -> Dict[Type[Modality], int]:

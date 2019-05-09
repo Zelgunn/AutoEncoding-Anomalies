@@ -3,6 +3,7 @@ from tensorflow.python.keras.layers import InputSpec
 from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
 from tensorflow.python.keras.layers import Conv2DTranspose, Conv3DTranspose
 from tensorflow.python.keras.utils import conv_utils
+from tensorflow.python.keras.initializers import VarianceScaling
 from tensorflow.python.keras import activations, initializers, regularizers, constraints
 from tensorflow.python.keras import backend
 from typing import Tuple, List, Union, AnyStr, Callable, Dict
@@ -89,6 +90,7 @@ class ResBasicBlockND(CompositeLayer):
 
         if self.use_projection(input_shape):
             projection_kernel_size = conv_utils.normalize_tuple(1, self.rank, "projection_kernel_size")
+            projection_kernel_initializer = VarianceScaling()
             self.projection_layer = conv_layer_type(filters=self.filters,
                                                     kernel_size=projection_kernel_size,
                                                     strides=self.strides,
@@ -96,7 +98,7 @@ class ResBasicBlockND(CompositeLayer):
                                                     data_format=self.data_format,
                                                     dilation_rate=self.dilation_rate,
                                                     use_bias=False,
-                                                    kernel_initializer=self.kernel_initializer,
+                                                    kernel_initializer=projection_kernel_initializer,
                                                     kernel_regularizer=self.kernel_regularizer,
                                                     activity_regularizer=self.activity_regularizer,
                                                     kernel_constraint=self.kernel_constraint,

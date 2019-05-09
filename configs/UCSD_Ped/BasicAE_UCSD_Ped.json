@@ -25,7 +25,7 @@
     "weights_initializer": {"mode": "fan_in", "scale": 0.1, "distribution": "normal"},
     "optimizer": {"name": "Adam", "lr": 1e-3, "beta_1": 0.9, "beta_2": 0.99, "decay": 0.0},
     "reconstruction_loss": "L2",
-    "metrics": ["mean_squared_error"],
+    "metrics": [],
     "data_generators":
     {
         "train":

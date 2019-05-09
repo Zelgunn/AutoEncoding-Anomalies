@@ -36,10 +36,10 @@ from utils.misc_utils import to_list
 class LayerBlock(object):
     def __init__(self,
                  conv_layer: Layer,
-                 pool_layer: Layer,
-                 upsampling_layer: Layer,
-                 activation_layer: Layer,
-                 dropout_layer: Dropout,
+                 pool_layer: Optional[Layer],
+                 upsampling_layer: Optional[Layer],
+                 activation_layer: Optional[Layer],
+                 dropout_layer: Optional[Dropout],
                  is_transpose: bool,
                  add_batch_normalization=False):
         self.conv = conv_layer
@@ -88,7 +88,10 @@ class LayerBlock(object):
         if self.pooling is not None:
             input_shape: tf.TensorShape = self.pooling.compute_output_shape(input_shape)
 
-        return tuple(input_shape.as_list())
+        if isinstance(input_shape, tf.TensorShape):
+            input_shape = input_shape.as_list()
+
+        return tuple(input_shape)
 
 
 class LayerStack(object):
@@ -195,6 +198,9 @@ class AutoEncoderBaseModel(ABC):
         self.reconstructor_output = None
         self.predictor_output = None
 
+        self._train_dataset_iterator = None
+        self._test_dataset_iterator = None
+
         self.config: Optional[dict] = None
         self.encoder_depth: Optional[int] = None
         self.decoder_depth: Optional[int] = None
@@ -229,12 +235,16 @@ class AutoEncoderBaseModel(ABC):
 
         self.log_dir = None
         self.tensorboard: Optional[tf.python.keras.callbacks.TensorBoard] = None
-        # self.run_options = None
-        self.run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE,
-                                         report_tensor_allocations_upon_oom=True
-                                         )
-        # self.run_metadata = None
-        self.run_metadata = tf.RunMetadata()
+        log_run_metadata = False
+        if log_run_metadata:
+            self.run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE,
+                                             report_tensor_allocations_upon_oom=True
+                                             )
+            self.run_metadata = tf.RunMetadata()
+        else:
+            self.run_options = None
+            self.run_metadata = None
+
         self.epochs_seen = 0
         self.output_range = None
         self._min_output_constant: Optional[tf.Tensor] = None
@@ -443,10 +453,11 @@ class AutoEncoderBaseModel(ABC):
         if self.use_spectral_norm:
             conv_layer = SpectralNormalization(conv_layer)
 
-        activation = AutoEncoderBaseModel.get_activation(self.default_activation)
+        activation = None
         dropout = Dropout(rate=stack_info["dropout"]) if "dropout" in stack_info else None
 
-        layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose)
+        layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose,
+                                 add_batch_normalization=self.use_batch_normalization)
         stack.add_layer(layer_block)
 
         return stack
@@ -644,7 +655,8 @@ class AutoEncoderBaseModel(ABC):
 
         transition_layer_class = conv_type["conv_block"][False]
         layer = transition_layer_class(filters=self.channels_count, kernel_size=1,
-                                       kernel_initializer=self.weights_initializer)(layer)
+                                       kernel_initializer=self.weights_initializer,
+                                       data_format=self.data_format)(layer)
 
         output_layer = self.get_activation(self.output_activation)(layer)
         return output_layer
@@ -655,7 +667,7 @@ class AutoEncoderBaseModel(ABC):
         self.reconstructor_output = self.compile_decoder_half(False)
         self.predictor_output = self.compile_decoder_half(True)
 
-        output_layer = Concatenate(axis=1)([self.reconstructor_output, self.predictor_output])
+        output_layer = Concatenate(axis=self.time_axis)([self.reconstructor_output, self.predictor_output])
 
         self._decoder = KerasModel(inputs=self.decoder_input_layer, outputs=output_layer, name="Decoder")
 
@@ -679,9 +691,9 @@ class AutoEncoderBaseModel(ABC):
 
     def get_reconstruction_loss(self, reconstruction_metric_name: str):
         def loss_function(y_true, y_pred):
-            print(y_true, y_pred)
             metric_function = metrics_dict[reconstruction_metric_name]
-            reduction_axis = list(range(2, len(y_true.shape)))
+            reduction_axis = list(range(1, len(y_true.shape)))
+            reduction_axis.remove(self.time_axis)
             loss = metric_function(y_true, y_pred, axis=reduction_axis)
             loss = loss * self.temporal_loss_weights
             loss = tf.reduce_mean(loss)
@@ -786,25 +798,65 @@ class AutoEncoderBaseModel(ABC):
 
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
-        dataset_iterator = dataset.train_subset.tf_dataset
-        dataset_iterator = dataset_iterator.batch(batch_size).prefetch(1)
+
+        if self._train_dataset_iterator is None:
+            self.make_train_dataset_iterators(dataset, batch_size)
 
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            results = self.autoencoder.train_on_batch(dataset_iterator)
+            x, y = self._train_dataset_iterator
+            results = self.autoencoder.train_on_batch(x, y)
 
-            if "metrics" in self.config:
+            if "metrics" in self.config and len(self.config["metrics"]) > 0:
                 batch_logs["loss"] = results[0]
                 for metric_name, result in zip(self.config["metrics"], results[1:]):
                     batch_logs[metric_name] = result
             else:
                 batch_logs["loss"] = results
 
+            if ((batch_index < 10) or (batch_index % 50 == 0)) and (self.epochs_seen == 0):
+                self.write_run_metadata(batch_index)
+
             callbacks.on_batch_end(batch_index, batch_logs)
 
         self.on_epoch_end(dataset, batch_size, callbacks)
+
+    # region Make dataset iterators
+    def make_train_dataset_iterators(self, dataset: DatasetLoader, batch_size: int):
+        self._train_dataset_iterator = self.make_dataset_iterator(dataset.train_subset.tf_dataset, batch_size)
+
+    def make_test_dataset_iterators(self, dataset: DatasetLoader, batch_size: int):
+        self._test_dataset_iterator = self.make_dataset_iterator(dataset.test_subset.tf_dataset, batch_size)
+
+    @staticmethod
+    def make_dataset_iterator(dataset: tf.data.Dataset, batch_size: int):
+        dataset = dataset.batch(batch_size).prefetch(1)
+        dataset_iterator = dataset.make_initializable_iterator()
+        # dataset_iterator = MultiDeviceIterator(dataset_iterator, devices=["/gpu:0"])
+        dataset_initializer = dataset_iterator.initializer
+        dataset_iterator = dataset_iterator.get_next()
+        # dataset_iterator = dataset_iterator[0]
+        dataset_iterator = (dataset_iterator[0][0], dataset_iterator[1][0])
+
+        get_session().run(dataset_initializer)
+        return dataset_iterator
+    # endregion
+
+    def write_run_metadata(self, batch_index):
+        if self.run_metadata is None:
+            return
+
+        suffix = "{}_{}".format(self.epochs_seen, batch_index)
+        self.tensorboard.writer.add_run_metadata(self.run_metadata,
+                                                 tag="run_metadata_{}".format(suffix),
+                                                 global_step=self.epochs_seen)
+
+        epoch_timeline = timeline.Timeline(self.run_metadata.step_stats)
+        chrome_trace_format = epoch_timeline.generate_chrome_trace_format(show_memory=True)
+        with open(os.path.join(self.log_dir, "timeline_{}.json".format(suffix)), 'w') as timeline_file:
+            timeline_file.write(chrome_trace_format)
 
     def on_epoch_end(self,
                      dataset: DatasetLoader,
@@ -817,25 +869,19 @@ class AutoEncoderBaseModel(ABC):
             epoch_logs = {}
 
         out_labels = self.autoencoder.metrics_names
-        test_iterator = dataset.test_subset.tf_dataset.batch(batch_size)
+
+        if self._test_dataset_iterator is None:
+            self.make_test_dataset_iterators(dataset, batch_size)
+
         # TODO : Change validation steps
-        val_outs = self.autoencoder.evaluate(test_iterator, steps=64, verbose=0)
+        x, y = self._test_dataset_iterator
+        val_outs = self.autoencoder.evaluate(x, y, steps=64, verbose=0)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
 
         if callbacks:
             callbacks.on_epoch_end(self.epochs_seen, epoch_logs)
-
-        self.tensorboard.writer.add_run_metadata(self.run_metadata,
-                                                 "metadata_{}".format(self.epochs_seen),
-                                                 global_step=self.epochs_seen)
-
-        if self.run_metadata is not None:
-            epoch_timeline = timeline.Timeline(self.run_metadata.step_stats)
-            chrome_trace_format = epoch_timeline.generate_chrome_trace_format(show_memory=True)
-            with open(os.path.join(self.log_dir, "timeline.json"), 'w') as timeline_file:
-                timeline_file.write(chrome_trace_format)
 
         self.epochs_seen += 1
 
@@ -1148,6 +1194,7 @@ class AutoEncoderBaseModel(ABC):
                 pr_plot[j, i] = pr
 
             save_attractor_results(i + 1)
+
     # endregion
 
     # region Weights (Save|Load)
@@ -1220,17 +1267,17 @@ class AutoEncoderBaseModel(ABC):
 
         # region AUC callback
         # TODO : Parameter for batch_size here
-        from callbacks import AUCCallback
-        inputs, outputs, labels = test_subset.get_batch(batch_size=512, output_labels=True)
-        inputs = inputs[0]
-        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
-
-        frame_predictions_model = self.build_frame_level_error_callback_model()
-        frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
-                                         inputs, labels,
-                                         plot_size=(128, 128), batch_size=8,
-                                         name="Frame_Level_Error_AUC", epoch_freq=5)
-        anomaly_callbacks.append(frame_auc_callback)
+        # from callbacks import AUCCallback
+        # inputs, outputs, labels = test_subset.get_batch(batch_size=512, output_labels=True)
+        # inputs = inputs[0]
+        # labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
+        #
+        # frame_predictions_model = self.build_frame_level_error_callback_model()
+        # frame_auc_callback = AUCCallback(frame_predictions_model, self.tensorboard,
+        #                                  inputs, labels,
+        #                                  plot_size=(128, 128), batch_size=8,
+        #                                  name="Frame_Level_Error_AUC", epoch_freq=5)
+        # anomaly_callbacks.append(frame_auc_callback)
         # endregion
 
         return anomaly_callbacks
@@ -1387,27 +1434,31 @@ class AutoEncoderBaseModel(ABC):
 
     # region Properties
     @property
-    def channels_axis(self):
+    def channels_axis(self) -> int:
         return 0 if self.channels_first else -1
 
     @property
-    def data_format(self):
+    def time_axis(self) -> int:
+        return 2 if self.channels_first else 1
+
+    @property
+    def data_format(self) -> str:
         return "channels_first" if self.channels_first else "channels_last"
 
     @property
-    def input_image_size(self):
+    def input_image_size(self) -> Tuple[int, int]:
         return self.input_shape[2:] if self.channels_first else self.input_shape[1:-1]
 
     @property
-    def input_sequence_length(self):
-        return self.input_shape[0]
+    def input_sequence_length(self) -> int:
+        return self.input_shape[self.time_axis - 1]
 
     @property
-    def output_image_size(self):
+    def output_image_size(self) -> Tuple[int, int]:
         return self.output_shape[2:] if self.channels_first else self.output_shape[1:-1]
 
     @property
-    def output_sequence_length(self):
+    def output_sequence_length(self) -> int:
         return self.output_shape[1] if self.channels_first else self.output_shape[0]
 
     @property
