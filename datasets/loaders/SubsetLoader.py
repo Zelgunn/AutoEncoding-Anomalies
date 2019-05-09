@@ -235,8 +235,8 @@ class SubsetLoader(object):
         dataset = tf.data.TFRecordDataset(dataset)
         dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels))
         dataset = dataset.batch(self.shards_per_sample)
-        dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.join_shards_randomly)
+        dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.normalize_batch)
         dataset = dataset.map(self.split_batch_io)
 
@@ -414,6 +414,7 @@ class SubsetLoader(object):
         return frame_labels
 
 
+# region Utils
 def random_video_vertical_flip(video: tf.Tensor,
                                seed: int = None,
                                scope_name: str = "random_video_vertical_flip"
@@ -435,7 +436,8 @@ def random_video_flip(video: tf.Tensor,
                       ) -> tf.Tensor:
     """Randomly (50% chance) flip an video along axis `flip_index`.
     Args:
-        video: 5-D Tensor of shape `[batch, time, height, width, channels]`
+        video: 5-D Tensor of shape `[batch, time, height, width, channels]` or
+               4-D Tensor of shape `[time, height, width, channels]`.
         flip_index: Dimension along which to flip video. Time: 0, Vertical: 1, Horizontal: 2
         seed: A Python integer. Used to create a random seed. See `tf.set_random_seed` for behavior.
         scope_name: Name of the scope in which the ops are added.
@@ -444,20 +446,35 @@ def random_video_flip(video: tf.Tensor,
     Raises:
         ValueError: if the shape of `video` not supported.
     """
-    with tf.name_scope(None, scope_name, [video]):
+    with tf.name_scope(None, scope_name, [video]) as scope:
         video = tf.convert_to_tensor(video, name="video")
         shape = video.get_shape()
-        if shape.ndims != 5:
-            raise ValueError("`video` must have 5 dimensions but has {} dimensions.".format(shape.ndims))
 
-        batch_size = tf.shape(video)[0]
-        uniform_random = tf.random.uniform(shape=[batch_size], minval=0.0, maxval=1.0, seed=seed)
-        uniform_random = tf.reshape(uniform_random, [batch_size, 1, 1, 1, 1])
-        flips = tf.round(uniform_random)
-        flips = tf.cast(flips, video.dtype)
-        flipped = tf.reverse(video, [flip_index + 1])
-        return flips * flipped + (1.0 - flips) * video
+        if shape.ndims == 4:
+            uniform_random = tf.random.uniform(shape=[], minval=0.0, maxval=1.0, seed=seed)
+            flip_condition = tf.less(uniform_random, 0.5)
+            flipped = tf.reverse(video, [flip_index])
+            outputs = tf.cond(pred=flip_condition,
+                              true_fn=lambda: flipped,
+                              false_fn=lambda: video,
+                              name=scope)
 
+        elif shape.ndims == 5:
+            batch_size = tf.shape(video)[0]
+            uniform_random = tf.random.uniform(shape=[batch_size], minval=0.0, maxval=1.0, seed=seed)
+            uniform_random = tf.reshape(uniform_random, [batch_size, 1, 1, 1, 1])
+            flips = tf.round(uniform_random)
+            flips = tf.cast(flips, video.dtype)
+            flipped = tf.reverse(video, [flip_index + 1])
+            outputs = flips * flipped + (1.0 - flips) * video
+
+        else:
+            raise ValueError("`video` must have either 4 or 5 dimensions but has {} dimensions.".format(shape.ndims))
+
+        return outputs
+
+
+# endregion
 
 def main():
     import cv2
@@ -468,7 +485,7 @@ def main():
     batch_size = 2
     video_length = 32
 
-    config = DatasetConfig(tfrecords_config_folder="C:/datasets/emoly",
+    config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
                            modalities_io_shapes=
                            {
                                RawVideo: ModalityShape(input_shape=(video_length, 128, 128, 1),
@@ -479,23 +496,28 @@ def main():
 
     loader = SubsetLoader(config, "Test")
 
-    # while True:
-    #     batch = loader.get_batch(batch_size=batch_size, output_labels=True)
-    #     inputs, outputs, labels = batch
-    #     labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, video_length)
-    #
-    #     for i in range(batch_size):
-    #         print(labels[i])
-    #         for j in range(video_length):
-    #             frame = inputs[0][i][j]
-    #             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    #
-    #             if labels[i][j]:
-    #                 frame *= 0.5
-    #
-    #             frame = cv2.resize(frame, (512, 512))
-    #             cv2.imshow("frame", frame)
-    #             cv2.waitKey(1000 // 25)
+    for batch in loader.labeled_tf_dataset.batch(100):
+        (_, ), (outputs, ), batch_labels = batch
+        batch_raw_video = outputs.numpy()
+        batch_labels = batch_labels.numpy()
+        batch_labels = SubsetLoader.timestamps_labels_to_frame_labels(batch_labels, video_length)
+
+        for j in range(len(batch_labels)):
+            raw_video = batch_raw_video[j]
+            labels = batch_labels[j]
+
+            for i in range(len(labels)):
+                frame = raw_video[i]
+
+                if frame.shape[-1] == 3:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+                if labels[i]:
+                    frame *= 0.5
+
+                frame = cv2.resize(frame, (512, 512))
+                cv2.imshow("frame", frame)
+                cv2.waitKey(1000 // 25)
 
     for source_index in range(56, loader.source_count):
         print(loader.subset_folders[source_index])
@@ -503,8 +525,8 @@ def main():
 
         for batch in dataset.batch(1000):
             raw_video = np.squeeze(batch[RawVideo.id()])
-
             labels = np.squeeze(batch["labels"], axis=1)
+
             labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, video_length)
 
             for i in range(len(labels)):
