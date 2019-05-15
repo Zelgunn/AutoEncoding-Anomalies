@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 from typing import Dict
 
 from modalities import Modality
@@ -10,16 +11,17 @@ class RawAudio(Modality):
 
     @classmethod
     def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:
-        raise NotImplementedError
+        return cls.encode_raw(modality_value, np.float32)
 
     @classmethod
     def decode_from_tfrecord_feature(cls, parsed_features):
-        raise NotImplementedError
+        return cls.decode_raw(parsed_features, tf.float32)
 
     @classmethod
     def tfrecord_features(cls) -> Dict[str, tuple]:
-        return {cls.id(): tf.VarLenFeature(tf.string)}
+        return {cls.id(): tf.VarLenFeature(tf.string),
+                cls.shape_id(): cls.tfrecord_shape_parse_function()}
 
     @classmethod
     def rank(cls) -> int:
-        return 1
+        return 2

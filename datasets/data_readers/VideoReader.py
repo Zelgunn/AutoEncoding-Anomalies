@@ -3,7 +3,7 @@ import cv2
 from PIL import Image
 import os
 from enum import IntEnum
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Iterator
 
 
 class VideoReaderMode(IntEnum):
@@ -74,7 +74,7 @@ class VideoReader(object):
         assert self.end > self.start
         # endregion
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[np.ndarray]:
         if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
             self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, self.start)
 

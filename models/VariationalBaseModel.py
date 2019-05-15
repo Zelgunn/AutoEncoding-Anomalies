@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Dense, Lambda, Reshape, Input
+from tensorflow.python.keras import initializers
 from tensorflow.python.keras import backend
 import numpy as np
 import cv2
@@ -31,7 +32,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         else:
             conv = conv_type["conv_block"][False]
             self.latent_log_var_layer = conv(filters=self.embeddings_size, kernel_size=3, padding="same",
-                                             kernel_initializer=self.weights_initializer,
+                                             kernel_initializer="zeros",
                                              kernel_regularizer=self.weight_decay_regularizer,
                                              bias_regularizer=self.weight_decay_regularizer)
 

@@ -3,7 +3,7 @@ import csv
 from tqdm import tqdm
 from typing import Dict, Tuple, List
 
-from modalities import ModalityCollection, RawVideo, OpticalFlow, DoG
+from modalities import ModalityCollection, RawVideo, RawAudio
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 
 
@@ -136,8 +136,7 @@ if __name__ == "__main__":
                                                    modalities=ModalityCollection(
                                                        [
                                                            RawVideo(frequency=25),
-                                                           OpticalFlow(frequency=25, use_polar=True),
-                                                           # DoG(frequency=25),
+                                                           RawAudio(frequency=48000)
                                                        ]
                                                    ),
                                                    video_frame_size=(128, 128))

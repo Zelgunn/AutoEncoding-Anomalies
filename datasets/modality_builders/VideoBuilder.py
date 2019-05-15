@@ -49,8 +49,8 @@ class VideoBuilder(ModalityBuilder):
         # endregion
 
         # region Compute initial shard size
+        # TODO : Make function for this (reference_mod)
         reference_mod = None
-
         for video_mod in [RawVideo, OpticalFlow, DoG]:
             if video_mod in shard_buffer:
                 reference_mod = video_mod
@@ -100,7 +100,7 @@ class VideoBuilder(ModalityBuilder):
                 # endregion
             # endregion
 
-    def get_modality_buffer_shape(self, modality: Modality):
+    def get_modality_buffer_shape(self, modality: Modality) -> List[int]:
         frame_size = self.get_frame_size()
         max_shard_size = self.get_modality_max_shard_size(modality)
 
