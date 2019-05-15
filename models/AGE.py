@@ -182,7 +182,7 @@ class AGE(AutoEncoderBaseModel):
             batch_logs["decoder_loss"] = decoder_fake_data_loss
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(dataset, batch_size, callbacks)
+        self.on_epoch_end(callbacks)
 
     # endregion
 

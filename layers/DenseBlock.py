@@ -1,15 +1,13 @@
 import tensorflow as tf
-from tensorflow.python.keras.layers import InputSpec
+from tensorflow.python.keras.layers import InputSpec, Layer
 from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
 from tensorflow.python.keras.layers import BatchNormalization, concatenate
 from tensorflow.python.keras.utils import conv_utils
 from tensorflow.python.keras import activations, initializers, regularizers, constraints
 from typing import List, Optional
 
-from layers import CompositeLayer
 
-
-class CompositeFunctionBlock(CompositeLayer):
+class CompositeFunctionBlock(Layer):
     def __init__(self,
                  rank,
                  kernel_size,
@@ -79,16 +77,16 @@ class CompositeFunctionBlock(CompositeLayer):
     def build(self, input_shape):
         if self.use_bottleneck:
             if self.use_batch_normalization:
-                self.build_sub_layer(self.bottleneck_batch_normalization_layer, input_shape)
+                self.bottleneck_batch_normalization_layer.build(input_shape)
 
-            self.build_sub_layer(self.bottleneck_conv_layer, input_shape)
+            self.bottleneck_conv_layer.build(input_shape)
 
             input_shape = self.bottleneck_conv_layer.compute_output_shape(input_shape)
 
         if self.use_batch_normalization:
-            self.build_sub_layer(self.batch_normalization_layer, input_shape)
+            self.batch_normalization_layer.build(input_shape)
 
-        self.build_sub_layer(self.conv_layer, input_shape)
+        self.conv_layer.build(input_shape)
 
         super(CompositeFunctionBlock, self).build(input_shape)
 
@@ -120,7 +118,7 @@ class CompositeFunctionBlock(CompositeLayer):
         return tuple(output_shape)
 
 
-class DenseBlockND(CompositeLayer):
+class DenseBlockND(Layer):
     def __init__(self, rank,
                  kernel_size,
                  growth_rate,
@@ -212,11 +210,11 @@ class DenseBlockND(CompositeLayer):
 
         with tf.name_scope("dense_block_weights"):
             for i in range(self._depth):
-                self.build_sub_layer(self.composite_function_blocks[i], tuple(intermediate_shape))
+                self.composite_function_blocks[i].build(tuple(intermediate_shape))
                 intermediate_shape[self.channel_axis] += self.growth_rate
 
             if self.transition_layer is not None:
-                self.build_sub_layer(self.transition_layer, tuple(intermediate_shape))
+                self.transition_layer.build(tuple(intermediate_shape))
 
         super(DenseBlockND, self).build(input_shape)
 

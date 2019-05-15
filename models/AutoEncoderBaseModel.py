@@ -397,14 +397,15 @@ class AutoEncoderBaseModel(ABC):
                                           bias_regularizer=self.weight_decay_regularizer)
         else:
             conv = conv_type["conv_block"][False]
-            self.embeddings_layer = conv(filters=self.embeddings_size, kernel_size=3, padding="same",
+            kernel_size = self.config["embeddings_layer"]["kernel_size"]
+            self.embeddings_layer = conv(filters=self.embeddings_size,
+                                         kernel_size=kernel_size,
+                                         padding="same",
                                          kernel_initializer=self.weights_initializer,
                                          kernel_regularizer=self.weight_decay_regularizer,
                                          bias_regularizer=self.weight_decay_regularizer,
                                          data_format=self.data_format,
                                          name="embeddings_layer")
-            embeddings_layer_info = self.config["embeddings_layer"]
-            self.embeddings_layer = self.build_conv_stack(embeddings_layer_info)
 
         for stack_info in self.config["decoder"]:
             stack = self.build_deconv_stack(stack_info)
@@ -430,20 +431,26 @@ class AutoEncoderBaseModel(ABC):
 
         strides = stack_info["strides"]
         upsampling_layer, pool_layer, conv_strides = None, None, 1
-        if self.pooling == "strides":
-            conv_strides = strides
-        elif transpose:
-            upsampling_layer = UpSampling3D(size=strides)
+        if transpose:
+            if self.upsampling == "strides":
+                conv_strides = strides
+            else:
+                upsampling_layer = UpSampling3D(size=strides)
         else:
-            pool_layer = pool_type[self.pooling](pool_size=strides)
+            if self.pooling == "strides":
+                conv_strides = strides
+            else:
+                pool_layer = pool_type[self.pooling](pool_size=strides)
 
         conv_block_type = self.get_block_type(transpose)
+        activation = AutoEncoderBaseModel.get_activation(self.default_activation)
 
         conv_layer = conv_block_type(filters=stack_info["filters"],
                                      basic_block_count=depth,
                                      basic_block_depth=2,
                                      kernel_size=stack_info["kernel_size"],
                                      strides=conv_strides,
+                                     activation=activation,
                                      use_bias=True,
                                      kernel_initializer=self.weights_initializer,
                                      kernel_regularizer=self.weight_decay_regularizer,
@@ -453,10 +460,14 @@ class AutoEncoderBaseModel(ABC):
         if self.use_spectral_norm:
             conv_layer = SpectralNormalization(conv_layer)
 
-        activation = None
         dropout = Dropout(rate=stack_info["dropout"]) if "dropout" in stack_info else None
 
-        layer_block = LayerBlock(conv_layer, pool_layer, upsampling_layer, activation, dropout, transpose,
+        layer_block = LayerBlock(conv_layer=conv_layer,
+                                 pool_layer=pool_layer,
+                                 upsampling_layer=upsampling_layer,
+                                 activation_layer=None,
+                                 dropout_layer=dropout,
+                                 is_transpose=transpose,
                                  add_batch_normalization=self.use_batch_normalization)
         stack.add_layer(layer_block)
 
@@ -765,18 +776,19 @@ class AutoEncoderBaseModel(ABC):
         assert isinstance(batch_size, int) or isinstance(batch_size, list)
         assert isinstance(epochs, int) or isinstance(epochs, list)
 
-        self.on_train_begin(dataset_name)
+        self.on_train_begin(dataset, dataset_name, batch_size)
 
         callbacks = self.build_callbacks(dataset)
         callbacks = self.setup_callbacks(callbacks, batch_size, epochs, epoch_length)
-
         callbacks.on_train_begin()
+
         try:
             self.train_loop(dataset, callbacks, batch_size, epoch_length, epochs)
+
         except KeyboardInterrupt:
             print("\n==== Training was stopped by a Keyboard Interrupt ====\n")
-        callbacks.on_train_end()
 
+        callbacks.on_train_end()
         self.on_train_end()
 
     def train_loop(self,
@@ -799,14 +811,12 @@ class AutoEncoderBaseModel(ABC):
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
 
-        if self._train_dataset_iterator is None:
-            self.make_train_dataset_iterators(dataset, batch_size)
+        x, y = self._train_dataset_iterator
 
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            x, y = self._train_dataset_iterator
             results = self.autoencoder.train_on_batch(x, y)
 
             if "metrics" in self.config and len(self.config["metrics"]) > 0:
@@ -821,24 +831,29 @@ class AutoEncoderBaseModel(ABC):
 
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(dataset, batch_size, callbacks)
+        self.on_epoch_end(callbacks)
 
     # region Make dataset iterators
-    def make_train_dataset_iterators(self, dataset: DatasetLoader, batch_size: int):
-        self._train_dataset_iterator = self.make_dataset_iterator(dataset.train_subset.tf_dataset, batch_size)
+    def make_dataset_iterators(self, dataset: DatasetLoader, batch_size: int):
+        if self._train_dataset_iterator is not None:
+            return
 
-    def make_test_dataset_iterators(self, dataset: DatasetLoader, batch_size: int):
-        self._test_dataset_iterator = self.make_dataset_iterator(dataset.test_subset.tf_dataset, batch_size)
+        dataset_iterator = self.make_dataset_iterator(dataset.train_subset.tf_dataset, batch_size)
+        self._train_dataset_iterator = (dataset_iterator[0][0], dataset_iterator[1][0])
+
+        dataset_iterator = self.make_dataset_iterator(dataset.test_subset.tf_dataset, batch_size, prefetch=False)
+        self._test_dataset_iterator = (dataset_iterator[0][0], dataset_iterator[1][0])
 
     @staticmethod
-    def make_dataset_iterator(dataset: tf.data.Dataset, batch_size: int):
-        dataset = dataset.batch(batch_size).prefetch(1)
+    def make_dataset_iterator(dataset: tf.data.Dataset, batch_size: int, prefetch=True):
+        dataset = dataset.batch(batch_size)
+        if prefetch:
+            dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
         dataset_iterator = dataset.make_initializable_iterator()
         # dataset_iterator = MultiDeviceIterator(dataset_iterator, devices=["/gpu:0"])
         dataset_initializer = dataset_iterator.initializer
         dataset_iterator = dataset_iterator.get_next()
         # dataset_iterator = dataset_iterator[0]
-        dataset_iterator = (dataset_iterator[0][0], dataset_iterator[1][0])
 
         get_session().run(dataset_initializer)
         return dataset_iterator
@@ -860,8 +875,6 @@ class AutoEncoderBaseModel(ABC):
             timeline_file.write(chrome_trace_format)
 
     def on_epoch_end(self,
-                     dataset: DatasetLoader,
-                     batch_size: int,
                      callbacks: CallbackList = None,
                      epoch_logs: dict = None):
 
@@ -870,9 +883,6 @@ class AutoEncoderBaseModel(ABC):
             epoch_logs = {}
 
         out_labels = self.autoencoder.metrics_names
-
-        if self._test_dataset_iterator is None:
-            self.make_test_dataset_iterators(dataset, batch_size)
 
         # TODO : Change validation steps
         x, y = self._test_dataset_iterator
@@ -891,7 +901,10 @@ class AutoEncoderBaseModel(ABC):
         #     roc, pr = self.evaluate_predictions(predictions, labels, lengths, log_in_tensorboard=True)
         #     print("Epochs seen = {} | ROC = {} | PR = {}".format(self.epochs_seen, roc, pr))
 
-    def on_train_begin(self, dataset_name: str):
+    def on_train_begin(self,
+                       dataset: DatasetLoader,
+                       dataset_name: str,
+                       batch_size: int):
         if not self.layers_built:
             self.build_layers()
 
@@ -901,6 +914,7 @@ class AutoEncoderBaseModel(ABC):
         print("Logs directory : '{}'".format(self.log_dir))
 
         self.save_models_info(self.log_dir)
+        self.make_dataset_iterators(dataset, batch_size)
 
     def on_train_end(self):
         print("============== Saving models weights... ==============")
@@ -1273,7 +1287,7 @@ class AutoEncoderBaseModel(ABC):
         # region AUC callback
         # TODO : Parameter for batch_size here
         from callbacks import AUCCallback
-        inputs, outputs, labels = test_subset.get_batch(batch_size=512, output_labels=True)
+        inputs, outputs, labels = test_subset.get_batch(batch_size=1024, output_labels=True)
         inputs = inputs[0]
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
 

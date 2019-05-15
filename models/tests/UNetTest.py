@@ -178,7 +178,8 @@ def get_dataset():
                            {
                                RawVideo: ModalityShape(input_shape=(16, 128, 128, 3),
                                                        output_shape=(32, 128, 128, 3)),
-                           })
+                           },
+                           output_range=(0.0, 1.0))
 
     dataset = DatasetLoader(config)
     return dataset

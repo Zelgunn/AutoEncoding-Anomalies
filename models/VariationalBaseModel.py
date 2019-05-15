@@ -26,19 +26,23 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         self.latent_mean_layer = self.embeddings_layer
         if self.use_dense_embeddings:
             self.latent_log_var_layer = Dense(units=self.embeddings_size,
+                                              kernel_initializer="zeros",
                                               kernel_regularizer=self.weight_decay_regularizer,
                                               bias_regularizer=self.weight_decay_regularizer)
         else:
             conv = conv_type["conv_block"][False]
-            self.latent_log_var_layer = conv(filters=self.embeddings_size, kernel_size=3, padding="same",
-                                             kernel_initializer=self.weights_initializer,
+            kernel_size = self.config["embeddings_layer"]["kernel_size"]
+            self.latent_log_var_layer = conv(filters=self.embeddings_size,
+                                             kernel_size=kernel_size,
+                                             padding="same",
+                                             kernel_initializer="zeros",
                                              kernel_regularizer=self.weight_decay_regularizer,
                                              bias_regularizer=self.weight_decay_regularizer)
 
         self.embeddings_layer = Lambda(function=sampling)
 
     def compute_embeddings_output_shape(self):
-        embeddings_shape = self.compute_embeddings_input_shape()
+        embeddings_shape: tuple = self.compute_embeddings_input_shape()
         if self.use_dense_embeddings:
             embeddings_shape = embeddings_shape[:-1]
             embeddings_shape_prod = np.prod(embeddings_shape)
@@ -201,10 +205,8 @@ def sampling(args):
     latent_mean, latent_log_var = args
 
     shape = tf.shape(latent_mean)
-    batch_size = shape[0]
-    latent_dim = shape[1]
 
-    epsilon = tf.random_normal(shape=[batch_size, latent_dim], mean=0., stddev=1.0)
+    epsilon = tf.random_normal(shape=shape, mean=0., stddev=1.0)
     return latent_mean + tf.exp(0.5 * latent_log_var) * epsilon
 
 
@@ -232,7 +234,7 @@ def kullback_leibler_divergence_mean0_var1(mean, log_variance, use_variance_log=
     else:
         variance = log_variance
         divergence = variance + tf.square(mean) - tf.log(variance)
-    divergence = (tf.reduce_mean(divergence) - 1.0) * 0.5
+    divergence = (tf.reduce_mean(divergence - 1)) * 0.5
     return divergence
     # return 0.5 * tf.reduce_mean(-(log_variance + 1) + tf.exp(log_variance) + tf.square(mean))
 

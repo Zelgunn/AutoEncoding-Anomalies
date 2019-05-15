@@ -31,13 +31,13 @@ def main():
                      }
     # endregion
 
-    model_used = "BasicAE"
+    model_used = "VAE"
     dataset_used = "Emoly"
     alt_config_suffix_used = None
     use_flow = False
     use_patches = False
     previous_weights_to_load: Optional[str] = None
-    previous_weights_to_load = "../logs/AutoEncoding-Anomalies/emoly/BasicAE/log_1557395333"
+    # previous_weights_to_load = "../logs/AutoEncoding-Anomalies/emoly/GAN/log_1557753299"
 
     # region Config/Dataset selection
     dataset_name, dataset_config_alias = datasets_dict[dataset_used]
@@ -120,7 +120,7 @@ def main():
     if previous_weights_to_load is not None:
         previous_weights_to_load: str = previous_weights_to_load
         print("=> Loading weights from :", previous_weights_to_load)
-        auto_encoder.load_weights(previous_weights_to_load, epoch=54)
+        auto_encoder.load_weights(previous_weights_to_load, epoch=23)
     # endregion
 
     with NumpySeedContext(seed=auto_encoder.seed):
@@ -131,7 +131,7 @@ def main():
             cProfile.run("auto_encoder.train(dataset, epoch_length=500, epochs=10, batch_size=6)", sort="cumulative")
         else:
             auto_encoder.train(dataset, dataset_name=dataset_name,
-                               epoch_length=500, epochs=200, batch_size=16)
+                               epoch_length=1000, epochs=200, batch_size=6)
 
 
 if __name__ == "__main__":

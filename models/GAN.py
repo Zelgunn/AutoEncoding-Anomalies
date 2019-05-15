@@ -28,6 +28,10 @@ class GAN(AutoEncoderBaseModel):
         self._discriminator_loss_real_data = None
         self._discriminator_loss_fake_data = None
 
+        self._generator_z_iterator = None
+        self._discriminator_z_iterator = None
+        self._real_x_iterator = None
+
     def load_config(self, config_file: str, alt_config_file: str):
         super(GAN, self).load_config(config_file, alt_config_file)
 
@@ -85,7 +89,7 @@ class GAN(AutoEncoderBaseModel):
         # endregion
 
         # region KerasModel (compile)
-        reconstruction_metric = metrics_dict[self.config["losses"]["autoencoder"]]
+        reconstruction_metric = self.get_reconstruction_loss(self.config["losses"]["autoencoder"])
 
         def autoencoder_loss(y_true, y_pred):
             reconstruction_loss = reconstruction_metric(y_true, y_pred) * self.config["loss_weights"]["reconstruction"]
@@ -215,43 +219,23 @@ class GAN(AutoEncoderBaseModel):
         discriminator: KerasModel = self.discriminator
         discriminator_steps = self.config["discriminator_steps"] if "discriminator_steps" in self.config else 1
 
-        base_dataset = dataset.train_subset.tf_dataset
-        autoencoder_dataset = base_dataset
-        z_dataset = self.z_dataset
-        real_x_dataset = self.get_real_data_discriminator_dataset(base_dataset)
-
-        # def add_gaussian_noise_to_inputs(inputs, outputs):
-        #     inputs = [one_input + tf.random.normal(shape=tf.shape(one_input), stddev=0.05)
-        #               for one_input in inputs]
-        #     inputs = tuple(inputs)
-        #     return inputs, outputs
-        #
-        # def dropout_inputs(inputs, outputs):
-        #     inputs = [tf.nn.dropout(one_input, rate=0.05)
-        #               for one_input in inputs]
-        #     inputs = tuple(inputs)
-        #     return inputs, outputs
-        #
-        # autoencoder_dataset = autoencoder_dataset.map(add_gaussian_noise_to_inputs)
-        # autoencoder_dataset = autoencoder_dataset.map(dropout_inputs)
-
-        autoencoder_dataset = autoencoder_dataset.batch(batch_size).prefetch(1)
-        generator_z_dataset = z_dataset.batch(batch_size).prefetch(1)
-        discriminator_z_dataset = z_dataset.batch(batch_size // 2).prefetch(1)
-        real_x_dataset = real_x_dataset.batch(batch_size // 2).prefetch(1)
+        x, y = self._train_dataset_iterator
+        generator_z_iterator = self._generator_z_iterator
+        real_x_iterator = self._real_x_iterator
+        discriminator_z_iterator = self._discriminator_z_iterator
         # endregion
 
         callbacks.on_epoch_begin(self.epochs_seen)
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
-            autoencoder_metrics = autoencoder.train_on_batch(autoencoder_dataset)
-            generator_metrics = adversarial_generator.train_on_batch(generator_z_dataset)
+            autoencoder_metrics = autoencoder.train_on_batch(x, y)
+            generator_metrics = adversarial_generator.train_on_batch(generator_z_iterator)
 
             discriminator_metrics = []
             for i in range(discriminator_steps):
-                real_data_discriminator_metrics = discriminator.train_on_batch(real_x_dataset)
-                fake_data_discriminator_metrics = adversarial_discriminator.train_on_batch(discriminator_z_dataset)
+                real_data_discriminator_metrics = discriminator.train_on_batch(real_x_iterator)
+                fake_data_discriminator_metrics = adversarial_discriminator.train_on_batch(discriminator_z_iterator)
                 discriminator_metrics += [real_data_discriminator_metrics, fake_data_discriminator_metrics]
             discriminator_metrics = np.mean(discriminator_metrics, axis=0)
 
@@ -271,7 +255,20 @@ class GAN(AutoEncoderBaseModel):
 
             callbacks.on_batch_end(batch_index, batch_logs)
 
-        self.on_epoch_end(dataset, batch_size, callbacks)
+        self.on_epoch_end(callbacks)
+
+    # region Make dataset iterators
+    def make_dataset_iterators(self, dataset: DatasetLoader, batch_size: int):
+        if self._train_dataset_iterator is not None:
+            return
+        
+        super(GAN, self).make_dataset_iterators(dataset, batch_size)
+
+        self._generator_z_iterator = self.make_dataset_iterator(self.z_dataset, batch_size, prefetch=False)
+        self._discriminator_z_iterator = self.make_dataset_iterator(self.z_dataset, batch_size, prefetch=False)
+        real_x_dataset = self.get_real_data_discriminator_dataset(dataset.train_subset.tf_dataset)
+        self._real_x_iterator = self.make_dataset_iterator(real_x_dataset, batch_size, prefetch=False)
+    # endregion
 
     # endregion
 

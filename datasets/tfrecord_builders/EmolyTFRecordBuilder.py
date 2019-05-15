@@ -3,7 +3,7 @@ import csv
 from tqdm import tqdm
 from typing import Dict, Tuple, List
 
-from modalities import ModalityCollection, RawVideo, OpticalFlow, DoG
+from modalities import ModalityCollection, RawVideo, OpticalFlow
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 
 

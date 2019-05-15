@@ -250,9 +250,9 @@ class SubsetLoader(object):
 
         raw_video = modalities[RawVideo.id()]
 
-        raw_video = random_video_vertical_flip(raw_video)
+        # raw_video = random_video_vertical_flip(raw_video)
         raw_video = random_video_horizontal_flip(raw_video)
-        raw_video = tf.image.random_hue(raw_video, max_delta=0.5)
+        raw_video = tf.image.random_hue(raw_video, max_delta=0.1)
         raw_video = tf.image.random_brightness(raw_video, max_delta=0.1)
 
         modalities[RawVideo.id()] = raw_video
