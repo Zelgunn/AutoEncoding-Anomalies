@@ -6,6 +6,7 @@ from tensorflow.python.keras.utils import conv_utils
 from tensorflow.python.keras.initializers import VarianceScaling
 from tensorflow.python.keras import activations, initializers, regularizers, constraints
 from tensorflow.python.keras import backend
+from copy import copy
 from typing import Tuple, List, Union, AnyStr, Callable, Dict, Optional
 
 from utils.misc_utils import to_list
@@ -56,6 +57,7 @@ class ResBasicBlockND(Layer):
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
 
+        self._layers: List[Layer] = []
         self.conv_layers: List[Layer] = []
         self.projection_layer: Optional[Layer] = None
         self.residual_multiplier = None
@@ -102,7 +104,7 @@ class ResBasicBlockND(Layer):
                                                     activity_regularizer=self.activity_regularizer,
                                                     kernel_constraint=self.kernel_constraint,
                                                     bias_constraint=self.bias_constraint)
-        self._layers = self.conv_layers
+        self._layers = copy(self.conv_layers)
         if self.projection_layer is not None:
             self._layers.append(self.projection_layer)
 
@@ -466,6 +468,7 @@ class ResBlockND(Layer):
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
 
+        self._layers: List[Layer] = []
         self.basic_blocks: List[ResBasicBlockND] = []
 
         self.input_spec = InputSpec(ndim=self.rank + 2)
@@ -491,7 +494,7 @@ class ResBlockND(Layer):
                                           bias_constraint=self.bias_constraint)
             self.basic_blocks.append(basic_block)
 
-        self._layers = self.basic_blocks
+        self._layers = copy(self.basic_blocks)
 
     def build(self, input_shape):
         self.init_layers()
