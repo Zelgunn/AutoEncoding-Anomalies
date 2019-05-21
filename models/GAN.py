@@ -219,7 +219,6 @@ class GAN(AutoEncoderBaseModel):
         discriminator: KerasModel = self.discriminator
         discriminator_steps = self.config["discriminator_steps"] if "discriminator_steps" in self.config else 1
 
-        x, y = self._train_dataset_iterator
         generator_z_iterator = self._generator_z_iterator
         real_x_iterator = self._real_x_iterator
         discriminator_z_iterator = self._discriminator_z_iterator
@@ -229,7 +228,7 @@ class GAN(AutoEncoderBaseModel):
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
-            autoencoder_metrics = autoencoder.train_on_batch(x, y)
+            autoencoder_metrics = autoencoder.train_on_batch(self._train_dataset_iterator)
             generator_metrics = adversarial_generator.train_on_batch(generator_z_iterator)
 
             discriminator_metrics = []
@@ -264,10 +263,10 @@ class GAN(AutoEncoderBaseModel):
         
         super(GAN, self).make_dataset_iterators(dataset, batch_size)
 
-        self._generator_z_iterator = self.make_dataset_iterator(self.z_dataset, batch_size, prefetch=False)
-        self._discriminator_z_iterator = self.make_dataset_iterator(self.z_dataset, batch_size, prefetch=False)
+        self._generator_z_iterator = self.batch_and_prefetch(self.z_dataset, batch_size, prefetch=False)
+        self._discriminator_z_iterator = self.batch_and_prefetch(self.z_dataset, batch_size, prefetch=False)
         real_x_dataset = self.get_real_data_discriminator_dataset(dataset.train_subset.tf_dataset)
-        self._real_x_iterator = self.make_dataset_iterator(real_x_dataset, batch_size, prefetch=False)
+        self._real_x_iterator = self.batch_and_prefetch(real_x_dataset, batch_size, prefetch=False)
     # endregion
 
     # endregion

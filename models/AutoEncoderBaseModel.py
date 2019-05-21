@@ -632,7 +632,7 @@ class AutoEncoderBaseModel(ABC):
         with tf.name_scope("embeddings"):
             if self.use_dense_embeddings:
                 layer = Reshape([-1])(layer)
-            layer = self.embeddings_layer(layer, use_dropout=False)
+            layer = self.embeddings_layer(layer)
             layer = AutoEncoderBaseModel.get_activation(self.embeddings_activation)(layer)
             if self.use_dense_embeddings:
                 layer = Reshape(self.compute_embeddings_output_shape())(layer)
@@ -790,13 +790,11 @@ class AutoEncoderBaseModel(ABC):
         set_learning_phase(1)
         callbacks.on_epoch_begin(self.epochs_seen)
 
-        x, y = self._train_dataset_iterator
-
         for batch_index in range(epoch_length):
             batch_logs = {"batch": batch_index, "size": batch_size}
             callbacks.on_batch_begin(batch_index, batch_logs)
 
-            results = self.autoencoder.train_on_batch(x, y)
+            results = self.autoencoder.train_on_batch(self._train_dataset_iterator)
 
             if "metrics" in self.config and len(self.config["metrics"]) > 0:
                 batch_logs["loss"] = results[0]
@@ -814,19 +812,20 @@ class AutoEncoderBaseModel(ABC):
         if self._train_dataset_iterator is not None:
             return
 
-        dataset_iterator = self.make_dataset_iterator(dataset.train_subset.tf_dataset, batch_size)
-        self._train_dataset_iterator = (dataset_iterator[0][0], dataset_iterator[1][0])
-
-        dataset_iterator = self.make_dataset_iterator(dataset.test_subset.tf_dataset, batch_size, prefetch=False)
-        self._test_dataset_iterator = (dataset_iterator[0][0], dataset_iterator[1][0])
+        self._train_dataset_iterator = self.batch_and_prefetch(dataset.train_subset.tf_dataset, batch_size)
+        self._test_dataset_iterator = self.batch_and_prefetch(dataset.test_subset.tf_dataset, batch_size,
+                                                              prefetch=False)
 
     @staticmethod
-    def make_dataset_iterator(dataset: tf.data.Dataset, batch_size: int, prefetch=True):
+    def batch_and_prefetch(dataset: tf.data.Dataset, batch_size: int, prefetch=True):
         dataset = dataset.batch(batch_size)
         if prefetch:
             dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+
+        # TODO : Find a better way - this should allow to use several mods but currently we only have one
+        dataset = dataset.map(lambda inputs, outputs: (inputs[0], outputs[0]))
         # dataset_iterator = MultiDeviceIterator(dataset_iterator, devices=["/gpu:0"])
-        # dataset_iterator = dataset_iterator[0]
+        # dataset_iterator = dataset_iterator[0] # Select 1st GPU with [0]
 
         return dataset
 
@@ -843,8 +842,7 @@ class AutoEncoderBaseModel(ABC):
         out_labels = self.autoencoder.metrics_names
 
         # TODO : Change validation steps
-        x, y = self._test_dataset_iterator
-        val_outs = self.autoencoder.evaluate(x, y, steps=64, verbose=0)
+        val_outs = self.autoencoder.evaluate(self._test_dataset_iterator, steps=64, verbose=0)
         val_outs = to_list(val_outs)
         for label, val_out in zip(out_labels, val_outs):
             epoch_logs["val_{0}".format(label)] = val_out
@@ -1195,7 +1193,7 @@ class AutoEncoderBaseModel(ABC):
 
     def build_common_callbacks(self) -> List[Callback]:
         assert self.tensorboard is None
-        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq=200)
+        self.tensorboard = TensorBoard(log_dir=self.log_dir, update_freq=200, profile_batch=0)
 
         base_logger = BaseLogger()
         progbar_logger = ProgbarLogger(count_mode="steps")
@@ -1235,14 +1233,14 @@ class AutoEncoderBaseModel(ABC):
         # TODO : Parameter for batch_size here
         from callbacks import AUCCallback
         inputs, outputs, labels = test_subset.get_batch(batch_size=1024, output_labels=True)
-        inputs = inputs[0]
+
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
 
         raw_predictions_model = self.get_anomalies_raw_predictions_model()
         frame_auc_callback = AUCCallback(raw_predictions_model, self.tensorboard,
                                          inputs, labels,
                                          plot_size=(128, 128), batch_size=16,
-                                         name="Frame_Level_Error_AUC", epoch_freq=5)
+                                         name="Frame_Level_Error_AUC", epoch_freq=1)
         anomaly_callbacks.append(frame_auc_callback)
         # endregion
 

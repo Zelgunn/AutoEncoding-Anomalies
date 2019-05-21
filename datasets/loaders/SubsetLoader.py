@@ -255,15 +255,17 @@ class SubsetLoader(object):
         for results in dataset:
             break
 
-        results = [[mod_result.numpy() for mod_result in result]
-                   for result in results]
+        inputs, outputs = results[:2]
+        labels = results[-1] if output_labels else None
 
-        if output_labels:
-            inputs, outputs, labels = results
-            return inputs, outputs, labels
-        else:
-            inputs, outputs = results
-            return inputs, outputs
+        if len(inputs) == 1:
+            inputs = inputs[0]
+
+        if len(outputs) == 1:
+            outputs = outputs[0]
+
+        return (inputs, outputs, labels) if output_labels else (inputs, outputs)
+
 
     # region Browse dataset
     def make_source_filepath_generator(self, source_index: int):
