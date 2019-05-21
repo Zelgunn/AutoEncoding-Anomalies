@@ -60,7 +60,7 @@ class Modality(ABC):
 
     @classmethod
     def tfrecord_shape_parse_function(cls):
-        return tf.FixedLenFeature([cls.rank()], dtype=tf.int64)
+        return tf.io.FixedLenFeature([cls.rank()], dtype=tf.int64)
 
     @classmethod
     def encode_raw(cls, array: np.ndarray, dtype: Union[type, str]) -> Dict[str, tf.train.Feature]:
@@ -75,7 +75,7 @@ class Modality(ABC):
         encoded_modality = parsed_features[cls.id()].values
         modality_shape = parsed_features[cls.shape_id()]
 
-        decoded_modality = tf.decode_raw(encoded_modality, dtype)
+        decoded_modality = tf.io.decode_raw(encoded_modality, dtype)
         decoded_modality = tf.reshape(decoded_modality, modality_shape)
         return decoded_modality
 

@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.python.eager import def_function
 from typing import List, Union
-import numpy as np
 
 from callbacks import TensorBoardPlugin
 from utils.summary_utils import image_summary
@@ -21,7 +20,7 @@ class ImageCallback(TensorBoardPlugin):
         super(ImageCallback, self).__init__(tensorboard, update_freq, epoch_freq)
         self.summary_function = summary_function
         self.summary_inputs = summary_inputs
-        self.writer_name = self.train_run_name if is_train_callback else self.validation_run_writer
+        self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
         self.is_one_shot = is_one_shot
 
     def _write_logs(self, index):
@@ -36,7 +35,8 @@ class ImageCallback(TensorBoardPlugin):
             self.summary_function = None
 
     @staticmethod
-    def convert_tensor_uint8(tensor: tf.Tensor) -> tf.Tensor:
+    def convert_tensor_uint8(tensor) -> tf.Tensor:
+        tensor: tf.Tensor = tf.convert_to_tensor(tensor)
         normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
         return normalized
 
@@ -67,8 +67,6 @@ class ImageCallback(TensorBoardPlugin):
         delta = (pred_video - true_video) * (tf.cast(pred_video < true_video, dtype=tf.uint8) * 254 + 1)
 
         for _fps in fps:
-            image_summary(name="{}_true_outputs_{}".format(name, _fps), data=true_video,
-                          step=step, max_outputs=max_outputs, fps=_fps)
             image_summary(name="{}_pred_outputs_{}".format(name, _fps), data=pred_video,
                           step=step, max_outputs=max_outputs, fps=_fps)
             image_summary(name="{}_delta_{}".format(name, _fps), data=delta,
@@ -76,30 +74,34 @@ class ImageCallback(TensorBoardPlugin):
 
     @staticmethod
     def make_video_autoencoder_callbacks(autoencoder: keras.Model,
-                                         subset: Union[SubsetLoader, np.ndarray],
+                                         subset: Union[SubsetLoader],
                                          name: str,
                                          is_train_callback: bool,
                                          tensorboard: keras.callbacks.TensorBoard,
                                          update_freq="epoch",
                                          epoch_freq=1,
                                          ) -> List["ImageCallback"]:
-        if isinstance(subset, SubsetLoader):
-            videos, _ = subset.get_batch(batch_size=4, output_labels=False)
-        else:
-            videos = subset
+        inputs, outputs = subset.get_batch(batch_size=4, output_labels=False)
+        # TODO : Do not use [0] but something like [RawVideo] to select video
+        inputs = inputs[0]
+        outputs = outputs[0]
 
         def one_shot_function(data, step):
             return ImageCallback.video_summary(name=name, video=data, step=step)
 
         def repeated_function(data, step):
-            decoded = autoencoder.predict_on_batch(data)
-            return ImageCallback.video_autoencoder_summary(name=name, true_video=data, pred_video=decoded, step=step)
+            _inputs, _outputs = data
+            decoded = autoencoder.predict_on_batch(_inputs)
+            return ImageCallback.video_autoencoder_summary(name=name,
+                                                           true_video=_outputs,
+                                                           pred_video=decoded,
+                                                           step=step)
 
-        one_shot_callback = ImageCallback(summary_function=one_shot_function, summary_inputs=videos,
+        one_shot_callback = ImageCallback(summary_function=one_shot_function, summary_inputs=inputs,
                                           tensorboard=tensorboard, is_train_callback=is_train_callback,
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=True)
 
-        repeated_callback = ImageCallback(summary_function=repeated_function, summary_inputs=videos,
+        repeated_callback = ImageCallback(summary_function=repeated_function, summary_inputs=(inputs, outputs),
                                           tensorboard=tensorboard, is_train_callback=is_train_callback,
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=False)
 

@@ -12,12 +12,6 @@ def get_shard_count(sample_length, shard_size):
     return max(1, shard_count)
 
 
-# class BrowserIterator(NamedTuple):
-#     base_iterator: tf.data.Iterator
-#     initializer: tf.Operation
-#     iterator_next: Dict[str, tf.Tensor]
-
-
 class SubsetLoader(object):
     def __init__(self,
                  config: DatasetConfig,
@@ -37,8 +31,6 @@ class SubsetLoader(object):
 
         self._train_tf_dataset: Optional[tf.data.Dataset] = None
         self._test_tf_dataset: Optional[tf.data.Dataset] = None
-
-        # self._source_browsers_iterators: Dict[int, BrowserIterator] = {}
 
     # region Loading methods (parsing, decoding, fusing, normalization, splitting, ...)
     def parse_shard(self, serialized_example, output_labels):
@@ -254,21 +246,17 @@ class SubsetLoader(object):
         modalities[RawVideo.id()] = raw_video
         return modalities
 
-    def get_one_shot_iterator(self, batch_size: int, output_labels: bool):
-        iterators = self._test_iterators if output_labels else self._train_iterators
-        if batch_size not in iterators:
-            tf_dataset = self.labeled_tf_dataset if output_labels else self.tf_dataset
-            iterators[batch_size] = tf_dataset.batch(batch_size)
-
-        return iterators[batch_size]
-
     # endregion
 
     def get_batch(self, batch_size: int, output_labels: bool):
-        iterator = self.get_one_shot_iterator(batch_size, output_labels)
-        results = None, None, None
-        for results in iterator:
+        dataset = self.labeled_tf_dataset if output_labels else self.tf_dataset
+        dataset = dataset.batch(batch_size)
+        results = None
+        for results in dataset:
             break
+
+        results = [[mod_result.numpy() for mod_result in result]
+                   for result in results]
 
         if output_labels:
             inputs, outputs, labels = results

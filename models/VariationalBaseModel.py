@@ -1,14 +1,12 @@
 import tensorflow as tf
 from tensorflow.python.keras.models import Model as KerasModel
 from tensorflow.python.keras.layers import Dense, Lambda, Reshape, Input
-from tensorflow.python.keras import backend
 import numpy as np
 import cv2
 from abc import ABC
 from tqdm import tqdm
 
 from models import AutoEncoderBaseModel, conv_type
-from callbacks import RunModel
 from datasets import SubsetLoader
 
 
@@ -108,19 +106,12 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
     # region Testing
     def visualize_vae_interpolation(self, subset: SubsetLoader):
-        encoder_input = self.encoder.get_input_at(0)
-        _, latent_mean, latent_log_var = self.encoder(encoder_input)
-
-        decoder_input = self.decoder.get_input_at(0)
-        decoder_output = self.decoder.get_output_at(0)
-
         interpolation_count = 16
         inputs, outputs = subset.get_batch(batch_size=1, output_labels=False)
         # TODO : Change keys to RawVideo
         input_video, output_video = inputs[0], outputs[0]
-        session = backend.get_session()
 
-        mean, log_var = session.run([latent_mean, latent_log_var], feed_dict={encoder_input: input_video})
+        mean, log_var = self.encoder(input_video)
         stddev = np.sqrt(np.exp(log_var))
         z_start = np.random.normal(loc=mean, scale=stddev)
         z_end = np.random.normal(loc=mean, scale=stddev)
@@ -132,8 +123,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
         for i in tqdm(range(interpolation_count), desc="Generating output videos..."):
             progress = i / (interpolation_count - 1.0)
             z = z_start * (1.0 - progress) + z_end * progress
-
-            decoded[i] = session.run(decoder_output, feed_dict={decoder_input: z})
+            decoded[i] = self.decoder(z)
 
         key = 13
         i = j = 0
@@ -156,49 +146,6 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
 
     # endregion
 
-    # region Callbacks
-    # def build_anomaly_callbacks(self, dataset: Dataset):
-    #     dataset = self.resized_dataset(dataset)
-    #     test_subset = dataset.test_subset
-    #     anomaly_callbacks = super(VariationalBaseModel, self).build_anomaly_callbacks(dataset)
-    #
-    #     samples = test_subset.sample(batch_size=512, seed=16, sampled_videos_count=16, return_labels=True)
-    #     videos, frame_labels, _ = samples
-    #     videos = test_subset.divide_batch_io(videos)
-    #
-    #     n_predictions_model = self.n_predictions(n=24)
-    #
-    #     vae_auc_callback = AUCCallback(n_predictions_model, self.tensorboard,
-    #                                    videos, frame_labels, plot_size=(128, 128), batch_size=1,
-    #                                    name="Variational_AUC", epoch_freq=10)
-    #
-    #     anomaly_callbacks.append(vae_auc_callback)
-    #     return anomaly_callbacks
-
-    def n_predictions(self, n):
-        with tf.name_scope("n_pred"):
-            encoder_input = self.encoder.get_input_at(0)
-            true_outputs = self.get_true_outputs_placeholder()
-            _, latent_mean, latent_log_var = self.encoder(encoder_input)
-
-            sampling_function = sampling_n(n)
-            layer = Lambda(function=sampling_function)([latent_mean, latent_log_var])
-
-            layer = VariationalBaseModel.get_activation(self.embeddings_activation)(layer)
-            encoded = Reshape(self.compute_embeddings_output_shape())(layer)
-
-            autoencoded = self.decoder(encoded)
-
-            autoencoded = tf.reshape(autoencoded, [-1, n, *self.output_shape])
-            true_outputs_expanded = tf.expand_dims(true_outputs, axis=1)
-            error = tf.square(true_outputs_expanded - autoencoded)
-            # reduced axis are [1 : n, 3 : height, 4 : width, 5 : channels]
-            predictions = tf.reduce_mean(error, axis=[1, 3, 4, 5])
-
-        return RunModel(inputs=[encoder_input, true_outputs], outputs=predictions)
-
-    # endregion
-
 
 # region Utils
 def sampling(args):
@@ -206,7 +153,7 @@ def sampling(args):
 
     shape = tf.shape(latent_mean)
 
-    epsilon = tf.random_normal(shape=shape, mean=0., stddev=1.0)
+    epsilon = tf.random.normal(shape=shape, mean=0., stddev=1.0)
     return latent_mean + tf.exp(0.5 * latent_log_var) * epsilon
 
 
@@ -218,7 +165,7 @@ def sampling_n(n):
         batch_size = shape[0]
         latent_dim = shape[1]
 
-        epsilon = tf.random_normal(shape=[batch_size, n, latent_dim], mean=0., stddev=1.0)
+        epsilon = tf.random.normal(shape=[batch_size, n, latent_dim], mean=0., stddev=1.0)
         latent_mean = tf.expand_dims(latent_mean, axis=1)
         latent_log_var = tf.expand_dims(latent_log_var, axis=1)
         sample = latent_mean + tf.exp(0.5 * latent_log_var) * epsilon
@@ -233,7 +180,7 @@ def kullback_leibler_divergence_mean0_var1(mean, log_variance, use_variance_log=
         divergence = tf.exp(log_variance) + tf.square(mean) - log_variance
     else:
         variance = log_variance
-        divergence = variance + tf.square(mean) - tf.log(variance)
+        divergence = variance + tf.square(mean) - tf.math.log(variance)
     divergence = (tf.reduce_mean(divergence - 1)) * 0.5
     return divergence
     # return 0.5 * tf.reduce_mean(-(log_variance + 1) + tf.exp(log_variance) + tf.square(mean))

@@ -4,8 +4,6 @@ def main():
 
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-    from tensorflow.python.keras import backend
-    import tensorflow as tf
     import cv2
     from typing import Optional
 
@@ -51,7 +49,6 @@ def main():
     # endregion
 
     preview_test_subset = False
-    allow_gpu_growth = False
     profile = False
 
     # region Model/Dataset initialization
@@ -77,8 +74,6 @@ def main():
     print("Config used \t\t\t\t\t:", config_used)
     print("Blocks used \t\t\t\t\t:", auto_encoder.block_type_name)
     print("Total depth \t\t\t\t\t:", auto_encoder.compute_conv_depth())
-    print("Preview tensorboard test images \t\t:", preview_test_subset)
-    print("Allow GPU growth \t\t\t\t:", allow_gpu_growth)
     print("Run cProfile \t\t\t\t\t:", profile)
     print("===============================================")
     # endregion
@@ -111,12 +106,7 @@ def main():
         exit()
     # endregion
 
-    # region Session initialization
-    config = tf.ConfigProto(allow_soft_placement=True)
-    config.gpu_options.allow_growth = allow_gpu_growth
-    session = tf.Session(config=config)
-    backend.set_session(session)
-
+    # region Load previous weights
     if previous_weights_to_load is not None:
         previous_weights_to_load: str = previous_weights_to_load
         print("=> Loading weights from :", previous_weights_to_load)
@@ -136,7 +126,6 @@ def main():
 
 if __name__ == "__main__":
     # TODO : Use command line args
-    # tf.enable_eager_execution()
     main()
 
 # TODO : Type hints EVERYWHERE !

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf
-from tensorflow.python.keras.backend import get_session
-from typing import Optional, Union
+from typing import Union
 
 from tensorflow.python.keras.callbacks import Callback, TensorBoard
 

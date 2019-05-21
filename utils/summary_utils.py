@@ -25,7 +25,8 @@ def encode_gif(images: np.ndarray,
     from subprocess import Popen, PIPE
 
     height, width, channels = np.shape(images)[1:]
-    assert channels in [1, 3]
+    if channels not in [1, 3]:
+        raise ValueError("Channels not in [1,3], got {} from inputs with shape {}".format(channels, np.shape(images)))
     channels_name = "gray" if channels is 1 else "rgb24"
     cmd = [
         "ffmpeg", "-y",

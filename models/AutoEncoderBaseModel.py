@@ -8,9 +8,7 @@ from tensorflow.python.keras.regularizers import l2
 from tensorflow.python.keras.optimizers import Adam, RMSprop
 from tensorflow.python.keras.callbacks import TensorBoard, CallbackList, Callback, ProgbarLogger, BaseLogger
 from tensorflow.python.keras.callbacks import LearningRateScheduler
-from tensorflow.python.keras.backend import binary_crossentropy, get_session, set_learning_phase
-from tensorboard.plugins.pr_curve import summary as pr_summary
-from tensorflow.python.client import timeline
+from tensorflow.python.keras.backend import binary_crossentropy, set_learning_phase
 
 import tensorflow as tf
 import numpy as np
@@ -26,9 +24,8 @@ from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormal
 from layers.utility_layers import RawPredictionsLayer
 from datasets import SubsetLoader, DatasetLoader
 from modalities import RawVideo
-from callbacks import ImageCallback, RunModel, MultipleModelsCheckpoint
+from callbacks import ImageCallback, MultipleModelsCheckpoint
 from utils.train_utils import get_log_dir
-from utils.summary_utils import image_summary
 from utils.misc_utils import to_list
 
 
@@ -192,7 +189,7 @@ class AutoEncoderBaseModel(ABC):
         self._decoder: Optional[KerasModel] = None
         self._autoencoder: Optional[KerasModel] = None
         self._raw_predictions_models: Dict[bool, Dict[Tuple, KerasModel]] = {False: {}, True: {}}
-        self._reconstructor_model: Optional[RunModel] = None
+        self._reconstructor_model: Optional[KerasModel] = None
 
         self.decoder_input_layer = None
         self.reconstructor_output = None
@@ -808,9 +805,6 @@ class AutoEncoderBaseModel(ABC):
             else:
                 batch_logs["loss"] = results
 
-            if ((batch_index < 10) or (batch_index % 50 == 0)) and (self.epochs_seen == 0):
-                self.write_run_metadata(batch_index)
-
             callbacks.on_batch_end(batch_index, batch_logs)
 
         self.on_epoch_end(callbacks)
@@ -831,30 +825,12 @@ class AutoEncoderBaseModel(ABC):
         dataset = dataset.batch(batch_size)
         if prefetch:
             dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
-        dataset_iterator = dataset.make_initializable_iterator()
         # dataset_iterator = MultiDeviceIterator(dataset_iterator, devices=["/gpu:0"])
-        dataset_initializer = dataset_iterator.initializer
-        dataset_iterator = dataset_iterator.get_next()
         # dataset_iterator = dataset_iterator[0]
 
-        get_session().run(dataset_initializer)
-        return dataset_iterator
+        return dataset
 
     # endregion
-
-    def write_run_metadata(self, batch_index):
-        if self.run_metadata is None:
-            return
-
-        suffix = "{}_{}".format(self.epochs_seen, batch_index)
-        self.tensorboard.writer.add_run_metadata(self.run_metadata,
-                                                 tag="run_metadata_{}".format(suffix),
-                                                 global_step=self.epochs_seen)
-
-        epoch_timeline = timeline.Timeline(self.run_metadata.step_stats)
-        chrome_trace_format = epoch_timeline.generate_chrome_trace_format(show_memory=True)
-        with open(os.path.join(self.log_dir, "timeline_{}.json".format(suffix)), 'w') as timeline_file:
-            timeline_file.write(chrome_trace_format)
 
     def on_epoch_end(self,
                      callbacks: CallbackList = None,
@@ -955,7 +931,7 @@ class AutoEncoderBaseModel(ABC):
         return self._raw_predictions_models[include_labels_io][reduction_axis]
 
     # region Using attractors
-    def get_reconstructor_run_model(self) -> RunModel:
+    def get_reconstructor_run_model(self) -> KerasModel:
         if self._reconstructor_model is None:
             reconstructor = KerasModel(inputs=self.decoder_input_layer, outputs=self.reconstructor_output,
                                        name="Reconstructor")
@@ -967,7 +943,7 @@ class AutoEncoderBaseModel(ABC):
             inputs = self.encoder.get_input_at(0)
             outputs = pred_output
 
-            self._reconstructor_model = RunModel(inputs, outputs)
+            self._reconstructor_model = KerasModel(inputs, outputs)
 
         return self._reconstructor_model
 
@@ -1084,35 +1060,20 @@ class AutoEncoderBaseModel(ABC):
             plt.savefig(output_figure_filepath, dpi=500)
             plt.clf()  # clf = clear figure...
 
-        if self._auc_predictions_placeholder is None:
-            placeholder_shape = [None, *predictions.shape[1:]]
-            self._auc_predictions_placeholder = tf.placeholder(dtype=tf.float32, shape=placeholder_shape)
-            self._auc_labels_placeholder = tf.placeholder(dtype=tf.bool, shape=placeholder_shape)
+        roc = tf.metrics.AUC(curve="ROC")
+        pr = tf.metrics.AUC(curve="PR")
 
-            roc_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, curve="ROC",
-                                    summation_method="careful_interpolation")
-            pr_op = tf.metrics.auc(self._auc_labels_placeholder, self._auc_predictions_placeholder, curve="PR",
-                                   summation_method="careful_interpolation")
-            self._auc_ops = [roc_op, pr_op]
+        roc.update_state(labels, predictions)
+        pr.update_state(labels, predictions)
 
-            roc_summary_op = tf.summary.scalar("Video_ROC_AUC", roc_op[1])
-            pr_scalar_summary_op = tf.summary.scalar("Video_PR_AUC", pr_op[1])
-            pr_curve_summary_op = pr_summary.op("Video_PR", self._auc_labels_placeholder,
-                                                self._auc_predictions_placeholder)
+        roc_result = roc.result()
+        pr_result = pr.result()
 
-            self._auc_summary_ops = tf.summary.merge([roc_summary_op, pr_scalar_summary_op, pr_curve_summary_op])
-
-        session: tf.Session = get_session()
-        session.run(tf.local_variables_initializer())
-
-        labels = np.tile(labels[:, np.newaxis], [1, predictions.shape[1]])
-        eval_ops = [self._auc_ops, self._auc_summary_ops] if log_in_tensorboard else [self._auc_ops]
-        eval_results = session.run(eval_ops, feed_dict={self._auc_predictions_placeholder: predictions,
-                                                        self._auc_labels_placeholder: labels})
-
-        (_, roc), (_, pr) = eval_results[0]
-        if log_in_tensorboard:
-            self.tensorboard.writer.add_summary(eval_results[1], self.epochs_seen)
+        if log_in_tensorboard is not None:
+            # noinspection PyProtectedMember
+            with self.tensorboard._get_writer(self.tensorboard._train_run_name).as_default():
+                tf.summary.scalar(name="Video_ROC_AUC", data=roc_result, step=self.epochs_seen)
+                tf.summary.scalar(name="Video_PR_AUC", data=pr_result, step=self.epochs_seen)
 
         return roc, pr
 
@@ -1255,10 +1216,20 @@ class AutoEncoderBaseModel(ABC):
         train_subset = dataset.train_subset
         # endregion
 
-        train_image_callback = self.build_auto_encoding_callback(train_subset, "train", self.tensorboard)
-        test_image_callback = self.build_auto_encoding_callback(test_subset, "test", self.tensorboard)
+        train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(self.autoencoder,
+                                                                               train_subset,
+                                                                               name="train",
+                                                                               is_train_callback=True,
+                                                                               tensorboard=self.tensorboard,
+                                                                               epoch_freq=1)
+        test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(self.autoencoder,
+                                                                              train_subset,
+                                                                              name="test",
+                                                                              is_train_callback=False,
+                                                                              tensorboard=self.tensorboard,
+                                                                              epoch_freq=1)
 
-        anomaly_callbacks = [train_image_callback, test_image_callback]
+        anomaly_callbacks: List[Callback] = train_image_callbacks + test_image_callbacks
 
         # region AUC callback
         # TODO : Parameter for batch_size here
@@ -1276,60 +1247,6 @@ class AutoEncoderBaseModel(ABC):
         # endregion
 
         return anomaly_callbacks
-
-    # region Image|Video callbacks
-    def build_auto_encoding_callback(self,
-                                     subset: SubsetLoader,
-                                     name: str,
-                                     tensorboard: TensorBoard,
-                                     frequency="epoch",
-                                     include_composite=False) -> ImageCallback:
-        inputs, outputs = subset.get_batch(batch_size=self.image_summaries_max_outputs, output_labels=False)
-        # TODO : Switch to dict to use outputs[RawVideo]
-        videos = [inputs[0], outputs[0]]
-
-        true_outputs_placeholder = self.get_true_outputs_placeholder()
-        summary_inputs = [self.autoencoder.input, true_outputs_placeholder]
-
-        true_outputs = self.normalize_image_tensor(true_outputs_placeholder)
-        pred_outputs = self.normalize_image_tensor(self.autoencoder.output)
-
-        io_delta = (pred_outputs - true_outputs) * (tf.cast(pred_outputs < true_outputs, dtype=tf.uint8) * 254 + 1)
-
-        max_outputs = self.image_summaries_max_outputs
-        one_shot_summaries = [image_summary(name + "_true_outputs", true_outputs, max_outputs, fps=8),
-                              image_summary(name + "_true_outputs_full_speed", true_outputs, max_outputs, fps=25)]
-        repeated_summaries = [image_summary(name + "_pred_outputs", pred_outputs, max_outputs, fps=8),
-                              image_summary(name + "_pred_outputs_full_speed", pred_outputs, max_outputs, fps=25),
-                              image_summary(name + "_delta", io_delta, max_outputs, fps=8)]
-
-        if include_composite:
-            with tf.name_scope("composite_error_computation"):
-                error = tf.cast(io_delta, tf.float32) / 255.0
-                composite_hue = tf.multiply(1.0 - error, 0.25, name="composite_hue")
-                composite_saturation = tf.identity(error, name="composite_saturation")
-                composite_value = tf.cast(true_outputs, tf.float32) / 255.0
-                composite_value = tf.maximum(composite_value, error, name="composite_value")
-                composite_hsv = tf.concat([composite_hue, composite_saturation, composite_value], axis=-1,
-                                          name="composite_hsv")
-                composite_rgb = tf.image.hsv_to_rgb(composite_hsv)
-                composite_rgb = tf.cast(composite_rgb * 255.0, tf.uint8, name="composite_rgb")
-            composite_image_summary = image_summary(name + "_composite", composite_rgb, max_outputs, fps=8)
-            repeated_summaries.append(composite_image_summary)
-
-        one_shot_summary_model = RunModel(summary_inputs, one_shot_summaries, output_is_summary=True)
-        repeated_summary_model = RunModel(summary_inputs, repeated_summaries, output_is_summary=True)
-
-        return ImageCallback(one_shot_summary_model, repeated_summary_model, videos, tensorboard, frequency,
-                             epoch_freq=1)
-
-    def normalize_image_tensor(self, tensor: tf.Tensor) -> tf.Tensor:
-        with tf.name_scope("normalize_image_tensor"):
-            normalized = (tensor - self._min_output_constant) * self._inv_output_range_constant
-            normalized = tf.cast(normalized * uint8_max_constant, tf.uint8)
-        return normalized
-
-    # endregion
 
     def get_learning_rate_schedule(self):
         lr_drop_epochs = self.config["lr_schedule"]["drop_epochs"]

@@ -160,27 +160,4 @@ def main():
 if __name__ == "__main__":
     print(tf.__version__)
 
-    from utils.summary_utils import image_summary
-
-
-    def turtle(name, v):
-        @tf.function
-        def cat(data, step):
-            tf.summary.image(name, tf.pow(data, v), step=step)
-
-        return cat
-
-
-    pwet_function = turtle("pwet", 1.0)
-    tewp_function = turtle("tewp", 0.1)
-
-    writer = tf.summary.create_file_writer("../logs/tests/2.0")
-    with writer.as_default():
-        pwet_function(tf.random.normal(shape=[4, 128, 128, 3]), 0)
-        tewp_function(tf.random.normal(shape=[4, 128, 128, 3]), 0)
-        video = tf.ones(shape=[3, 1, 128, 128, 3])
-        video = tf.tile(video, [1, 32, 1, 1, 1])
-        video *= tf.range(0.0, 1.0, delta=1 / 32, dtype=tf.float32)[tf.newaxis, :, tf.newaxis, tf.newaxis, tf.newaxis]
-        image_summary("a_video", video, 3, 8)
-
-    # main()
+    pass
