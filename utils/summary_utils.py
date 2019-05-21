@@ -1,6 +1,9 @@
 import tensorflow as tf
-from tensorflow.python.ops import summary_op_util
+from tensorflow.core.framework import summary_pb2
+from tensorflow.core.util import event_pb2
+from tensorflow.python.ops import summary_ops_v2
 import numpy as np
+import time
 
 
 # Inspired by : https://github.com/alexlee-gk
@@ -52,124 +55,100 @@ def encode_gif(images: np.ndarray,
 
 
 # Inspired by : https://github.com/alexlee-gk
-def py_gif_summary(tag: bytes or str,
-                   images: np.ndarray,
-                   max_outputs: int,
-                   fps: float or int):
-    """Outputs a `Summary` protocol buffer with gif animations.
+def gif_summary(name: str,
+                data: tf.Tensor,
+                fps: int,
+                step: int = None,
+                max_outputs=3):
+    """Write a gif summary.
 
     Args:
-      tag: Name of the summary.
-      images: A 5-D `uint8` `np.array` of shape `[batch_size, time, height, width, channels]`
-        where `channels` is 1 or 3.
-      max_outputs: Max number of batch elements to generate gifs for.
-      fps: frames per second of the animation
-
+        name: A name for this summary. The summary tag used for TensorBoard will
+            be this name prefixed by any active name scopes.
+        data: A 5-D `uint8` `Tensor` of shape `[k, time, height, width, channels]`
+            where `k` is the number of gifs and `channels` is either 1 or 3.
+            Any of the dimensions may be statically unknown (i.e., `None`).
+            Floating point data will be clipped to the range [0,1).
+        fps: frames per second of the gif.
+        step: Explicit `int64`-castable monotonic step value for this summary. If
+            omitted, this defaults to `tf.summary.experimental.get_step()`, which must
+            not be None.
+        max_outputs: Optional `int` or rank-0 integer `Tensor`. At most this
+            many gifs will be emitted at each step. When more than
+            `max_outputs` many gifs are provided, the first `max_outputs` many
+            images will be used and the rest silently discarded.
     Returns:
-      The serialized `Summary` protocol buffer.
-
-    Raises:
-      ValueError: If `images` is not a 5-D `uint8` array with 1 or 3 channels.
+        A scalar `Tensor` of type `string`. The serialized `Summary` protocol buffer.
     """
+    summary_scope = tf.summary.experimental.summary_scope(name=name,
+                                                          default_name='image_summary',
+                                                          values=[data, max_outputs, step])
 
-    images = np.asarray(images)
-
-    # region Image dtype/rank/channels check
-    if images.dtype != np.uint8:
-        raise ValueError("Tensor must have dtype uint8 for gif summary.")
-
-    if images.ndim != 5:
-        raise ValueError("Tensor must be 5-D for gif summary.")
-
-    batch_size, _, height, width, channels = images.shape
-    if channels not in (1, 3):
-        raise ValueError("Tensors must have 1 or 3 channels for gif summary.")
-    # endregion
-
-    if isinstance(tag, bytes):
-        tag = tag.decode("utf-8")
-
-    summary = tf.Summary()
+    batch_size, length, height, width, channels = data.shape
     batch_size = min(batch_size, max_outputs)
 
-    for i in range(batch_size):
-        ith_image_summary = tf.Summary.Image()
-        ith_image_summary.height = height
-        ith_image_summary.width = width
-        ith_image_summary.colorspace = channels
-        ith_image_summary.encoded_image_string = encode_gif(images[i], fps)
+    with summary_scope as (tag, _):
+        tf.debugging.assert_rank(data, 5)
+        tf.debugging.assert_non_negative(max_outputs)
 
-        summary_tag = "{}/gif".format(tag) if (batch_size == 1) else "{}/gif/{}".format(tag, i)
+        summary = summary_pb2.Summary()
 
-        summary.value.add(tag=summary_tag, image=ith_image_summary)
+        for i in range(batch_size):
+            ith_image_summary = summary_pb2.Summary.Image()
+            ith_image_summary.height = height
+            ith_image_summary.width = width
+            ith_image_summary.colorspace = channels
 
-    summary_string = summary.SerializeToString()
-    return summary_string
+            try:
+                ith_image_summary.encoded_image_string = encode_gif(data[i].numpy(), fps)
+            except (IOError, OSError) as exception:
+                raise IOError("Unable to encode images to a gif string because either ffmpeg is "
+                              "not installed or ffmpeg returned an error: {}.".format(repr(exception)))
 
+            summary_tag = "{}/gif".format(tag) if (batch_size == 1) else "{}/gif/{}".format(tag, i)
 
-# Inspired by : https://github.com/alexlee-gk
-def gif_summary(name: str,
-                image_tensor: tf.Tensor,
-                max_outputs: int,
-                fps: float or int,
-                collections: str = None,
-                family: str = None):
-    """Outputs a `Summary` protocol buffer with gif animations.
+            summary.value.add(tag=summary_tag, image=ith_image_summary)
 
-    Args:
-      name: Name of the summary.
-      image_tensor: A 5-D `uint8` `Tensor` of shape `[batch_size, time, height, width, channels]`
-        where `channels` is 1 or 3.
-      max_outputs: Max number of batch elements to generate gifs for.
-      fps: frames per second of the animation
-      collections: Optional - List of tf.GraphKeys. The collections to add the summary to.
-          Defaults to [tf.GraphKeys.SUMMARIES]
-      family: Optional - If provided, used as the prefix of the summary tag name,
-        which controls the tab name used for display on Tensorboard.
+        event = event_pb2.Event(summary=summary)
+        event.wall_time = time.time()
+        event.step = step
 
-    Returns:
-      A scalar `Tensor` of type `string`. The serialized `Summary` protocol buffer.
-    """
-
-    image_tensor = tf.convert_to_tensor(image_tensor)
-    if summary_op_util.skip_summary():
-        return tf.constant("")
-
-    with summary_op_util.summary_scope(name, family, values=[image_tensor]) as (tag, scope):
-        summary_inputs = [tag, image_tensor, max_outputs, fps]
-        summary_value = tf.py_func(py_gif_summary, summary_inputs, tf.string, stateful=False, name=scope)
-        summary_op_util.collect(summary_value, collections, [tf.GraphKeys.SUMMARIES])
-
-    return summary_value
+        summary_ops_v2.import_event(event.SerializeToString(), name="scope")
 
 
 def image_summary(name: str,
-                  image_tensor: tf.Tensor,
-                  max_outputs: int,
-                  fps: float or int,
-                  collections: str = None,
-                  family: str = None):
-    """Outputs a `Summary` protocol buffer with either one image or a gif, depending on the rank of image_tensor.
+                  data: tf.Tensor,
+                  fps=25,
+                  step: int = None,
+                  max_outputs=3,
+                  description=None):
+    """Write an image or a gif summary.
 
-        Args:
-            name: Name of the summary.
-            image_tensor: A 4-D `uint8` `Tensor` of shape `[batch_size, height, width, channels]`
-                or a 5-D `uint8` `Tensor` of shape `[batch_size, time, height, width, channels]`
-                where `channels` is 1 or 3.
-            max_outputs: Max number of batch elements to generate gifs for.
-            fps: Frames per second of the animation
-            collections: Optional - List of tf.GraphKeys. The collections to add the summary to.
-                Defaults to [tf.GraphKeys.SUMMARIES]
-            family: Optional - If provided, used as the prefix of the summary tag name,
-                which controls the tab name used for display on Tensorboard.
+    Args:
+        name: A name for this summary. The summary tag used for TensorBoard will
+            be this name prefixed by any active name scopes.
+        data: A 4-D or a 5-D `uint8` `Tensor` of shape `[k, Optional[time], height, width, channels]`
+            where `k` is the number of gifs and `channels` is either 1 or 3.
+            Any of the dimensions may be statically unknown (i.e., `None`).
+            Floating point data will be clipped to the range [0,1).
+        fps: frames per second of the gif.
+        step: Explicit `int64`-castable monotonic step value for this summary. If
+            omitted, this defaults to `tf.summary.experimental.get_step()`, which must
+            not be None.
+        max_outputs: Optional `int` or rank-0 integer `Tensor`. At most this
+            many gifs will be emitted at each step. When more than
+            `max_outputs` many gifs are provided, the first `max_outputs` many
+            images will be used and the rest silently discarded.
+        description: Optional long-form description for this summary, as a
+            constant `str`. Markdown is supported. Defaults to empty.
 
-        Returns:
-            A scalar `Tensor` of type `string`. The serialized `Summary` protocol buffer.
+    Returns:
+        A scalar `Tensor` of type `string`. The serialized `Summary` protocol buffer.
     """
-    rank = image_tensor.shape.ndims
+    rank = data.shape.ndims
     assert rank in [4, 5]
 
     if rank == 4:
-        return tf.summary.image(name, image_tensor, max_outputs, collections, family)
+        return tf.summary.image(name, data, step, max_outputs, description)
     else:
-        return gif_summary(name, image_tensor, max_outputs, fps, collections, family)
+        return gif_summary(name, data, fps, step, max_outputs)

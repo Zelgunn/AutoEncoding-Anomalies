@@ -1,8 +1,7 @@
 import tensorflow as tf
-from tensorflow.python.keras.backend import get_session
 import numpy as np
 import os
-from typing import Dict, Tuple, Optional, Type, NamedTuple
+from typing import Dict, Tuple, Optional, Type
 
 from datasets.loaders import DatasetConfig
 from modalities import Modality, ModalityCollection, RawVideo
@@ -13,10 +12,10 @@ def get_shard_count(sample_length, shard_size):
     return max(1, shard_count)
 
 
-class BrowserIterator(NamedTuple):
-    base_iterator: tf.data.Iterator
-    initializer: tf.Operation
-    iterator_next: Dict[str, tf.Tensor]
+# class BrowserIterator(NamedTuple):
+#     base_iterator: tf.data.Iterator
+#     initializer: tf.Operation
+#     iterator_next: Dict[str, tf.Tensor]
 
 
 class SubsetLoader(object):
@@ -39,18 +38,15 @@ class SubsetLoader(object):
         self._train_tf_dataset: Optional[tf.data.Dataset] = None
         self._test_tf_dataset: Optional[tf.data.Dataset] = None
 
-        self._train_iterators: Dict[int, tf.data.Iterator] = {}
-        self._test_iterators: Dict[int, tf.data.Iterator] = {}
-
-        self._source_browsers_iterators: Dict[int, BrowserIterator] = {}
+        # self._source_browsers_iterators: Dict[int, BrowserIterator] = {}
 
     # region Loading methods (parsing, decoding, fusing, normalization, splitting, ...)
     def parse_shard(self, serialized_example, output_labels):
         features = self.modalities.get_tfrecord_features()
         if output_labels:
-            features["labels"] = tf.VarLenFeature(tf.float32)
+            features["labels"] = tf.io.VarLenFeature(tf.float32)
 
-        parsed_features = tf.parse_single_example(serialized_example, features)
+        parsed_features = tf.io.parse_single_example(serialized_example, features)
 
         modalities_shard_size, features_decoded = {}, {}
 
@@ -236,7 +232,7 @@ class SubsetLoader(object):
         dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels))
         dataset = dataset.batch(self.shards_per_sample)
         dataset = dataset.map(self.join_shards_randomly)
-        dataset = dataset.map(self.augment_raw_video)
+        # dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.normalize_batch)
         dataset = dataset.map(self.split_batch_io)
 
@@ -262,7 +258,7 @@ class SubsetLoader(object):
         iterators = self._test_iterators if output_labels else self._train_iterators
         if batch_size not in iterators:
             tf_dataset = self.labeled_tf_dataset if output_labels else self.tf_dataset
-            iterators[batch_size] = tf_dataset.batch(batch_size).make_one_shot_iterator().get_next()
+            iterators[batch_size] = tf_dataset.batch(batch_size)
 
         return iterators[batch_size]
 
@@ -270,8 +266,10 @@ class SubsetLoader(object):
 
     def get_batch(self, batch_size: int, output_labels: bool):
         iterator = self.get_one_shot_iterator(batch_size, output_labels)
-        session = get_session()
-        results = session.run(iterator)
+        results = None, None, None
+        for results in iterator:
+            break
+
         if output_labels:
             inputs, outputs, labels = results
             return inputs, outputs, labels
@@ -340,23 +338,6 @@ class SubsetLoader(object):
         dataset = dataset.batch(1)
 
         return dataset
-
-    def get_source_browser_iterator(self,
-                                    source_index: int,
-                                    reference_modality: Type[Modality],
-                                    stride: int
-                                    ):
-        if source_index not in self._source_browsers_iterators:
-            tf_dataset = self.get_source_browser(source_index, reference_modality, stride)
-            tf_dataset = tf_dataset.map(lambda dictionary: tuple(dictionary.values()))
-            base_iterator = tf_dataset.make_initializable_iterator()
-            iterator_next = base_iterator.get_next()
-            iterator = BrowserIterator(base_iterator=base_iterator,
-                                       initializer=base_iterator.initializer,
-                                       iterator_next=iterator_next)
-            self._source_browsers_iterators[source_index] = iterator
-
-        return self._source_browsers_iterators[source_index]
 
     # endregion
 
@@ -448,7 +429,7 @@ def random_video_flip(video: tf.Tensor,
     Raises:
         ValueError: if the shape of `video` not supported.
     """
-    with tf.name_scope(None, scope_name, [video]) as scope:
+    with tf.name_scope(scope_name) as scope:
         video = tf.convert_to_tensor(video, name="video")
         shape = video.get_shape()
 
@@ -482,8 +463,6 @@ def main():
     import cv2
     from modalities import RawVideo, ModalityShape
 
-    tf.enable_eager_execution()
-
     video_length = 32
 
     config = DatasetConfig(tfrecords_config_folder="../datasets/emoly",
@@ -498,7 +477,7 @@ def main():
     loader = SubsetLoader(config, "Test")
 
     for batch in loader.labeled_tf_dataset.batch(100):
-        (_, ), (outputs, ), batch_labels = batch
+        (_,), (outputs,), batch_labels = batch
         batch_raw_video = outputs.numpy()
         batch_labels = batch_labels.numpy()
         batch_labels = SubsetLoader.timestamps_labels_to_frame_labels(batch_labels, video_length)

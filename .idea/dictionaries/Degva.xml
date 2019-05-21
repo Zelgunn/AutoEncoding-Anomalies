@@ -6,6 +6,8 @@
       <w>autoencode</w>
       <w>autoencoder</w>
       <w>blurrer</w>
+      <w>castable</w>
+      <w>dataframe</w>
       <w>degva</w>
       <w>divx</w>
       <w>emoly</w>
@@ -13,6 +15,7 @@
       <w>filenames</w>
       <w>ftex</w>
       <w>gaussians</w>
+      <w>grayscale</w>
       <w>icns</w>
       <w>imshow</w>
       <w>induit</w>

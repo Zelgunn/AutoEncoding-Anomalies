@@ -30,7 +30,7 @@ class RawVideo(Modality):
 
     @classmethod
     def tfrecord_features(cls) -> Dict[str, tuple]:
-        return {cls.id(): tf.VarLenFeature(tf.string)}
+        return {cls.id(): tf.io.VarLenFeature(tf.string)}
 
     @classmethod
     def rank(cls) -> int:

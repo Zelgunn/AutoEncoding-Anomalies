@@ -235,15 +235,6 @@ class AutoEncoderBaseModel(ABC):
 
         self.log_dir = None
         self.tensorboard: Optional[tf.python.keras.callbacks.TensorBoard] = None
-        log_run_metadata = False
-        if log_run_metadata:
-            self.run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE,
-                                             report_tensor_allocations_upon_oom=True
-                                             )
-            self.run_metadata = tf.RunMetadata()
-        else:
-            self.run_options = None
-            self.run_metadata = None
 
         self.epochs_seen = 0
         self.output_range = None
@@ -341,7 +332,7 @@ class AutoEncoderBaseModel(ABC):
         else:
             seed = np.random.randint(2147483647)
             self.config["seed"] = seed
-        tf.set_random_seed(seed)
+        tf.random.set_seed(seed)
         # endregion
 
     # region Data Augmentation
@@ -715,15 +706,6 @@ class AutoEncoderBaseModel(ABC):
     # endregion
 
     # region Model(s) (Getters)
-    def get_true_outputs_placeholder(self) -> tf.Tensor:
-        if self._true_outputs_placeholder is None:
-            pred_output = self.autoencoder.output
-            self._true_outputs_placeholder = tf.placeholder(dtype=pred_output.dtype,
-                                                            shape=[None, *self.output_shape],
-                                                            name="true_outputs_placeholder")
-
-        return self._true_outputs_placeholder
-
     def compute_conv_depth(self):
         models = self.autoencoder.layers
 
@@ -935,11 +917,8 @@ class AutoEncoderBaseModel(ABC):
         fourcc = cv2.VideoWriter_fourcc(*"DIVX")
         video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
 
-        session = get_session()
-
-        iterator = subset.get_source_browser_iterator(video_index, RawVideo, stride=1)
-        session.run(iterator.initializer)
-        predicted = self.autoencoder.predict(iterator.iterator_next, steps=max_frame_count)
+        source_browser = subset.get_source_browser(video_index, RawVideo, stride=1)
+        predicted = self.autoencoder.predict(source_browser, steps=max_frame_count)
 
         predicted = (predicted * 255).astype(np.uint8)
         predicted = np.repeat(predicted, 3, axis=-1)
@@ -1029,19 +1008,16 @@ class AutoEncoderBaseModel(ABC):
                                    convergence_threshold=None,
                                    max_iterations=1):
 
-        session = get_session()
         raw_predictions_model = self.get_anomalies_raw_predictions_model(include_labels_io=True)
-        iterator = subset.get_source_browser_iterator(video_index, RawVideo, stride)
-        session.run(iterator.initializer)
+        source_browser = subset.get_source_browser(video_index, RawVideo, stride)
         # TODO : Get steps count
-        steps_count = 1000
-        predictions, labels = raw_predictions_model.predict(iterator.iterator_next, steps=steps_count)
+        steps_count = 100000
+        predictions, labels = raw_predictions_model.predict(source_browser, steps=steps_count)
         labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
         labels = np.any(labels, axis=-1)
 
         if normalize_predictions:
             predictions = (predictions - predictions.min()) / predictions.max()
-            # predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
 
         return predictions, labels
 

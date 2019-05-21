@@ -1,0 +1,186 @@
+import tensorflow as tf
+from tensorflow import keras
+import numpy as np
+from tqdm import tqdm
+import os
+import time
+from typing import Union, List
+
+from datasets import DatasetLoader, DatasetConfig, SubsetLoader
+from modalities import RawVideo, ModalityShape
+from callbacks import AUCCallback
+from layers.utility_layers import RawPredictionsLayer
+
+
+class AE(keras.Model):
+    def __init__(self,
+                 encoder: Union[keras.Model, keras.Sequential, List[keras.layers.Layer]],
+                 decoder: Union[keras.Model, keras.Sequential, List[keras.layers.Layer]],
+                 **kwargs):
+        if "optimizer" in kwargs:
+            self.optimizer: keras.optimizers.Optimizer = kwargs.pop("optimizer")
+
+        super(AE, self).__init__(**kwargs)
+        self.__dict__.update(kwargs)
+
+        if isinstance(encoder, list):
+            encoder = keras.Sequential(encoder, name="encoder")
+        if isinstance(decoder, list):
+            decoder = keras.Sequential(decoder, name="decoder")
+
+        self.encoder: keras.Model = encoder
+        self.decoder: keras.Model = decoder
+
+    @tf.function
+    def encode(self, x):
+        return self.encoder(x)
+
+    @tf.function
+    def decode(self, z):
+        return self.decoder(z)
+
+    @tf.function
+    def forward(self, x):
+        return self.decode(self.encode(x))
+
+    @tf.function
+    def compute_loss(self, x):
+        decoded = self.forward(x)
+        reconstruction_error = tf.reduce_mean(tf.square(decoded - x))
+        return reconstruction_error
+
+    @tf.function
+    def compute_gradients(self, x):
+        with tf.GradientTape() as tape:
+            loss = self.compute_loss(x)
+        return tape.gradient(loss, self.trainable_variables), loss
+
+    def train_step(self, x):
+        gradients, loss = self.compute_gradients(x)
+        grads_and_vars = zip(gradients, self.trainable_variables)
+        self.optimizer.apply_gradients(grads_and_vars)
+        return loss
+
+
+def main():
+    input_channels = 1
+    input_shape = (16, 128, 128, input_channels)
+    epoch_length = 2
+    batch_size = 8
+
+    # region Model
+    encoder = \
+        [
+            keras.layers.InputLayer(input_shape),
+            keras.layers.Conv3D(filters=32, kernel_size=3, strides=(2, 2, 2), padding="same", activation="elu"),
+            keras.layers.Conv3D(filters=32, kernel_size=3, strides=(1, 2, 2), padding="same", activation="elu"),
+            keras.layers.Conv3D(filters=64, kernel_size=3, strides=(2, 2, 2), padding="same", activation="elu"),
+            keras.layers.Conv3D(filters=64, kernel_size=3, strides=(1, 2, 2), padding="same", activation="elu"),
+            keras.layers.Conv3D(filters=128, kernel_size=3, strides=(2, 2, 2), padding="same", activation="elu"),
+            keras.layers.Conv3D(filters=128, kernel_size=3, strides=(1, 2, 2), padding="same", activation="elu"),
+            keras.layers.Flatten(),
+            keras.layers.Dense(units=256)
+        ]
+
+    decoder = \
+        [
+            keras.layers.Dense(units=2 * 2 * 2 * 128, activation="elu"),
+            keras.layers.Reshape(target_shape=(2, 2, 2, 128)),
+            keras.layers.Conv3DTranspose(filters=128, kernel_size=3, strides=(1, 2, 2),
+                                         padding="same", activation="elu"),
+            keras.layers.Conv3DTranspose(filters=128, kernel_size=3, strides=(2, 2, 2),
+                                         padding="same", activation="elu"),
+            keras.layers.Conv3DTranspose(filters=64, kernel_size=3, strides=(1, 2, 2),
+                                         padding="same", activation="elu"),
+            keras.layers.Conv3DTranspose(filters=64, kernel_size=3, strides=(2, 2, 2),
+                                         padding="same", activation="elu"),
+            keras.layers.Conv3DTranspose(filters=32, kernel_size=3, strides=(1, 2, 2),
+                                         padding="same", activation="elu"),
+            keras.layers.Conv3DTranspose(filters=32, kernel_size=3, strides=(2, 2, 2),
+                                         padding="same", activation="elu"),
+            keras.layers.Conv3DTranspose(filters=input_channels, kernel_size=3, strides=1,
+                                         padding="same", activation="sigmoid"),
+        ]
+
+    optimizer = keras.optimizers.Adam(lr=2e-4)
+
+    model = AE(encoder, decoder, optimizer=optimizer)
+    # endregion
+
+    # region Dataset
+
+    config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
+                           modalities_io_shapes=
+                           {
+                               RawVideo: ModalityShape(input_shape=input_shape,
+                                                       output_shape=input_shape),
+                           },
+                           output_range=(0.0, 1.0))
+
+    dataset_loader = DatasetLoader(config)
+    train_dataset = dataset_loader.train_subset.tf_dataset
+    train_dataset = train_dataset.map(lambda x, y: x)
+    train_dataset = train_dataset.batch(batch_size)
+    # endregion
+
+    log_dir = "../logs/tests/ae/log_{}".format(int(time.time()))
+    os.makedirs(log_dir)
+    tensorboard = keras.callbacks.TensorBoard(log_dir)
+
+    decoded = model.decoder(model.encoder(model.encoder.input))
+    raw_predictions = RawPredictionsLayer((2, 3, 4))([decoded, model.encoder.input])
+    raw_predictions_model = keras.Model(inputs=model.encoder.input, outputs=raw_predictions,
+                                        name="raw_predictions_model")
+
+    inputs, outputs, labels = dataset_loader.test_subset.get_batch(batch_size=16, output_labels=True)
+    images = inputs[0]
+    labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, frame_count=16)
+
+    auc_callback = AUCCallback(predictions_model=raw_predictions_model,
+                               tensorboard=tensorboard,
+                               images=images,
+                               labels=labels,
+                               epoch_freq=1,
+                               plot_size=(128, 128)
+                               )
+
+    callbacks = [tensorboard, auc_callback]
+
+    for epoch in range(50):
+        losses = []
+        for batch_index, batch in tqdm(zip(range(epoch_length), train_dataset), total=epoch_length):
+            loss = model.train_step(batch)
+            losses.append(loss.numpy())
+            print("Epoch: {} | MSE: {}".format(epoch, np.mean(losses)))
+
+        for callback in callbacks:
+            callback.on_epoch_end(epoch, logs={"loss": np.mean(losses)})
+
+
+if __name__ == "__main__":
+    print(tf.__version__)
+
+    from utils.summary_utils import image_summary
+
+
+    def turtle(name, v):
+        @tf.function
+        def cat(data, step):
+            tf.summary.image(name, tf.pow(data, v), step=step)
+
+        return cat
+
+
+    pwet_function = turtle("pwet", 1.0)
+    tewp_function = turtle("tewp", 0.1)
+
+    writer = tf.summary.create_file_writer("../logs/tests/2.0")
+    with writer.as_default():
+        pwet_function(tf.random.normal(shape=[4, 128, 128, 3]), 0)
+        tewp_function(tf.random.normal(shape=[4, 128, 128, 3]), 0)
+        video = tf.ones(shape=[3, 1, 128, 128, 3])
+        video = tf.tile(video, [1, 32, 1, 1, 1])
+        video *= tf.range(0.0, 1.0, delta=1 / 32, dtype=tf.float32)[tf.newaxis, :, tf.newaxis, tf.newaxis, tf.newaxis]
+        image_summary("a_video", video, 3, 8)
+
+    # main()
