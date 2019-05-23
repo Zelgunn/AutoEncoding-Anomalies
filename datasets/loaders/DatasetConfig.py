@@ -4,7 +4,7 @@ import os
 from typing import Dict, Type, List, Any, Tuple
 
 from datasets.tfrecord_builders import tfrecords_config_filename
-from modalities import Modality, ModalityCollection, ModalityShape
+from modalities import Modality, ModalityCollection, ModalityShape, MelSpectrogram
 
 
 def get_shard_count(sample_length: int,
@@ -61,6 +61,11 @@ class DatasetConfig(object):
     def get_modality_max_shard_size(self,
                                     modality: Modality
                                     ) -> int:
-        frequency: float = modality.frequency
-        shard_size = int(np.ceil(frequency * self.shard_duration))
+        # TODO : Get shard_size with another way (use config, mb)
+        if isinstance(modality, MelSpectrogram):
+            shard_size = modality.get_output_frame_count(61440, 48000)
+        else:
+            raise NotImplementedError
+        # frequency: float = modality.frequency
+        # shard_size = int(np.ceil(frequency * self.shard_duration))
         return shard_size

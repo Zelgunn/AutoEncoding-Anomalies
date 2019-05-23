@@ -380,15 +380,16 @@ def make_video_autoencoder(channels_count=3):
 # endregion
 
 def main():
+    from modalities import MelSpectrogram
     channels_count = 1
     video_autoencoder = make_video_autoencoder(channels_count=channels_count)
 
     # region dataset
-    dataset_config = DatasetConfig("../datasets/ucsd/ped2",
+    dataset_config = DatasetConfig("../datasets/emoly",
                                    modalities_io_shapes=
                                    {
-                                       RawVideo: ModalityShape((16, 128, 128, channels_count),
-                                                               (32, 128, 128, channels_count))
+                                       MelSpectrogram: ModalityShape((52, 100),
+                                                                     (104, 100))
                                    },
                                    output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)

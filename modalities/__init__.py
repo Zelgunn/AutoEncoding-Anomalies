@@ -4,5 +4,5 @@ from modalities.RawVideo import RawVideo
 from modalities.OpticalFlow import OpticalFlow
 from modalities.DoG import DoG
 from modalities.RawAudio import RawAudio
-from modalities.MFCCs import MFCCs
+from modalities.MelSpectrogram import MelSpectrogram
 from modalities.ModalityCollection import ModalityCollection

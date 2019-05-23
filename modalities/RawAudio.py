@@ -1,13 +1,13 @@
 import tensorflow as tf
 import numpy as np
-from typing import Dict
+from typing import Dict, Any
 
 from modalities import Modality
 
 
 class RawAudio(Modality):
-    def __init__(self, frequency: float):
-        super(RawAudio, self).__init__(frequency=frequency)
+    def __init__(self):
+        super(RawAudio, self).__init__()
 
     @classmethod
     def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:

@@ -1,14 +1,14 @@
 import tensorflow as tf
 import cv2
 import numpy as np
-from typing import Dict
+from typing import Dict, Tuple
 
 from modalities import Modality
 
 
 class RawVideo(Modality):
-    def __init__(self, frequency: float):
-        super(RawVideo, self).__init__(frequency=frequency)
+    def __init__(self):
+        super(RawVideo, self).__init__()
 
     @classmethod
     def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:
@@ -35,6 +35,20 @@ class RawVideo(Modality):
     @classmethod
     def rank(cls) -> int:
         return 4
+
+    @staticmethod
+    def compute_raw_frame(frame: np.ndarray,
+                          frame_size: Tuple[int, int]):
+        raw = frame
+
+        if frame_size is not None:
+            if tuple(frame_size) != frame.shape[:2]:
+                raw = cv2.resize(raw, dsize=tuple(reversed(frame_size)))
+
+        if raw.ndim == 2:
+            raw = np.expand_dims(raw, axis=-1)
+
+        return raw
 
 
 def video_feature(video):

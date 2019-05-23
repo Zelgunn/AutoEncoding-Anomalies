@@ -1,5 +1,5 @@
 import os
-from typing import Tuple, List
+from typing import Tuple, List, Union
 
 from modalities import ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
@@ -10,11 +10,15 @@ class SubwayTFRecordBuilder(TFRecordBuilder):
     def __init__(self,
                  dataset_path: str,
                  shard_duration: float,
+                 video_frequency: Union[int, float],
+                 audio_frequency: Union[int, float],
                  modalities: ModalityCollection,
                  video_frame_size: Tuple[int, int],
                  verbose=1):
         super(SubwayTFRecordBuilder, self).__init__(dataset_path=dataset_path,
                                                     shard_duration=shard_duration,
+                                                    video_frequency=video_frequency,
+                                                    audio_frequency=audio_frequency,
                                                     modalities=modalities,
                                                     verbose=verbose)
         self.video_frame_size = video_frame_size

@@ -10,7 +10,6 @@ from time import time
 from layers import ResBasicBlock3D, DenseBlock3D, ResBasicBlock3DTranspose
 from datasets import DatasetConfig, DatasetLoader, SubsetLoader
 from modalities import RawVideo, ModalityShape
-from utils.test_utils import visualize_model_errors, evaluate_model_anomaly_detection_on_subset
 
 
 def build_conv_encoder(input_layer):
@@ -187,17 +186,17 @@ def main():
     model = get_model(mode)
 
     dataset = get_ucsd_dataset()
-    train_subset: SubsetLoader = dataset.train_subset
-    test_subset: SubsetLoader = dataset.test_subset
+    # train_subset: SubsetLoader = dataset.train_subset
+    # test_subset: SubsetLoader = dataset.test_subset
 
     model.compile(optimizer=Adam(lr=1e-3), loss="mse", metrics=["mse"])
 
     # model.load_weights("../logs/tests/conv3d_rec_pred/{}/1551190470/weights.h5".format(mode))
 
     train_model(model, dataset, mode)
-    visualize_model_errors(model, test_subset)
-    visualize_model_errors(model, train_subset)
-    evaluate_model_anomaly_detection_on_subset(model, test_subset, 500, 8)
+    # visualize_model_errors(model, test_subset)
+    # visualize_model_errors(model, train_subset)
+    # evaluate_model_anomaly_detection_on_subset(model, test_subset, 500, 8)
 
 
 if __name__ == "__main__":

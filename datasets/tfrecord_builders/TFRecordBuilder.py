@@ -4,13 +4,14 @@ import cv2
 import os
 import sys
 import json
-from typing import Union, Tuple, List, Dict, Type
+from typing import Union, Tuple, List, Dict, Type, Optional
 
 from modalities import Modality, ModalityCollection, RawVideo
 from modalities.modality_utils import float_list_feature
-from datasets.modality_builders import AdaptiveBuilder
+from datasets.modality_builders import ModalityBuilder, VideoBuilder, AudioBuilder, BuildersList
 from datasets.data_readers import VideoReader, AudioReader
 from datasets.labels_builders import LabelsBuilder
+from datasets.labels_builders.LabelsBuilder import LabelsBuilderMode
 
 
 class DataSource(object):
@@ -38,19 +39,28 @@ class TFRecordBuilder(object):
     def __init__(self,
                  dataset_path: str,
                  shard_duration: float,
+                 video_frequency: Union[int, float],
+                 audio_frequency: Union[int, float],
                  modalities: ModalityCollection,
+                 labels_frequency: Union[int, float] = None,
                  verbose=1):
 
         self.dataset_path = dataset_path
-        self.verbose = verbose
         self.shard_duration = shard_duration
+        if video_frequency is None and audio_frequency is None:
+            raise ValueError("You must specify at least the frequency for either Video or Audio, got None and None")
+        self.video_frequency = video_frequency
+        self.audio_frequency = audio_frequency
+        self.labels_frequency = labels_frequency
         self.modalities = modalities
+        self.verbose = verbose
 
     def get_dataset_sources(self) -> List[DataSource]:
         raise NotImplementedError("`get_dataset_sources` should be defined for subclasses.")
 
     def build(self):
         data_sources = self.get_dataset_sources()
+        data_sources = data_sources[:5]
 
         subsets_dict: Dict[str, Union[List[str], Dict]] = {}
 
@@ -96,28 +106,34 @@ class TFRecordBuilder(object):
         tfrecords_config = {
             "modalities": self.modalities.get_config(),
             "shard_duration": self.shard_duration,
+            "video_frequency": self.video_frequency,
+            "audio_frequency": self.audio_frequency,
             "subsets": subsets_dict,
             "modalities_ranges": modalities_ranges,
-            "max_labels_size": max_labels_size
+            "max_labels_size": max_labels_size,
         }
 
         with open(os.path.join(self.dataset_path, tfrecords_config_filename), 'w') as file:
             json.dump(tfrecords_config, file)
 
     def build_one(self, data_source: Union[DataSource, List[DataSource]]):
-        modality_builder = AdaptiveBuilder(shard_duration=self.shard_duration,
-                                           modalities=self.modalities,
-                                           video_source=data_source.video_source,
-                                           video_frame_size=data_source.video_frame_size,
-                                           audio_source=data_source.audio_source)
+        # TODO : Move "make_builders" in Data Source
+        builders = TFRecordBuilder.make_builders(shard_duration=self.shard_duration,
+                                                 modalities=self.modalities,
+                                                 video_source=data_source.video_source,
+                                                 video_source_frequency=self.video_frequency,
+                                                 video_frame_size=data_source.video_frame_size,
+                                                 audio_source=data_source.audio_source,
+                                                 audio_source_frequency=self.audio_frequency)
 
-        # TODO : Give frequency source instead of static "raw_video"
+        modality_builder = BuildersList(builders=builders)
+
         # TODO : Delete previous .tfrecords
         shard_count = modality_builder.get_shard_count()
         labels_iterator = LabelsBuilder(data_source.labels_source,
                                         shard_count=shard_count,
                                         shard_duration=self.shard_duration,
-                                        frequency=modality_builder.modalities[RawVideo].frequency)
+                                        frequency=self.labels_frequency)
 
         source_iterator = zip(modality_builder, labels_iterator)
 
@@ -169,3 +185,32 @@ class TFRecordBuilder(object):
             print("\r{} : Done".format(data_source.target_path))
 
         return min_values, max_values, max_labels_size
+
+    @staticmethod
+    def make_builders(shard_duration: float,
+                      modalities: ModalityCollection,
+                      video_source: Union[VideoReader, str, cv2.VideoCapture, np.ndarray, List[str]],
+                      video_source_frequency: Union[int, float],
+                      video_frame_size: Tuple[int, int],
+                      audio_source: Union[AudioReader, str, np.ndarray],
+                      audio_source_frequency: Union[int, float]
+                      ):
+
+        builders: List[ModalityBuilder] = []
+
+        if VideoBuilder.supports_any(modalities):
+            video_builder = VideoBuilder(shard_duration=shard_duration,
+                                         source_frequency=video_source_frequency,
+                                         modalities=modalities,
+                                         video_reader=video_source,
+                                         default_frame_size=video_frame_size)
+            builders.append(video_builder)
+
+        if AudioBuilder.supports_any(modalities):
+            audio_builder = AudioBuilder(shard_duration=shard_duration,
+                                         source_frequency=audio_source_frequency,
+                                         modalities=modalities,
+                                         audio_reader=audio_source)
+            builders.append(audio_builder)
+
+        return builders

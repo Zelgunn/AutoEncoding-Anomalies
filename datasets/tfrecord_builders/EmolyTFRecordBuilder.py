@@ -1,9 +1,9 @@
 import os
 import csv
 from tqdm import tqdm
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Union, Optional
 
-from modalities import ModalityCollection, RawVideo, RawAudio
+from modalities import ModalityCollection
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
 
 
@@ -11,11 +11,15 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
     def __init__(self,
                  dataset_path: str,
                  shard_duration: float,
+                 video_frequency: Optional[Union[int, float]],
+                 audio_frequency: Optional[Union[int, float]],
                  modalities: ModalityCollection,
                  video_frame_size: Tuple[int, int],
                  verbose=1):
         super(EmolyTFRecordBuilder, self).__init__(dataset_path=dataset_path,
                                                    shard_duration=shard_duration,
+                                                   video_frequency=video_frequency,
+                                                   audio_frequency=audio_frequency,
                                                    modalities=modalities,
                                                    verbose=verbose)
         self.video_frame_size = video_frame_size
@@ -130,14 +134,31 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
         return os.path.join(self.dataset_path, "labels_en.csv")
 
 
-if __name__ == "__main__":
+def main():
+    # from modalities import RawVideo
+    # from modalities import OpticalFlow
+    # from modalities import DoG
+    # from modalities import RawAudio
+    from modalities import MelSpectrogram
+
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
                                                    shard_duration=1.28,
+                                                   video_frequency=25,
+                                                   audio_frequency=48000,
                                                    modalities=ModalityCollection(
                                                        [
-                                                           RawVideo(frequency=25),
-                                                           RawAudio(frequency=48000)
+                                                           # RawVideo(),
+                                                           # OpticalFlow(use_polar=False),
+                                                           # DoG(),
+                                                           # RawAudio(),
+                                                           MelSpectrogram(window_width=0.05,
+                                                                          window_step=0.025,
+                                                                          mel_filters_count=100)
                                                        ]
                                                    ),
                                                    video_frame_size=(128, 128))
     emoly_tf_record_builder.build()
+
+
+if __name__ == "__main__":
+    main()

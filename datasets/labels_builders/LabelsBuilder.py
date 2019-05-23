@@ -17,8 +17,35 @@ class LabelsBuilder(object):
                  shard_count: int,
                  shard_duration: float,
                  frequency: float,
+                 mode: LabelsBuilderMode = None
                  ):
 
+        if mode is None:
+            mode = LabelsBuilder.define_mode_from_source(labels_source)
+
+        self.mode = mode
+
+        self.shard_count = shard_count
+        self.shard_duration = shard_duration
+        self.frequency = frequency
+
+        self.single_value_labels_builder: Optional[SingleValueLabelsBuilder] = None
+        self.timestamps_labels_builder: Optional[TimestampsLabelsBuilder] = None
+        self.frame_labels_builder: Optional[FrameLabelsBuilder] = None
+
+        if self.mode == LabelsBuilderMode.SINGLE_VALUE:
+            self.single_value_labels_builder = SingleValueLabelsBuilder(labels_source, shard_count=shard_count)
+        elif self.mode == LabelsBuilderMode.TIMESTAMPS:
+            self.timestamps_labels_builder = TimestampsLabelsBuilder(labels_source, shard_duration=shard_duration,
+                                                                     shard_count=shard_count)
+        elif self.mode == LabelsBuilderMode.FRAMES:
+            if frequency is None:
+                raise ValueError("You must provide a value for `frequency` when using frame labels.")
+            self.frame_labels_builder = FrameLabelsBuilder(labels_source, shard_duration=shard_duration,
+                                                           frequency=frequency)
+
+    @staticmethod
+    def define_mode_from_source(labels_source):
         mode = None
         if isinstance(labels_source, str):
             if labels_source.endswith(".npy") or labels_source.endswith(".npz"):
@@ -47,25 +74,10 @@ class LabelsBuilder(object):
             else:
                 mode = LabelsBuilderMode.FRAMES
 
-        assert mode is not None, "mode could not be determined from source of type {}".format(type(labels_source))
-        self.mode = mode
+        if mode is None:
+            raise ValueError("mode could not be determined from source of type {}".format(type(labels_source)))
 
-        self.shard_count = shard_count
-        self.shard_duration = shard_duration
-        self.frequency = frequency
-
-        self.single_value_labels_builder: Optional[SingleValueLabelsBuilder] = None
-        self.timestamps_labels_builder: Optional[TimestampsLabelsBuilder] = None
-        self.frame_labels_builder: Optional[FrameLabelsBuilder] = None
-
-        if self.mode == LabelsBuilderMode.SINGLE_VALUE:
-            self.single_value_labels_builder = SingleValueLabelsBuilder(labels_source, shard_count=shard_count)
-        elif self.mode == LabelsBuilderMode.TIMESTAMPS:
-            self.timestamps_labels_builder = TimestampsLabelsBuilder(labels_source, shard_duration=shard_duration,
-                                                                     shard_count=shard_count)
-        elif self.mode == LabelsBuilderMode.FRAMES:
-            self.frame_labels_builder = FrameLabelsBuilder(labels_source, shard_duration=shard_duration,
-                                                           frequency=frequency)
+        return mode
 
     def __iter__(self):
         if self.mode == LabelsBuilderMode.SINGLE_VALUE:

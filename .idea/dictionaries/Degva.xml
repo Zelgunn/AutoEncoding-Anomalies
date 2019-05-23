@@ -7,15 +7,19 @@
       <w>autoencoder</w>
       <w>blurrer</w>
       <w>castable</w>
+      <w>chunking</w>
       <w>dataframe</w>
       <w>degva</w>
       <w>divx</w>
       <w>emoly</w>
       <w>farneback</w>
+      <w>fbank</w>
+      <w>fbanks</w>
       <w>filenames</w>
       <w>ftex</w>
       <w>gaussians</w>
       <w>grayscale</w>
+      <w>hann</w>
       <w>icns</w>
       <w>imshow</w>
       <w>induit</w>
@@ -31,12 +35,16 @@
       <w>mfcc</w>
       <w>ndarray</w>
       <w>ndim</w>
+      <w>nfft</w>
+      <w>nmels</w>
       <w>paddings</w>
+      <w>pathlib</w>
       <w>pixar</w>
       <w>pwet</w>
       <w>resampling</w>
       <w>softmax</w>
       <w>spatio</w>
+      <w>spectrograms</w>
       <w>sujet</w>
       <w>tensorflow</w>
       <w>tfrecord</w>

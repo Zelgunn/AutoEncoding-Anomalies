@@ -1,13 +1,13 @@
 import tensorflow as tf
 import numpy as np
-from typing import Dict, Any, Union
+import cv2
+from typing import Dict, Any, Union, Tuple
 
 from modalities import Modality
 
 
 class OpticalFlow(Modality):
     def __init__(self,
-                 frequency: float,
                  use_polar: bool,
                  pyr_scale=0.5,
                  levels=3,
@@ -15,7 +15,7 @@ class OpticalFlow(Modality):
                  iterations=5,
                  poly_n=5,
                  poly_sigma=1.2):
-        super(OpticalFlow, self).__init__(frequency=frequency)
+        super(OpticalFlow, self).__init__()
         self.use_polar = use_polar
         self.pyr_scale = pyr_scale
         self.levels = levels
@@ -60,3 +60,42 @@ class OpticalFlow(Modality):
     @classmethod
     def rank(cls) -> int:
         return 4
+
+    # TODO : Compute flow with other tools (copy from preprocessed file, from model, ...)
+    def compute_flow(self,
+                     frames: np.ndarray,
+                     frame_size: Tuple[int, int]
+                     ) -> np.ndarray:
+        frame_count = frames.shape[0] - 1
+        buffer = np.empty(shape=[frame_count, *frame_size, 2])
+
+        for i in range(frame_count):
+            buffer[i] = self.compute_flow_frame(previous_frame=frames[i],
+                                                frame=frames[i + 1],
+                                                frame_size=frame_size)
+        return buffer
+
+    def compute_flow_frame(self,
+                           previous_frame: np.ndarray,
+                           frame: np.ndarray,
+                           frame_size: Tuple[int, int]
+                           ) -> np.ndarray:
+        if frame.ndim == 3:
+            frame = frame.mean(axis=-1)
+            previous_frame = previous_frame.mean(axis=-1)
+
+        flow: np.ndarray = cv2.calcOpticalFlowFarneback(prev=previous_frame, next=frame, flow=None,
+                                                        flags=0, **self.farneback_params)
+
+        absolute_flow = np.abs(flow)
+        if np.min(absolute_flow) < 1e-20:
+            flow[absolute_flow < 1e-20] = 0.0
+
+        if self.use_polar:
+            flow = cv2.cartToPolar(flow[:, :, 0], flow[:, :, 1], angleInDegrees=True)
+            flow = np.stack(flow, axis=-1)
+
+        if frame_size is not None:
+            flow = cv2.resize(flow, dsize=tuple(reversed(frame_size)))
+
+        return flow

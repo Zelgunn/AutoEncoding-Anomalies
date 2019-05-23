@@ -31,13 +31,11 @@ class ModalityShape(object):
 
 
 class Modality(ABC):
-    def __init__(self, frequency: float):
-        self.frequency = frequency
+    def __init__(self, **kwargs):
         self.io_shape: Optional[ModalityShape] = None
 
     def get_config(self) -> Dict[str, Any]:
-        config = {"frequency": self.frequency}
-        return config
+        return {}
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]):

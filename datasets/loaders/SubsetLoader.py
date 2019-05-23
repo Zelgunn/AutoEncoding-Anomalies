@@ -4,7 +4,7 @@ import os
 from typing import Dict, Tuple, Optional, Type
 
 from datasets.loaders import DatasetConfig
-from modalities import Modality, ModalityCollection, RawVideo
+from modalities import Modality, ModalityCollection, RawVideo, MelSpectrogram
 
 
 def get_shard_count(sample_length, shard_size):
@@ -23,7 +23,12 @@ class SubsetLoader(object):
         self.subset_folders = list(self.subset_files.keys())
 
         for modality in self.config.modalities:
-            shard_size = modality.frequency * self.config.shard_duration
+            # TODO : Get shard_size with another way (use config, mb)
+            if isinstance(modality, MelSpectrogram):
+                shard_size = modality.get_output_frame_count(61440, 48000)
+            else:
+                raise NotImplementedError
+            # shard_size = modality.frequency * self.config.shard_duration
             max_shard_size = int(np.ceil(shard_size))
             initial_shard_size = int(np.floor(shard_size))
             if max_shard_size != initial_shard_size:
