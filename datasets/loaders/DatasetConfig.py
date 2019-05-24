@@ -74,8 +74,8 @@ class DatasetConfig(object):
         elif isinstance(modality, RawAudio):
             shard_size = self.audio_frequency * self.shard_duration
         elif isinstance(modality, MelSpectrogram):
-            shard_size = modality.get_output_frame_count(self.shard_duration * self.video_frequency,
-                                                         self.video_frequency)
+            shard_size = modality.get_output_frame_count(self.shard_duration * self.audio_frequency,
+                                                         self.audio_frequency)
         else:
             raise NotImplementedError(modality.id())
 

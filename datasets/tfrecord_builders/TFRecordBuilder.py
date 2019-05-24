@@ -111,6 +111,7 @@ class TFRecordBuilder(object):
             "max_labels_size": max_labels_size,
         }
 
+        # TODO : Merge previous tfrecords_config with new when adding new modalities
         with open(os.path.join(self.dataset_path, tfrecords_config_filename), 'w') as file:
             json.dump(tfrecords_config, file)
 
@@ -137,20 +138,16 @@ class TFRecordBuilder(object):
         for i, shard in enumerate(source_iterator):
             # region Verbose
             if self.verbose > 0:
-                print("\r{} : {}/{}".format(data_source.target_path, i, shard_count), end='')
+                print("\r{} : {}/{}".format(data_source.target_path, i + 1, shard_count), end='')
             sys.stdout.flush()
             # endregion
 
             modalities, labels = shard
             modalities: Dict[Type[Modality], np.ndarray] = modalities
 
-            features: Dict[str, tf.train.Feature] = {}
             for modality_type, modality_value in modalities.items():
-                # region Encode modality
                 encoded_features = modality_type.encode_to_tfrecord_feature(modality_value)
-                for feature_name, encoded_feature in encoded_features.items():
-                    features[feature_name] = encoded_feature
-                # endregion
+                self.write_features_to_tfrecord(encoded_features, data_source.target_path, i, modality_type.id())
 
                 # region Get modality min/max for normalization
                 modality_min = modality_value.min()
@@ -164,20 +161,24 @@ class TFRecordBuilder(object):
                 # endregion
 
             max_labels_size = max(max_labels_size, len(labels))
-            features["labels"] = float_list_feature(labels)
-
-            example = tf.train.Example(features=tf.train.Features(feature=features))
-
-            # region Write to disk
-            shard_filepath = os.path.join(data_source.target_path, "shard_{:05d}.tfrecord".format(i))
-            writer = tf.io.TFRecordWriter(shard_filepath)
-            writer.write(example.SerializeToString())
-            # endregion
+            features = {"labels": float_list_feature(labels)}
+            self.write_features_to_tfrecord(features, data_source.target_path, i, "labels")
 
         if self.verbose > 0:
             print("\r{} : Done".format(data_source.target_path))
 
         return min_values, max_values, max_labels_size
+
+    @staticmethod
+    def write_features_to_tfrecord(features: Dict, base_filepath: str, index: int, sub_folder: str = None):
+        example = tf.train.Example(features=tf.train.Features(feature=features))
+        if sub_folder is not None:
+            base_filepath = os.path.join(base_filepath, sub_folder)
+        if not os.path.exists(base_filepath):
+            os.makedirs(base_filepath)
+        filepath = os.path.join(base_filepath, "shard_{:05d}.tfrecord".format(index))
+        writer = tf.io.TFRecordWriter(filepath)
+        writer.write(example.SerializeToString())
 
     def make_builders(self,
                       video_source: Union[VideoReader, str, cv2.VideoCapture, np.ndarray, List[str]],

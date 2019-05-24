@@ -50,12 +50,17 @@ class MelSpectrogram(Modality):
         return 2
 
     def get_output_frame_count(self, input_frame_count: Union[int, float], frame_rate: Union[int, float]) -> int:
+        return self.compute_output_frame_count(input_frame_count, frame_rate, self.window_step)
+
+    @staticmethod
+    def compute_output_frame_count(input_frame_count: Union[int, float],
+                                   frame_rate: Union[int, float],
+                                   window_step: Union[int, float]) -> int:
         if not isinstance(input_frame_count, int):
             input_frame_count = int_floor(input_frame_count)
 
-        window_width = int_floor(self.window_width * frame_rate)
-        window_step = int_floor(self.window_step * frame_rate)
-        return 1 + int_floor((input_frame_count - window_width) / window_step)
+        window_step = int_floor(window_step * frame_rate)
+        return 1 + int_floor(input_frame_count / window_step)
 
     def wave_to_mel_spectrogram(self, frames: np.ndarray, frame_rate: int):
         window_width = int(self.window_width * frame_rate)

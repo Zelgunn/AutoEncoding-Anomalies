@@ -42,9 +42,6 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
             subset_name = "Train" if is_train_sample else "Test"
             target_path = os.path.join(self.dataset_path, subset_name, sample_name)
 
-            if not os.path.isdir(target_path):
-                os.makedirs(target_path)
-
             data_source = DataSource(labels_source=sample_labels,
                                      target_path=target_path,
                                      subset_name=subset_name,
@@ -53,7 +50,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
                                      audio_source=video_path)
             data_sources.append(data_source)
 
-        return data_sources
+        return data_sources[:10]
 
     def list_videos_filenames(self):
         elements = os.listdir(self.videos_folder)
@@ -135,10 +132,10 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
 
 def main():
-    # from modalities import RawVideo
+    from modalities import RawVideo
     # from modalities import OpticalFlow
     # from modalities import DoG
-    # from modalities import RawAudio
+    from modalities import RawAudio
     from modalities import MelSpectrogram
 
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
@@ -150,7 +147,7 @@ def main():
                                                            # RawVideo(),
                                                            # OpticalFlow(use_polar=False),
                                                            # DoG(),
-                                                           # RawAudio(),
+                                                           RawAudio(),
                                                            MelSpectrogram(window_width=0.05,
                                                                           window_step=0.025,
                                                                           mel_filters_count=100)
