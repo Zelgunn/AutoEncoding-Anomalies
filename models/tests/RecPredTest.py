@@ -8,7 +8,7 @@ import os
 from time import time
 
 from layers import ResBasicBlock3D, DenseBlock3D, ResBasicBlock3DTranspose
-from datasets import DatasetConfig, DatasetLoader, SubsetLoader
+from datasets import DatasetConfig, DatasetLoader
 from modalities import RawVideo, ModalityShape
 
 

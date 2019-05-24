@@ -1,5 +1,5 @@
 import os
-from typing import Tuple, List, Union
+from typing import Tuple, List, Union, Optional
 
 from modalities import ModalityCollection, RawVideo, OpticalFlow, DoG
 from datasets.tfrecord_builders import TFRecordBuilder, DataSource
@@ -10,8 +10,8 @@ class UCSDTFRecordBuilder(TFRecordBuilder):
     def __init__(self,
                  dataset_path: str,
                  shard_duration: float,
-                 video_frequency: Union[int, float],
-                 audio_frequency: Union[int, float],
+                 video_frequency: Optional[Union[int, float]],
+                 audio_frequency: Optional[Union[int, float]],
                  modalities: ModalityCollection,
                  video_frame_size: Tuple[int, int],
                  verbose=1):
@@ -54,11 +54,13 @@ class UCSDTFRecordBuilder(TFRecordBuilder):
 if __name__ == "__main__":
     ucsd_tf_record_builder = UCSDTFRecordBuilder(dataset_path="../datasets/ucsd/ped2",
                                                  shard_duration=2.0,
+                                                 video_frequency=25,
+                                                 audio_frequency=None,
                                                  modalities=ModalityCollection(
                                                      [
-                                                         RawVideo(frequency=25),
-                                                         OpticalFlow(frequency=25, use_polar=True),
-                                                         DoG(frequency=25),
+                                                         RawVideo(),
+                                                         OpticalFlow(use_polar=True),
+                                                         DoG(),
                                                      ]
                                                  ),
                                                  video_frame_size=(128, 128)

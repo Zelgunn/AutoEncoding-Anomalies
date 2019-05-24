@@ -1,10 +1,7 @@
-import cv2
-import numpy as np
-from typing import Union, List, Tuple, Type
+from typing import List
 
-from modalities import Modality, ModalityCollection
-from datasets.modality_builders import ModalityBuilder, VideoBuilder, AudioBuilder
-from datasets.data_readers import VideoReader, AudioReader
+from datasets.modality_builders import ModalityBuilder
+from utils.misc_utils import int_ceil
 
 
 class BuildersList(object):
@@ -15,16 +12,6 @@ class BuildersList(object):
                 modalities.append(modality)
 
         self.builders: List[ModalityBuilder] = builders
-
-    @staticmethod
-    def supported_builders() -> List[Type[ModalityBuilder]]:
-        return [VideoBuilder, AudioBuilder]
-
-    @classmethod
-    def supported_modalities(cls):
-        return [modality
-                for builder_class in cls.supported_builders()
-                for modality in builder_class.supported_modalities()]
 
     def __iter__(self):
         builders_iterator = zip(*self.builders)
@@ -46,5 +33,5 @@ class BuildersList(object):
             else:
                 min_shard_count = min(min_shard_count, shard_count)
 
-        min_shard_count = int(np.ceil(min_shard_count))
+        min_shard_count = int_ceil(min_shard_count)
         return min_shard_count

@@ -32,7 +32,8 @@ class SubsetLoader(object):
             max_shard_size = int(np.ceil(shard_size))
             initial_shard_size = int(np.floor(shard_size))
             if max_shard_size != initial_shard_size:
-                raise NotImplementedError("SubsetLoader doesn't support this case yet.")
+                raise NotImplementedError("max_shard_size != initial_shard_size : "
+                                          "SubsetLoader doesn't support this case yet.")
 
         self._train_tf_dataset: Optional[tf.data.Dataset] = None
         self._test_tf_dataset: Optional[tf.data.Dataset] = None
@@ -270,7 +271,6 @@ class SubsetLoader(object):
             outputs = outputs[0]
 
         return (inputs, outputs, labels) if output_labels else (inputs, outputs)
-
 
     # region Browse dataset
     def make_source_filepath_generator(self, source_index: int):

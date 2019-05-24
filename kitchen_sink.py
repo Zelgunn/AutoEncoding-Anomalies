@@ -3,7 +3,7 @@ from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input, LeakyReLU, Layer, Concatenate, Activation, Lambda
 from tensorflow.python.keras.layers import Conv3D, AveragePooling3D, Conv3DTranspose
 from tensorflow.python.keras.optimizers import Adam
-from tensorflow.python.keras.callbacks import TensorBoard, ModelCheckpoint, TerminateOnNaN
+from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN
 import numpy as np
 import matplotlib.pyplot as plt
 import os

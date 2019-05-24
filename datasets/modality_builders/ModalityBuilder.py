@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Type, Dict, Union, Iterable, Optional
 
 from modalities import Modality, ModalityCollection, RawVideo, RawAudio, DoG, OpticalFlow, MelSpectrogram
+from utils.misc_utils import int_ceil, int_floor
 
 EPSILON = 1e-5
 
@@ -21,6 +22,7 @@ class ModalityBuilder(ABC):
         self.modalities = modalities
         self.reader: Optional[Iterable] = None
 
+    # region Supported modalities
     @classmethod
     @abstractmethod
     def supported_modalities(cls):
@@ -44,16 +46,7 @@ class ModalityBuilder(ABC):
                 filtered_modalities.append(modality)
         return ModalityCollection(filtered_modalities)
 
-    @classmethod
-    def assert_supported_modalities(cls, modalities: ModalityCollection):
-        if not all([cls.supports(modality) for modality in modalities]):
-            unsupported_mods = [str(type(modality)) for modality in modalities if not cls.supports(modality)]
-            unsupported_mods_str = ",".join(unsupported_mods)
-            raise NotImplementedError("{} are not supported by {}.".format(unsupported_mods_str, cls.__name__))
-
-    # @abstractmethod
-    # def __iter__(self):
-    #     raise NotImplementedError
+    # endregion
 
     def __iter__(self):
         shard_buffer = self.get_shard_buffer()
@@ -80,6 +73,7 @@ class ModalityBuilder(ABC):
                 source_shard_size = self.get_source_next_shard_size(time)
                 i = 0
 
+    # region Frame/Shard processing
     def process_frame(self, frame: np.ndarray) -> np.ndarray:
         return frame
 
@@ -91,6 +85,9 @@ class ModalityBuilder(ABC):
     def process_shard(self, frames: np.ndarray) -> Dict[Type[Modality], np.ndarray]:
         raise NotImplementedError
 
+    # endregion
+
+    # region Buffer
     def get_shard_buffer(self) -> np.ndarray:
         return np.zeros(self.get_buffer_shape(), dtype="float32")
 
@@ -98,6 +95,9 @@ class ModalityBuilder(ABC):
     def get_buffer_shape(self):
         raise NotImplementedError
 
+    # endregion
+
+    # region Shard size (initial, max, next)
     def compute_shard_size(self, modality: Modality, source_shard_size: int) -> int:
         if isinstance(modality, RawVideo) or isinstance(modality, RawAudio):
             return source_shard_size
@@ -108,35 +108,15 @@ class ModalityBuilder(ABC):
         else:
             raise NotImplementedError(modality.id())
 
-    # region Max shard size
     def get_source_max_shard_size(self) -> int:
-        return int(np.ceil(self.shard_duration * self.source_frequency - EPSILON))
-
-    def get_modality_max_shard_size(self, modality: Modality) -> int:
-        source_shard_size = self.get_source_max_shard_size()
-        return self.compute_shard_size(modality, source_shard_size)
-    # endregion
-
-    # region Initial shard size
-    def get_initial_shard_sizes(self) -> Dict[Type[Modality], int]:
-        shard_sizes = {type(modality): self.get_modality_initial_shard_size(modality)
-                       for modality in self.modalities}
-        return shard_sizes
+        return get_max_frame_count(self.shard_duration, self.source_frequency)
 
     def get_source_initial_shard_size(self) -> int:
-        return int(np.floor(self.shard_duration * self.source_frequency + EPSILON))
+        return get_min_frame_count(self.shard_duration, self.source_frequency)
 
-    def get_modality_initial_shard_size(self, modality: Modality):
-        source_shard_size = self.get_source_initial_shard_size()
-        return self.compute_shard_size(modality, source_shard_size)
-    # endregion
-
-    # region Next shard size
     def get_source_next_shard_size(self, time: float):
-        yielded_frame_count = int(np.floor(time * self.source_frequency + EPSILON))
-
-        total_frame_count_yielded_next_time = self.source_frequency * (time + self.shard_duration) + EPSILON
-        total_frame_count_yielded_next_time = int(np.floor(total_frame_count_yielded_next_time))
+        yielded_frame_count = get_min_frame_count(time, self.source_frequency)
+        total_frame_count_yielded_next_time = get_min_frame_count(time + self.shard_duration, self.source_frequency)
 
         if total_frame_count_yielded_next_time > self.source_frame_count:
             total_frame_count_yielded_next_time = self.source_frame_count
@@ -145,30 +125,17 @@ class ModalityBuilder(ABC):
 
         return shard_size
 
-    def get_next_shard_sizes(self, time: float) -> Dict[Type[Modality], int]:
-        shard_sizes = {type(modality): self.get_source_next_shard_size(time)
-                       for modality in self.modalities}
-        return shard_sizes
-    # endregion
-
-    @staticmethod
-    def extract_shard(shard_buffer, shard_sizes):
-        shard = {modality: shard_buffer[modality][:shard_sizes[modality]]
-                 for modality in shard_buffer}
-        return shard
-
-    @abstractmethod
-    def get_modality_frame_count(self, modality: Modality) -> int:
-        raise NotImplementedError
-
     @property
     @abstractmethod
     def source_frame_count(self):
         raise NotImplementedError
 
-    def get_shard_count(self) -> int:
-        total_duration = self.source_frame_count / self.source_frequency
-        shard_count = total_duration / self.shard_duration
-        shard_count = int(np.ceil(shard_count))
+    # endregion
 
-        return shard_count
+
+def get_max_frame_count(duration: float, frequency: Union[int, float]):
+    return int_ceil(duration * frequency, EPSILON)
+
+
+def get_min_frame_count(duration: float, frequency: Union[int, float]):
+    return int_floor(duration * frequency, EPSILON)

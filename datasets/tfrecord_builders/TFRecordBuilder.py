@@ -6,12 +6,11 @@ import sys
 import json
 from typing import Union, Tuple, List, Dict, Type, Optional
 
-from modalities import Modality, ModalityCollection, RawVideo
+from modalities import Modality, ModalityCollection
 from modalities.modality_utils import float_list_feature
 from datasets.modality_builders import ModalityBuilder, VideoBuilder, AudioBuilder, BuildersList
 from datasets.data_readers import VideoReader, AudioReader
 from datasets.labels_builders import LabelsBuilder
-from datasets.labels_builders.LabelsBuilder import LabelsBuilderMode
 
 
 class DataSource(object):
@@ -39,8 +38,8 @@ class TFRecordBuilder(object):
     def __init__(self,
                  dataset_path: str,
                  shard_duration: float,
-                 video_frequency: Union[int, float],
-                 audio_frequency: Union[int, float],
+                 video_frequency: Optional[Union[int, float]],
+                 audio_frequency: Optional[Union[int, float]],
                  modalities: ModalityCollection,
                  labels_frequency: Union[int, float] = None,
                  verbose=1):
@@ -60,7 +59,6 @@ class TFRecordBuilder(object):
 
     def build(self):
         data_sources = self.get_dataset_sources()
-        data_sources = data_sources[:5]
 
         subsets_dict: Dict[str, Union[List[str], Dict]] = {}
 

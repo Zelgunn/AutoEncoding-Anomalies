@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from typing import Dict, Any
+from typing import Dict
 
 from modalities import Modality
 

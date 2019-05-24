@@ -46,12 +46,6 @@ class AudioBuilder(ModalityBuilder):
         max_shard_size = self.get_source_max_shard_size()
         return [max_shard_size, self.reader.channels_count]
 
-    def get_modality_frame_count(self, modality: Modality) -> int:
-        if isinstance(modality, RawAudio):
-            return self.reader.frame_count
-        else:
-            raise NotImplementedError(modality.id())
-
     @property
     def source_frame_count(self):
         return self.reader.frame_count
