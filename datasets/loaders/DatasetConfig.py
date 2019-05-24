@@ -1,10 +1,13 @@
 import numpy as np
 import json
 import os
-from typing import Dict, Type, List, Any, Tuple
+from typing import Dict, Type, List, Any, Tuple, Union
 
 from datasets.tfrecord_builders import tfrecords_config_filename
-from modalities import Modality, ModalityCollection, ModalityShape, MelSpectrogram
+from modalities import Modality, ModalityCollection, ModalityShape
+from modalities import RawVideo, OpticalFlow, DoG
+from modalities import RawAudio, MelSpectrogram
+from utils.misc_utils import int_ceil
 
 
 def get_shard_count(sample_length: int,
@@ -28,6 +31,8 @@ class DatasetConfig(object):
         self.modalities = ModalityCollection.from_config(self.tfrecords_config["modalities"])
         self.subsets: Dict[str, List[str]] = self.tfrecords_config["subsets"]
         self.shard_duration = float(self.tfrecords_config["shard_duration"])
+        self.video_frequency = self.tfrecords_config["video_frequency"]
+        self.audio_frequency = self.tfrecords_config["audio_frequency"]
         self.max_labels_size: int = int(self.tfrecords_config["max_labels_size"])
 
         self.modalities_ranges = self.tfrecords_config["modalities_ranges"]
@@ -58,14 +63,23 @@ class DatasetConfig(object):
             subset_files[folder] = files
         return subset_files
 
-    def get_modality_max_shard_size(self,
-                                    modality: Modality
-                                    ) -> int:
-        # TODO : Get shard_size with another way (use config, mb)
-        if isinstance(modality, MelSpectrogram):
-            shard_size = modality.get_output_frame_count(61440, 48000)
+    def get_modality_shard_size(self,
+                                modality: Modality
+                                ) -> Union[float, int]:
+
+        if isinstance(modality, (RawVideo, DoG)):
+            shard_size = self.video_frequency * self.shard_duration
+        elif isinstance(modality, OpticalFlow):
+            shard_size = self.video_frequency * self.shard_duration - 1
+        elif isinstance(modality, RawAudio):
+            shard_size = self.audio_frequency * self.shard_duration
+        elif isinstance(modality, MelSpectrogram):
+            shard_size = modality.get_output_frame_count(self.shard_duration * self.video_frequency,
+                                                         self.video_frequency)
         else:
-            raise NotImplementedError
-        # frequency: float = modality.frequency
-        # shard_size = int(np.ceil(frequency * self.shard_duration))
+            raise NotImplementedError(modality.id())
+
         return shard_size
+
+    def get_modality_max_shard_size(self, modality: Modality) -> int:
+        return int_ceil(self.get_modality_shard_size(modality))

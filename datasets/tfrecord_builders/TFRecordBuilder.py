@@ -115,14 +115,9 @@ class TFRecordBuilder(object):
             json.dump(tfrecords_config, file)
 
     def build_one(self, data_source: Union[DataSource, List[DataSource]]):
-        # TODO : Move "make_builders" in Data Source
-        builders = TFRecordBuilder.make_builders(shard_duration=self.shard_duration,
-                                                 modalities=self.modalities,
-                                                 video_source=data_source.video_source,
-                                                 video_source_frequency=self.video_frequency,
-                                                 video_frame_size=data_source.video_frame_size,
-                                                 audio_source=data_source.audio_source,
-                                                 audio_source_frequency=self.audio_frequency)
+        builders = self.make_builders(video_source=data_source.video_source,
+                                      video_frame_size=data_source.video_frame_size,
+                                      audio_source=data_source.audio_source)
 
         modality_builder = BuildersList(builders=builders)
 
@@ -184,30 +179,26 @@ class TFRecordBuilder(object):
 
         return min_values, max_values, max_labels_size
 
-    @staticmethod
-    def make_builders(shard_duration: float,
-                      modalities: ModalityCollection,
+    def make_builders(self,
                       video_source: Union[VideoReader, str, cv2.VideoCapture, np.ndarray, List[str]],
-                      video_source_frequency: Union[int, float],
                       video_frame_size: Tuple[int, int],
                       audio_source: Union[AudioReader, str, np.ndarray],
-                      audio_source_frequency: Union[int, float]
                       ):
 
         builders: List[ModalityBuilder] = []
 
-        if VideoBuilder.supports_any(modalities):
-            video_builder = VideoBuilder(shard_duration=shard_duration,
-                                         source_frequency=video_source_frequency,
-                                         modalities=modalities,
+        if VideoBuilder.supports_any(self.modalities):
+            video_builder = VideoBuilder(shard_duration=self.shard_duration,
+                                         source_frequency=self.video_frequency,
+                                         modalities=self.modalities,
                                          video_reader=video_source,
                                          default_frame_size=video_frame_size)
             builders.append(video_builder)
 
-        if AudioBuilder.supports_any(modalities):
-            audio_builder = AudioBuilder(shard_duration=shard_duration,
-                                         source_frequency=audio_source_frequency,
-                                         modalities=modalities,
+        if AudioBuilder.supports_any(self.modalities):
+            audio_builder = AudioBuilder(shard_duration=self.shard_duration,
+                                         source_frequency=self.audio_frequency,
+                                         modalities=self.modalities,
                                          audio_reader=audio_source)
             builders.append(audio_builder)
 

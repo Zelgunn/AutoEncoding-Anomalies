@@ -8,7 +8,6 @@ from utils.misc_utils import int_ceil, int_floor
 EPSILON = 1e-5
 
 
-# TODO : Remove unused methods
 class ModalityBuilder(ABC):
     def __init__(self,
                  shard_duration: float,

@@ -2,9 +2,10 @@ import tensorflow as tf
 import numpy as np
 import librosa
 from tqdm import tqdm
-from typing import Dict, Any
+from typing import Dict, Any, Union
 
 from modalities import Modality
+from utils.misc_utils import int_floor
 
 
 class MelSpectrogram(Modality):
@@ -48,10 +49,13 @@ class MelSpectrogram(Modality):
     def rank(cls) -> int:
         return 2
 
-    def get_output_frame_count(self, input_frame_count: int, frame_rate: int) -> int:
-        window_width = int(self.window_width * frame_rate)
-        window_step = int(self.window_step * frame_rate)
-        return 1 + int((input_frame_count - window_width) / window_step)
+    def get_output_frame_count(self, input_frame_count: Union[int, float], frame_rate: Union[int, float]) -> int:
+        if not isinstance(input_frame_count, int):
+            input_frame_count = int_floor(input_frame_count)
+
+        window_width = int_floor(self.window_width * frame_rate)
+        window_step = int_floor(self.window_step * frame_rate)
+        return 1 + int_floor((input_frame_count - window_width) / window_step)
 
     def wave_to_mel_spectrogram(self, frames: np.ndarray, frame_rate: int):
         window_width = int(self.window_width * frame_rate)

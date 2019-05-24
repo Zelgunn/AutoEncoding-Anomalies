@@ -107,9 +107,7 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     # region Testing
     def visualize_vae_interpolation(self, subset: SubsetLoader):
         interpolation_count = 16
-        inputs, outputs = subset.get_batch(batch_size=1, output_labels=False)
-        # TODO : Change keys to RawVideo
-        input_video, output_video = inputs[0], outputs[0]
+        input_video, output_video = subset.get_batch(batch_size=1, output_labels=False)
 
         mean, log_var = self.encoder(input_video)
         stddev = np.sqrt(np.exp(log_var))

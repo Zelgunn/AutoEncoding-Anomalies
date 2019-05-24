@@ -4,7 +4,10 @@ import os
 from typing import Dict, Tuple, Optional, Type
 
 from datasets.loaders import DatasetConfig
-from modalities import Modality, ModalityCollection, RawVideo, MelSpectrogram
+from modalities import Modality, ModalityCollection
+from modalities import RawVideo
+from modalities import MelSpectrogram
+from utils.misc_utils import int_ceil, int_floor
 
 
 def get_shard_count(sample_length, shard_size):
@@ -17,26 +20,28 @@ class SubsetLoader(object):
                  config: DatasetConfig,
                  subset_name: str):
         self.config = config
+        self.check_unsupported_shard_sizes()
+
         self.subset_name = subset_name
         self.subset_files = {folder: sorted(files)
                              for folder, files in config.list_subset_tfrecords(subset_name).items()}
         self.subset_folders = list(self.subset_files.keys())
 
-        for modality in self.config.modalities:
-            # TODO : Get shard_size with another way (use config, mb)
-            if isinstance(modality, MelSpectrogram):
-                shard_size = modality.get_output_frame_count(61440, 48000)
-            else:
-                raise NotImplementedError
-            # shard_size = modality.frequency * self.config.shard_duration
-            max_shard_size = int(np.ceil(shard_size))
-            initial_shard_size = int(np.floor(shard_size))
-            if max_shard_size != initial_shard_size:
-                raise NotImplementedError("max_shard_size != initial_shard_size : "
-                                          "SubsetLoader doesn't support this case yet.")
-
         self._train_tf_dataset: Optional[tf.data.Dataset] = None
         self._test_tf_dataset: Optional[tf.data.Dataset] = None
+
+    def check_unsupported_shard_sizes(self):
+        for modality in self.config.modalities:
+            if isinstance(modality, MelSpectrogram):
+                # For MelSpectrogram, max_shard_size is always equal to initial_shard_size
+                continue
+
+            shard_size = self.config.get_modality_shard_size(modality)
+            max_shard_size = int_ceil(shard_size)
+            initial_shard_size = int_floor(shard_size)
+            if max_shard_size != initial_shard_size:
+                raise ValueError("max_shard_size != initial_shard_size : "
+                                 "SubsetLoader doesn't support this case yet.")
 
     # region Loading methods (parsing, decoding, fusing, normalization, splitting, ...)
     def parse_shard(self, serialized_example, output_labels):
@@ -163,7 +168,6 @@ class SubsetLoader(object):
 
         return joint_shards
 
-    # TODO : Normalize target range according to model config (model output)
     def normalize_batch(self, modalities: Dict[str, tf.Tensor]):
         for modality_id in modalities:
             if modality_id == "labels":

@@ -130,8 +130,4 @@ if __name__ == "__main__":
 
 # TODO : Type hints EVERYWHERE !
 
-# TODO : Residual Scaling
-
 # TODO : config - for callbacks (batch_size, samples count, ...)
-
-# TODO : Make patches from images
