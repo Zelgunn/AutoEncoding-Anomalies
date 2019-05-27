@@ -4,16 +4,16 @@ from tensorflow.python.keras.layers import Input, LeakyReLU, Layer, Concatenate,
 from tensorflow.python.keras.layers import Conv3D, AveragePooling3D, Conv3DTranspose
 from tensorflow.python.keras.layers import Conv2D, AveragePooling2D, Conv2DTranspose, Reshape
 from tensorflow.python.keras.optimizers import Adam
-from tensorflow.python.keras.callbacks import TensorBoard, ModelCheckpoint, TerminateOnNaN
+from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 from time import time
-from typing import Tuple
+from typing import Tuple, Type, Optional
 
-from callbacks import ImageCallback, AUCCallback, AudioCallback
+from callbacks import ImageCallback, AUCCallback
 from datasets.loaders import DatasetConfig, DatasetLoader, SubsetLoader
-from modalities import ModalityShape, RawVideo
+from modalities import ModalityShape, RawVideo, Modality
 from layers.utility_layers import RawPredictionsLayer
 
 
@@ -58,15 +58,16 @@ def make_raw_predictions_model(autoencoder: Model,
     return predictions_model
 
 
-def predict_anomalies_on_video(autoencoder: Model,
-                               subset: SubsetLoader,
-                               video_index: int,
-                               stride: int,
-                               normalize_predictions=False,
-                               max_steps_count=100000):
+def predict_anomalies_on_sample(autoencoder: Model,
+                                subset: SubsetLoader,
+                                modality: Type[Modality],
+                                sample_index: int,
+                                stride: int,
+                                normalize_predictions=False,
+                                max_steps_count=100000):
     raw_predictions_model = make_raw_predictions_model(autoencoder, include_labels_io=True)
-    iterator = subset.get_source_browser(video_index, RawVideo, stride)
-    predictions, labels = raw_predictions_model.predict(iterator, steps=max_steps_count)
+    dataset = subset.get_source_browser(sample_index, modality, stride)
+    predictions, labels = raw_predictions_model.predict(dataset, steps=max_steps_count)
     labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
     labels = np.any(labels, axis=-1)
 
@@ -78,34 +79,38 @@ def predict_anomalies_on_video(autoencoder: Model,
 
 def predict_anomalies_on_subset(autoencoder: Model,
                                 subset: SubsetLoader,
+                                modality: Type[Modality],
                                 stride: int,
-                                max_videos=10):
+                                max_samples=10):
     predictions, labels = [], []
 
-    video_count = min(max_videos, len(subset.subset_folders)) if max_videos > 0 else len(subset.subset_folders)
-    print("Making predictions for {} videos".format(video_count))
+    sample_count = min(max_samples, len(subset.subset_folders)) if max_samples > 0 else len(subset.subset_folders)
+    print("Making predictions for {} videos".format(sample_count))
 
-    for video_index in range(video_count):
-        video_name = subset.subset_folders[video_index]
-        print("Predicting on video n{}/{} ({})".format(video_index + 1, video_count, video_name))
-        video_results = predict_anomalies_on_video(autoencoder, subset, video_index, stride,
-                                                   normalize_predictions=False)
-        video_predictions, video_labels = video_results
-        predictions.append(video_predictions)
-        labels.append(video_labels)
+    for sample_index in range(sample_count):
+        sample_name = subset.subset_folders[sample_index]
+        print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name))
+        sample_results = predict_anomalies_on_sample(autoencoder, subset, modality,
+                                                     sample_index, stride,
+                                                     normalize_predictions=False)
+        sample_predictions, sample_labels = sample_results
+        predictions.append(sample_predictions)
+        labels.append(sample_labels)
 
     return predictions, labels
 
 
 def predict_anomalies(autoencoder: Model,
                       dataset: DatasetLoader,
+                      modality: Type[Modality],
                       stride=1,
                       normalize_predictions=True,
-                      max_videos=10):
+                      max_samples=10):
     predictions, labels = predict_anomalies_on_subset(autoencoder,
                                                       dataset.test_subset,
+                                                      modality,
                                                       stride,
-                                                      max_videos)
+                                                      max_samples)
 
     lengths = np.empty(shape=[len(labels)], dtype=np.int32)
     for i in range(len(labels)):
@@ -141,6 +146,9 @@ def evaluate_predictions(predictions: np.ndarray,
     roc = tf.metrics.AUC(curve="ROC")
     pr = tf.metrics.AUC(curve="PR")
 
+    if predictions.ndim == 2 and labels.ndim == 1:
+        predictions = predictions.mean(axis=-1)
+
     roc.update_state(labels, predictions)
     pr.update_state(labels, predictions)
 
@@ -158,16 +166,19 @@ def evaluate_predictions(predictions: np.ndarray,
 
 def predict_and_evaluate(autoencoder: Model,
                          dataset: DatasetLoader,
+                         modality: Type[Modality],
                          log_dir: str,
                          stride=1,
                          tensorboard: TensorBoard = None,
-                         epochs_seen=0
+                         epochs_seen=0,
+                         max_samples=-1,
                          ):
     predictions, labels, lengths = predict_anomalies(autoencoder=autoencoder,
                                                      dataset=dataset,
+                                                     modality=modality,
                                                      stride=stride,
                                                      normalize_predictions=True,
-                                                     max_videos=-1)
+                                                     max_samples=max_samples)
     graph_filepath = os.path.join(log_dir, "Anomaly_score.png")
     roc, pr = evaluate_predictions(predictions=predictions,
                                    labels=labels,
@@ -528,6 +539,7 @@ def train_video_autoencoder():
 
     predict_and_evaluate(autoencoder=video_autoencoder,
                          dataset=dataset_loader,
+                         modality=RawVideo,
                          log_dir=log_dir,
                          stride=2)
 
@@ -542,7 +554,7 @@ def train_audio_autoencoder():
                                                n_mel_filters=n_mel_filters)
 
     # region dataset
-    dataset_config = DatasetConfig("C:/datasets/emoly",
+    dataset_config = DatasetConfig("../datasets/emoly",
                                    modalities_io_shapes=
                                    {
                                        MelSpectrogram: ModalityShape((sequence_length, n_mel_filters),
@@ -559,7 +571,14 @@ def train_audio_autoencoder():
 
     # endregion
 
-    # test_subset = dataset_loader.test_subset
+    test_subset = dataset_loader.test_subset
+    # for po in range(10):
+    #     print(po)
+    #     pwet = test_subset.get_source_browser(0, MelSpectrogram, 1)
+    #     for b in pwet:
+    #         pass
+    # exit()
+
     # dataset_loader.test_subset.subset_folders = [folder for folder in dataset_loader.test_subset.subset_folders
     #                                              if "induced" in folder]
     # endregion
@@ -586,17 +605,20 @@ def train_audio_autoencoder():
         audio_autoencoder.summary(print_fn=lambda summary: file.write(summary + '\n'))
     # endregion
 
-    audio_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights._.hdf5")
+    audio_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_003.hdf5")
 
-    audio_autoencoder.fit(dataset, epochs=50, steps_per_epoch=10000, callbacks=callbacks)
+    # audio_autoencoder.fit(dataset, epochs=50, steps_per_epoch=10000, callbacks=callbacks)
+    #
+    # audio_autoencoder.save("../logs/tests/kitchen_sink/mfcc_only/weights_{}.hdf5".format(int(time())),
+    #                        include_optimizer=False)
 
-    audio_autoencoder.save("../logs/tests/kitchen_sink/mfcc_only/weights_{}.hdf5".format(int(time())),
-                           include_optimizer=False)
-
-    # predict_and_evaluate(autoencoder=audio_autoencoder,
-    #                      dataset=dataset_loader,
-    #                      log_dir=log_dir,
-    #                      stride=1)
+    predict_and_evaluate(autoencoder=audio_autoencoder,
+                         dataset=dataset_loader,
+                         modality=MelSpectrogram,
+                         log_dir=log_dir,
+                         stride=1,
+                         max_samples=-1
+                         )
 
 
 def main():

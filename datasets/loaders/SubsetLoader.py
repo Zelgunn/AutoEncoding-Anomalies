@@ -15,6 +15,7 @@ def get_shard_count(sample_length, shard_size):
     return max(1, shard_count)
 
 
+# TODO : Reorder functions
 class SubsetLoader(object):
     def __init__(self,
                  config: DatasetConfig,
@@ -151,14 +152,8 @@ class SubsetLoader(object):
                 modality_shards_shape = tf.shape(modality_shards, name="modality_shard_shape")
                 modality_shards_shape.set_shape(modality.rank() + 1)
                 modality_shards_shape = tf.unstack(modality_shards_shape)
-                shard_count, modality_size, *modality_shape = modality_shards_shape
-                # modality_shards_shape = tf.shape(modality_shards, name="modality_shape")
-                # shard_count = modality_shards_shape[0]
-                # modality_size = modality_shards_shape[1]
-                # modality_shape = modality_shards_shape[2:]
-                #
-                # modality_shards_shape = [shard_count * modality_size] + modality_shape
-                modality_shards_shape = [shard_count * modality_size, *modality_shape]
+                shards_per_sample, modality_size, *modality_shape = modality_shards_shape
+                modality_shards_shape = [shards_per_sample * modality_size, *modality_shape]
                 modality_shards = tf.reshape(modality_shards, modality_shards_shape, "concatenate_shards")
 
                 modality_shards = modality_shards[modality_offset:modality_offset + modality_sample_size]
@@ -172,10 +167,11 @@ class SubsetLoader(object):
         if "labels" in shards:
             labels: tf.Tensor = shards["labels"]
 
-            shard_labels_offset = tf.range(self.shards_per_sample, dtype=tf.float32, name="shard_labels_offset")
+            shards_per_sample = tf.cast(shards_per_sample, tf.float32)
+            shard_labels_offset = tf.range(shards_per_sample, dtype=tf.float32, name="shard_labels_offset")
             shard_labels_offset = tf.expand_dims(shard_labels_offset, axis=-1)
 
-            labels = (labels + shard_labels_offset) / self.shards_per_sample
+            labels = (labels + shard_labels_offset) / shards_per_sample
             labels = tf.clip_by_value(labels, labels_offset, labels_offset + labels_range)
             labels = (labels - labels_offset) / labels_range
 
@@ -261,8 +257,8 @@ class SubsetLoader(object):
                     raise ValueError("Modalities don't have the same number of shards in "
                                      "{}.".format(folder))
 
-            offset = np.random.randint(shards_count - self.shards_per_sample + 1)
-            for shard_index in range(offset, offset + self.shards_per_sample):
+            offset = np.random.randint(shards_count - self.sampler_shards_count + 1)
+            for shard_index in range(offset, offset + self.sampler_shards_count):
                 for file_index in range(len(files)):
                     yield files[file_index][shard_index]
 
@@ -284,7 +280,7 @@ class SubsetLoader(object):
 
         dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, output_labels))
 
-        dataset = dataset.batch(self.shards_per_sample)
+        dataset = dataset.batch(self.sampler_shards_count)
         dataset = dataset.map(self.join_shards_randomly)
         # dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.normalize_batch)
@@ -322,14 +318,29 @@ class SubsetLoader(object):
 
         return (inputs, outputs, labels) if output_labels else (inputs, outputs)
 
-    # region Browse dataset
     def make_source_filepath_generator(self, source_index: int):
+        modality_ids = [modality.id() for modality in self.modalities] + ["labels"]
+
         def generator():
             source_folder = self.subset_folders[source_index]
-            shards_filepaths = [os.path.join(source_folder, shard) for shard in self.subset_files[source_folder]]
-            for i in range(len(shards_filepaths) - 1):
-                for filepath in shards_filepaths[i:i + 2]:
-                    yield filepath
+            files = []
+            shards_count = None
+            for modality_id in modality_ids:
+                modality_folder = os.path.join(source_folder, modality_id)
+                modality_files = [os.path.join(modality_folder, file)
+                                  for file in os.listdir(modality_folder) if file.endswith(".tfrecord")]
+                files.append(modality_files)
+
+                if shards_count is None:
+                    shards_count = len(modality_files)
+                elif shards_count != len(modality_files):
+                    raise ValueError("Modalities don't have the same number of shards in "
+                                     "{}.".format(modality_folder))
+
+            for shard_index in range(shards_count - self.browser_shards_count + 1):
+                for i in range(self.browser_shards_count):
+                    for modality_index in range(len(files)):
+                        yield files[modality_index][shard_index + i]
 
         return generator
 
@@ -339,48 +350,60 @@ class SubsetLoader(object):
                             reference_modality: Type[Modality],
                             stride: int
                             ):
-        reference_modality_id = reference_modality.id()
-        size = shard_sizes[reference_modality_id][0]
-        stride = tf.constant(stride, tf.int32, name="stride")
-        result_count = size // stride
+        with tf.name_scope("join_shards_ordered"):
+            reference_modality_id = reference_modality.id()
+            size = shard_sizes[reference_modality_id][0]
+            stride = tf.constant(stride, tf.int32, name="stride")
+            result_count = size // stride
 
-        def loop_body(i, step_shards_arrays: Dict[str, tf.TensorArray]):
-            step_offset = tf.cast(i * stride, tf.float32) / tf.cast(size - 1, tf.float32)
-            step_joint_shards = self.join_shards(shards, shard_sizes, step_offset, sample_length="input_length")
-            for modality_id in step_shards_arrays:
-                modality = step_joint_shards[modality_id]
-                step_shards_arrays[modality_id] = step_shards_arrays[modality_id].write(i, modality)
-            i += 1
-            return i, step_shards_arrays
+            def loop_body(i, step_shards_arrays: Dict[str, tf.TensorArray]):
+                step_offset = tf.cast(i * stride, tf.float32) / tf.cast(size - 1, tf.float32)
+                step_joint_shards = self.join_shards(shards, shard_sizes, step_offset, sample_length="input_length")
+                for modality_id in step_shards_arrays:
+                    modality = step_joint_shards[modality_id]
+                    step_shards_arrays[modality_id] = step_shards_arrays[modality_id].write(i, modality)
+                i += 1
+                return i, step_shards_arrays
 
-        i_initializer = tf.constant(0, tf.int32)
-        shards_arrays = {modality_id: tf.TensorArray(dtype=shards[modality_id].dtype, size=result_count)
-                         for modality_id in shards}
-        results = tf.while_loop(cond=lambda i, _: i < result_count,
-                                body=loop_body,
-                                loop_vars=[i_initializer, shards_arrays],
-                                parallel_iterations=1)
-        joint_shard: Dict[str, tf.TensorArray] = results[1]
-        joint_shard = {modality_id: joint_shard[modality_id].stack() for modality_id in joint_shard}
-        return joint_shard
+            i_initializer = tf.constant(0, tf.int32)
+            shards_arrays = {modality_id: tf.TensorArray(dtype=shards[modality_id].dtype, size=result_count)
+                             for modality_id in shards}
+            results = tf.while_loop(cond=lambda i, _: i < result_count,
+                                    body=loop_body,
+                                    loop_vars=[i_initializer, shards_arrays],
+                                    parallel_iterations=1)
+            joint_shard: Dict[str, tf.TensorArray] = results[1]
+            joint_shard = {modality_id: joint_shard[modality_id].stack() for modality_id in joint_shard}
+            return joint_shard
 
     def get_source_browser(self,
                            source_index: int,
                            reference_modality: Type[Modality],
                            stride: int) -> tf.data.Dataset:
-
         dataset = tf.data.Dataset.from_generator(self.make_source_filepath_generator(source_index),
                                                  output_types=tf.string,
                                                  output_shapes=())
 
         dataset = tf.data.TFRecordDataset(dataset)
+        dataset = dataset.batch(self.records_per_sample(output_labels=True)).prefetch(1)
         dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels=True))
-        dataset = dataset.batch(self.shards_per_sample)
+
+        dataset = dataset.batch(self.browser_shards_count)
         dataset = dataset.map(lambda shards, shard_sizes:
                               self.join_shards_ordered(shards, shard_sizes, reference_modality, stride))
+
         dataset = dataset.apply(tf.data.experimental.unbatch())
         dataset = dataset.map(self.normalize_batch)
         dataset = dataset.batch(1)
+
+        dataset = dataset.map(lambda x:
+                              (
+                                  (
+                                      x[MelSpectrogram.id()],
+                                      x["labels"]
+                                  ),
+                              )
+                              )
 
         return dataset
 
@@ -400,8 +423,12 @@ class SubsetLoader(object):
         return self._test_tf_dataset
 
     @property
-    def shards_per_sample(self) -> int:
-        return self.config.shard_count_per_sample
+    def sampler_shards_count(self) -> int:
+        return self.config.max_shard_count_per_sample
+
+    @property
+    def browser_shards_count(self) -> int:
+        return self.config.min_shard_count_per_sample
 
     @property
     def modalities(self) -> ModalityCollection:
