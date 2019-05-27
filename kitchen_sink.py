@@ -2,15 +2,16 @@ import tensorflow as tf
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input, LeakyReLU, Layer, Concatenate, Activation, Lambda
 from tensorflow.python.keras.layers import Conv3D, AveragePooling3D, Conv3DTranspose
+from tensorflow.python.keras.layers import Conv2D, AveragePooling2D, Conv2DTranspose, Reshape
 from tensorflow.python.keras.optimizers import Adam
-from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN
+from tensorflow.python.keras.callbacks import TensorBoard, ModelCheckpoint, TerminateOnNaN
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 from time import time
 from typing import Tuple
 
-from callbacks import ImageCallback, AUCCallback
+from callbacks import ImageCallback, AUCCallback, AudioCallback
 from datasets.loaders import DatasetConfig, DatasetLoader, SubsetLoader
 from modalities import ModalityShape, RawVideo
 from layers.utility_layers import RawPredictionsLayer
@@ -181,6 +182,7 @@ def predict_and_evaluate(autoencoder: Model,
 # endregion
 
 # region Layers
+# region Video
 class VideoEncoderLayer(Layer):
     def __init__(self, filters, kernel_size, strides, **kwargs):
         self.conv = Conv3D(filters=filters,
@@ -242,8 +244,72 @@ class VideoDecoderLayer(Layer):
 
 # endregion
 
-# region Encoder/Decoder
+# region Audio
+class AudioEncoderLayer(Layer):
+    def __init__(self, filters, kernel_size, strides, padding="same", **kwargs):
+        self.conv = Conv2D(filters=filters,
+                           padding=padding,
+                           # basic_block_count=1,
+                           kernel_size=kernel_size,
+                           kernel_initializer="he_normal",
+                           activation=LeakyReLU(alpha=0.3),
+                           )
+        if strides == 1:
+            self.down_sampling = None
+        else:
+            self.down_sampling = AveragePooling2D(pool_size=strides)
 
+        super(AudioEncoderLayer, self).__init__(**kwargs)
+
+    def call(self, inputs, **kwargs):
+        layer = self.conv(inputs)
+        if self.down_sampling is not None:
+            layer = self.down_sampling(layer)
+        return layer
+
+    def compute_output_shape(self, input_shape):
+        conv_output_shape = self.conv.compute_output_shape(input_shape)
+
+        if self.down_sampling is not None:
+            output_shape = self.down_sampling.compute_output_shape(conv_output_shape)
+        else:
+            output_shape = conv_output_shape
+
+        return output_shape
+
+
+class AudioDecoderLayer(Layer):
+    def __init__(self, filters, kernel_size, strides, padding="same", activation=None, **kwargs):
+        super(AudioDecoderLayer, self).__init__(**kwargs)
+
+        if activation is None:
+            activation = LeakyReLU(alpha=0.3)
+        self.deconv = Conv2DTranspose(filters=filters,
+                                      padding=padding,
+                                      # basic_block_count=1,
+                                      kernel_size=kernel_size,
+                                      kernel_initializer="he_normal",
+                                      strides=strides,
+                                      activation=activation,
+                                      )
+
+    def build(self, input_shape):
+        self.deconv.build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        layer = self.deconv(inputs)
+        return layer
+
+    def compute_output_shape(self, input_shape):
+        return self.deconv.compute_output_shape(input_shape)
+
+
+# endregion
+
+# endregion
+
+# region Encoder/Decoder
+# region Video
 def make_video_encoder(input_shape: Tuple[int, ...]):
     input_layer = Input(input_shape)
     layer = input_layer
@@ -289,21 +355,23 @@ def make_video_decoder(input_shape: Tuple[int, ...], name, channels_count):
     return decoder
 
 
-def make_video_encoder_small(input_shape: Tuple[int, ...]):
+# endregion
+
+# region Audio
+
+def make_audio_encoder(input_shape: Tuple[int, ...]):
     input_layer = Input(input_shape)
     layer = input_layer
 
-    layer = VideoEncoderLayer(filters=4, kernel_size=3, strides=2)(layer)
-    layer = VideoEncoderLayer(filters=4, kernel_size=3, strides=(1, 2, 2))(layer)
-    layer = VideoEncoderLayer(filters=4, kernel_size=3, strides=1)(layer)
+    layer = Reshape(target_shape=(*input_shape, 1))(layer)
+    layer = AudioEncoderLayer(filters=32, kernel_size=3, strides=(1, 2))(layer)
+    layer = AudioEncoderLayer(filters=32, kernel_size=3, strides=2)(layer)
 
-    layer = VideoEncoderLayer(filters=8, kernel_size=3, strides=2)(layer)
-    layer = VideoEncoderLayer(filters=8, kernel_size=3, strides=1)(layer)
-    layer = VideoEncoderLayer(filters=8, kernel_size=3, strides=(1, 2, 2))(layer)
+    layer = AudioEncoderLayer(filters=64, kernel_size=3, strides=2)(layer)
+    layer = AudioEncoderLayer(filters=64, kernel_size=3, strides=2)(layer)
 
-    layer = VideoEncoderLayer(filters=16, kernel_size=3, strides=1)(layer)
-    layer = VideoEncoderLayer(filters=16, kernel_size=3, strides=1)(layer)
-    layer = VideoEncoderLayer(filters=16, kernel_size=3, strides=1)(layer)
+    layer = AudioEncoderLayer(filters=128, kernel_size=3, strides=2)(layer)
+    layer = AudioEncoderLayer(filters=128, kernel_size=3, strides=2)(layer)
 
     output_layer = layer
 
@@ -311,28 +379,28 @@ def make_video_encoder_small(input_shape: Tuple[int, ...]):
     return encoder
 
 
-def make_video_decoder_small(input_shape: Tuple[int, ...], name, channels_count):
+def make_audio_decoder(input_shape: Tuple[int, ...], name, sequence_length, n_mel_filters):
     input_layer = Input(input_shape)
     layer = input_layer
 
-    layer = VideoDecoderLayer(filters=16, kernel_size=3, strides=1)(layer)
-    layer = VideoDecoderLayer(filters=16, kernel_size=3, strides=1)(layer)
-    layer = VideoDecoderLayer(filters=16, kernel_size=3, strides=1)(layer)
+    layer = AudioDecoderLayer(filters=128, kernel_size=3, strides=2, padding="valid")(layer)
+    layer = AudioDecoderLayer(filters=128, kernel_size=3, strides=2)(layer)
 
-    layer = VideoDecoderLayer(filters=8, kernel_size=3, strides=2)(layer)
-    layer = VideoDecoderLayer(filters=8, kernel_size=3, strides=(1, 2, 2))(layer)
-    layer = VideoDecoderLayer(filters=8, kernel_size=3, strides=1)(layer)
+    layer = AudioDecoderLayer(filters=64, kernel_size=3, strides=(1, 2))(layer)
+    layer = AudioDecoderLayer(filters=64, kernel_size=3, strides=2, padding="valid")(layer)
 
-    layer = VideoDecoderLayer(filters=4, kernel_size=3, strides=2)(layer)
-    layer = VideoDecoderLayer(filters=4, kernel_size=3, strides=(1, 2, 2))(layer)
-    layer = VideoDecoderLayer(filters=4, kernel_size=3, strides=1)(layer)
-    layer = Conv3D(filters=channels_count, kernel_size=1, padding="same")(layer)
+    layer = AudioDecoderLayer(filters=32, kernel_size=3, strides=2)(layer)
+    layer = AudioDecoderLayer(filters=32, kernel_size=3, strides=2)(layer)
+    layer = Conv2D(filters=1, kernel_size=1, padding="same")(layer)
+    layer = Reshape(target_shape=(sequence_length, n_mel_filters))(layer)
 
     output_layer = layer
 
     decoder = Model(inputs=input_layer, outputs=output_layer, name=name)
     return decoder
 
+
+# endregion
 
 # endregion
 
@@ -347,7 +415,7 @@ def get_autoencoder_loss(input_sequence_length):
     temporal_loss_weights = tf.constant(loss_weights, name="temporal_loss_weights")
 
     def autoencoder_loss(y_true, y_pred):
-        reconstruction_loss = tf.reduce_mean(tf.square(y_true - y_pred), axis=(2, 3, 4))
+        reconstruction_loss = tf.reduce_mean(tf.square(y_true - y_pred), axis=2)
         reconstruction_loss *= temporal_loss_weights
         reconstruction_loss = tf.reduce_mean(reconstruction_loss)
         return reconstruction_loss
@@ -358,38 +426,59 @@ def get_autoencoder_loss(input_sequence_length):
 def make_video_autoencoder(channels_count=3):
     input_shape = (16, 128, 128, channels_count)
 
-    encoder = make_video_encoder_small(input_shape)
+    encoder = make_video_encoder(input_shape)
     encoder_output_shape = encoder.compute_output_shape((None, *input_shape))
     encoder_output_shape = encoder_output_shape[1:]
 
-    reconstructor = make_video_decoder(encoder_output_shape, "reconstructor", channels_count)
+    reconstructor = make_video_decoder(encoder_output_shape, "video_reconstructor", channels_count)
     reconstructed = reconstructor(encoder(encoder.input))
 
-    predictor = make_video_decoder_small(encoder_output_shape, "predictor", channels_count)
+    predictor = make_video_decoder(encoder_output_shape, "video_predictor", channels_count)
     predicted = predictor(encoder(encoder.input))
 
     decoded = Concatenate(axis=1)([reconstructed, predicted])
     decoded = Activation("sigmoid")(decoded)
 
-    autoencoder = Model(inputs=encoder.input, outputs=decoded, name="autoencoder")
-    autoencoder.compile(Adam(lr=8e-6, decay=5e-5), loss=get_autoencoder_loss(input_shape[0]))
+    autoencoder = Model(inputs=encoder.input, outputs=decoded, name="video_autoencoder")
+    autoencoder.compile(Adam(lr=1e-4, decay=1e-5), loss=get_autoencoder_loss(input_shape[0]))
+
+    return autoencoder
+
+
+def make_audio_autoencoder(sequence_length, n_mel_filters):
+    input_shape = (sequence_length, n_mel_filters)
+
+    encoder = make_audio_encoder(input_shape)
+    encoder_output_shape = encoder.compute_output_shape((None, *input_shape))
+    encoder_output_shape = encoder_output_shape[1:]
+
+    reconstructor = make_audio_decoder(encoder_output_shape, "audio_reconstructor", sequence_length, n_mel_filters)
+    reconstructed = reconstructor(encoder(encoder.input))
+
+    predictor = make_audio_decoder(encoder_output_shape, "audio_predictor", sequence_length, n_mel_filters)
+    predicted = predictor(encoder(encoder.input))
+
+    decoded = Concatenate(axis=1)([reconstructed, predicted])
+    decoded = Activation("sigmoid")(decoded)
+
+    autoencoder = Model(inputs=encoder.input, outputs=decoded, name="audio_autoencoder")
+    autoencoder.compile(Adam(lr=1e-4, decay=1e-5), loss=get_autoencoder_loss(input_shape[0]))
 
     return autoencoder
 
 
 # endregion
 
-def main():
-    from modalities import MelSpectrogram
-    channels_count = 1
+def train_video_autoencoder():
+    channels_count = 3
     video_autoencoder = make_video_autoencoder(channels_count=channels_count)
 
     # region dataset
-    dataset_config = DatasetConfig("../datasets/emoly",
+    dataset_config = DatasetConfig("C:/datasets/emoly",
                                    modalities_io_shapes=
                                    {
-                                       MelSpectrogram: ModalityShape((52, 100),
-                                                                     (104, 100))
+                                       RawVideo: ModalityShape((16, 128, 128, channels_count),
+                                                               (32, 128, 128, channels_count))
                                    },
                                    output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
@@ -398,7 +487,7 @@ def main():
     dataset = train_subset.tf_dataset
 
     batch_size = 4
-    dataset = dataset.batch(batch_size).prefetch(tf.data.experimental.AUTOTUNE)
+    dataset = dataset.batch(batch_size).prefetch(1)
     # endregion
 
     test_subset = dataset_loader.test_subset
@@ -435,12 +524,83 @@ def main():
 
     # video_autoencoder.load_weights("../logs/tests/kitchen_sink/weights.012.hdf5")
 
-    video_autoencoder.fit(dataset, epochs=500, steps_per_epoch=2, callbacks=callbacks)
+    video_autoencoder.fit(dataset, epochs=500, steps_per_epoch=1000, callbacks=callbacks)
 
     predict_and_evaluate(autoencoder=video_autoencoder,
                          dataset=dataset_loader,
                          log_dir=log_dir,
                          stride=2)
+
+
+def train_audio_autoencoder():
+    from modalities import MelSpectrogram
+
+    n_mel_filters = 100
+    sequence_length = 52
+
+    audio_autoencoder = make_audio_autoencoder(sequence_length=sequence_length,
+                                               n_mel_filters=n_mel_filters)
+
+    # region dataset
+    dataset_config = DatasetConfig("C:/datasets/emoly",
+                                   modalities_io_shapes=
+                                   {
+                                       MelSpectrogram: ModalityShape((sequence_length, n_mel_filters),
+                                                                     (sequence_length * 2, n_mel_filters))
+                                   },
+                                   output_range=(0.0, 1.0))
+    dataset_loader = DatasetLoader(config=dataset_config)
+    # region train
+    train_subset = dataset_loader.train_subset
+    dataset = train_subset.tf_dataset
+
+    batch_size = 4
+    dataset = dataset.batch(batch_size).prefetch(-1)
+
+    # endregion
+
+    # test_subset = dataset_loader.test_subset
+    # dataset_loader.test_subset.subset_folders = [folder for folder in dataset_loader.test_subset.subset_folders
+    #                                              if "induced" in folder]
+    # endregion
+
+    # region callbacks
+    log_dir = "../logs/tests/kitchen_sink/mfcc_only"
+    log_dir = os.path.join(log_dir, "log_{}".format(int(time())))
+    os.makedirs(log_dir)
+
+    tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
+
+    train_image_callbacks = ImageCallback.make_image_autoencoder_callbacks(autoencoder=audio_autoencoder,
+                                                                           subset=train_subset,
+                                                                           name="train",
+                                                                           is_train_callback=True,
+                                                                           tensorboard=tensorboard,
+                                                                           epoch_freq=1)
+
+    # model_checkpoint = ModelCheckpoint("../logs/tests/kitchen_sink/mfcc_only/weights.{epoch:03d}.hdf5", )
+    callbacks = [tensorboard, *train_image_callbacks, TerminateOnNaN()]
+
+    summary_filename = os.path.join(log_dir, "{}_summary.txt".format(audio_autoencoder.name))
+    with open(summary_filename, "w") as file:
+        audio_autoencoder.summary(print_fn=lambda summary: file.write(summary + '\n'))
+    # endregion
+
+    audio_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights._.hdf5")
+
+    audio_autoencoder.fit(dataset, epochs=50, steps_per_epoch=10000, callbacks=callbacks)
+
+    audio_autoencoder.save("../logs/tests/kitchen_sink/mfcc_only/weights_{}.hdf5".format(int(time())),
+                           include_optimizer=False)
+
+    # predict_and_evaluate(autoencoder=audio_autoencoder,
+    #                      dataset=dataset_loader,
+    #                      log_dir=log_dir,
+    #                      stride=1)
+
+
+def main():
+    train_audio_autoencoder()
 
 
 if __name__ == "__main__":

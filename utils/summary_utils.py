@@ -121,8 +121,7 @@ def image_summary(name: str,
                   data: tf.Tensor,
                   fps=25,
                   step: int = None,
-                  max_outputs=3,
-                  description=None):
+                  max_outputs=3):
     """Write an image or a gif summary.
 
     Args:
@@ -140,16 +139,17 @@ def image_summary(name: str,
             many gifs will be emitted at each step. When more than
             `max_outputs` many gifs are provided, the first `max_outputs` many
             images will be used and the rest silently discarded.
-        description: Optional long-form description for this summary, as a
-            constant `str`. Markdown is supported. Defaults to empty.
-
     Returns:
         A scalar `Tensor` of type `string`. The serialized `Summary` protocol buffer.
     """
     rank = data.shape.ndims
-    assert rank in [4, 5]
+    assert rank in [3, 4, 5]
+
+    if rank == 3:
+        data = tf.expand_dims(data, axis=-1)
+        rank = 4
 
     if rank == 4:
-        return tf.summary.image(name, data, step, max_outputs, description)
+        return tf.summary.image(name, data, step=step, max_outputs=max_outputs)
     else:
         return gif_summary(name, data, fps, step, max_outputs)

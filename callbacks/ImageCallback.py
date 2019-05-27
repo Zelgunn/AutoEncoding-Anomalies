@@ -40,6 +40,7 @@ class ImageCallback(TensorBoardPlugin):
         normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
         return normalized
 
+    # region Video
     @staticmethod
     def video_summary(name: str,
                       video: tf.Tensor,
@@ -103,3 +104,53 @@ class ImageCallback(TensorBoardPlugin):
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=False)
 
         return [one_shot_callback, repeated_callback]
+    # endregion
+
+    # region Images
+
+    @staticmethod
+    def image_autoencoder_summary(name: str,
+                                  true_image: tf.Tensor,
+                                  pred_image: tf.Tensor,
+                                  max_outputs=4,
+                                  step: int = None):
+        true_image = ImageCallback.convert_tensor_uint8(true_image)
+        pred_image = ImageCallback.convert_tensor_uint8(pred_image)
+        delta = (pred_image - true_image) * (tf.cast(pred_image < true_image, dtype=tf.uint8) * 254 + 1)
+
+        image_summary(name="{}_pred_outputs".format(name), data=pred_image, step=step, max_outputs=max_outputs)
+        image_summary(name="{}_delta".format(name), data=delta, step=step, max_outputs=max_outputs)
+
+    @staticmethod
+    def make_image_autoencoder_callbacks(autoencoder: keras.Model,
+                                         subset: Union[SubsetLoader],
+                                         name: str,
+                                         is_train_callback: bool,
+                                         tensorboard: keras.callbacks.TensorBoard,
+                                         update_freq="epoch",
+                                         epoch_freq=1,
+                                         ) -> List["ImageCallback"]:
+        inputs, outputs = subset.get_batch(batch_size=4, output_labels=False)
+
+        def one_shot_function(data, step):
+            data = ImageCallback.convert_tensor_uint8(data)
+            return image_summary(name=name, data=data, step=step)
+
+        def repeated_function(data, step):
+            _inputs, _outputs = data
+            decoded = autoencoder.predict_on_batch(_inputs)
+            return ImageCallback.image_autoencoder_summary(name=name,
+                                                           true_image=_outputs,
+                                                           pred_image=decoded,
+                                                           step=step)
+
+        one_shot_callback = ImageCallback(summary_function=one_shot_function, summary_inputs=outputs,
+                                          tensorboard=tensorboard, is_train_callback=is_train_callback,
+                                          update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=True)
+
+        repeated_callback = ImageCallback(summary_function=repeated_function, summary_inputs=(inputs, outputs),
+                                          tensorboard=tensorboard, is_train_callback=is_train_callback,
+                                          update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=False)
+
+        return [one_shot_callback, repeated_callback]
+    # endregion

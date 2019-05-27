@@ -44,30 +44,7 @@ class SubsetLoader(object):
                                  "SubsetLoader doesn't support this case yet.")
 
     # region Loading methods (parsing, decoding, fusing, normalization, splitting, ...)
-    def parse_shard(self, serialized_example, output_labels):
-        features = self.modalities.get_tfrecord_features()
-        if output_labels:
-            features["labels"] = tf.io.VarLenFeature(tf.float32)
-
-        parsed_features = tf.io.parse_single_example(serialized_example, features)
-
-        modalities_shard_size, features_decoded = {}, {}
-
-        for modality in self.modalities:
-            modality_id = modality.id()
-            decoded_modality = modality.decode_from_tfrecord_feature(parsed_features)
-            decoded_modality, modality_size = self.pad_modality_if_needed(modality, decoded_modality)
-            modalities_shard_size[modality_id] = modality_size
-            features_decoded[modality_id] = decoded_modality
-
-        if output_labels:
-            labels = parsed_features["labels"].values
-            labels = self.pad_labels_if_needed(labels)
-            features_decoded["labels"] = labels
-
-        return features_decoded, modalities_shard_size
-
-    def parse_shard_v2(self, serialized_examples, output_labels: bool):
+    def parse_shard(self, serialized_examples, output_labels: bool):
         records_count = self.records_per_sample(output_labels)
         serialized_examples.set_shape(records_count)
 
@@ -215,6 +192,8 @@ class SubsetLoader(object):
             modality_value = modalities[modality_id]
             if modality_id == RawVideo.id():
                 modality_value = modality_value / tf.constant(255.0, modality_value.dtype)
+            elif modality_id == MelSpectrogram.id():
+                modality_value = tf.clip_by_value(modality_value, 0.0, 1.0, name="clip_mel_spectrogram")
             else:
                 modality_min, modality_max = self.config.modalities_ranges[modality_id]
                 modality_value = (modality_value - modality_min) / (modality_max - modality_min)
@@ -239,32 +218,28 @@ class SubsetLoader(object):
             inputs.append(modality_value[:input_length])
             outputs.append(modality_value[-output_length:])
 
-        if labels is None:
-            return tuple(inputs), tuple(outputs)
+        if len(inputs) > 1:
+            inputs = tuple(inputs)
+            outputs = tuple(outputs)
         else:
-            return tuple(inputs), tuple(outputs), labels
+            inputs = inputs[0]
+            outputs = outputs[0]
+
+        if labels is None:
+            return inputs, outputs
+        else:
+            return inputs, outputs, labels
 
     # endregion
 
     # region Sample dataset
-    def random_shard_filepath_generator(self):
-        while True:
-            source_index = np.random.randint(len(self.subset_folders))
-            source_folder = self.subset_folders[source_index]
-            shards = self.subset_files[source_folder]
-            offset = np.random.randint(len(shards) - self.shards_per_sample + 1)
-            shards_filepath = [os.path.join(source_folder, shard)
-                               for shard in shards[offset:offset + self.shards_per_sample]]
-            for filepath in shards_filepath:
-                yield filepath
-
     def records_per_sample(self, output_labels: bool):
         count = len(self.modalities)
         if output_labels:
             count += 1
         return count
 
-    def random_shard_split_filepath_generator(self, outputs_labels):
+    def shard_filepath_generator(self, outputs_labels):
         modality_ids = [modality.id() for modality in self.modalities]
         if outputs_labels:
             modality_ids.append("labels")
@@ -298,34 +273,17 @@ class SubsetLoader(object):
         return self.join_shards(shards, shard_sizes, offset)
 
     def make_tf_dataset(self, output_labels: bool):
-        dataset = tf.data.Dataset.from_generator(self.random_shard_filepath_generator,
-                                                 output_types=tf.string,
-                                                 output_shapes=())
-        dataset = tf.data.TFRecordDataset(dataset, num_parallel_reads=3)
-        dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, output_labels))
-
-        # dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels))
-        dataset = dataset.batch(self.shards_per_sample)
-        dataset = dataset.map(self.join_shards_randomly)
-        # dataset = dataset.map(self.augment_raw_video)
-        dataset = dataset.map(self.normalize_batch)
-        dataset = dataset.map(self.split_batch_io)
-
-        return dataset
-
-    def make_tf_dataset_v2(self, output_labels: bool):
         def make_generator():
-            return self.random_shard_split_filepath_generator(output_labels)
+            return self.shard_filepath_generator(output_labels)
 
         dataset = tf.data.Dataset.from_generator(make_generator,
                                                  output_types=tf.string,
                                                  output_shapes=())
-        dataset = tf.data.TFRecordDataset(dataset, num_parallel_reads=2)
+        dataset = tf.data.TFRecordDataset(dataset)
         dataset = dataset.batch(self.records_per_sample(output_labels)).prefetch(1)
 
-        dataset = dataset.map(lambda serialized_shards: self.parse_shard_v2(serialized_shards, output_labels))
+        dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, output_labels))
 
-        # dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels))
         dataset = dataset.batch(self.shards_per_sample)
         dataset = dataset.map(self.join_shards_randomly)
         # dataset = dataset.map(self.augment_raw_video)
@@ -361,12 +319,6 @@ class SubsetLoader(object):
 
         inputs, outputs = results[:2]
         labels = results[-1] if output_labels else None
-
-        if len(inputs) == 1:
-            inputs = inputs[0]
-
-        if len(outputs) == 1:
-            outputs = outputs[0]
 
         return (inputs, outputs, labels) if output_labels else (inputs, outputs)
 
@@ -560,7 +512,7 @@ def main():
     audio_length = int(48000 * 1.28)
     nfft = 52
 
-    config = DatasetConfig(tfrecords_config_folder="../datasets/emoly",
+    config = DatasetConfig(tfrecords_config_folder="C:/datasets/emoly_split",
                            modalities_io_shapes=
                            {
                                RawAudio: ModalityShape(input_shape=(audio_length, 2),
@@ -574,7 +526,7 @@ def main():
     loader = SubsetLoader(config, "Test")
 
     def pwet():
-        for batch in loader.make_tf_dataset_v2(False).batch(16).take(1000):
+        for batch in loader.make_tf_dataset(False).batch(16).take(1000):
             pass
 
     pwet()

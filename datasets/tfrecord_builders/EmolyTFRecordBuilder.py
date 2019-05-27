@@ -50,7 +50,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
                                      audio_source=video_path)
             data_sources.append(data_source)
 
-        return data_sources[:10]
+        return data_sources
 
     def list_videos_filenames(self):
         elements = os.listdir(self.videos_folder)
@@ -144,7 +144,7 @@ def main():
                                                    audio_frequency=48000,
                                                    modalities=ModalityCollection(
                                                        [
-                                                           # RawVideo(),
+                                                           RawVideo(),
                                                            # OpticalFlow(use_polar=False),
                                                            # DoG(),
                                                            RawAudio(),

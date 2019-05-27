@@ -14,6 +14,9 @@ class RawPredictionsLayer(Layer):
     def call(self, inputs, **kwargs):
         pred_output, true_output = inputs
 
+        length = tf.shape(true_output)[1]
+        pred_output = pred_output[:, :length]
+
         error = tf.square(pred_output - true_output)
         error = tf.reduce_mean(error, axis=self.reduction_axis)
         return error
