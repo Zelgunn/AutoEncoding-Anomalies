@@ -133,12 +133,12 @@ def main():
                                         name="raw_predictions_model")
 
     inputs, outputs, labels = dataset_loader.test_subset.get_batch(batch_size=16, output_labels=True)
-    images = inputs[0]
-    labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, frame_count=16)
+    labels = SubsetLoader.timestamps_labels_to_frame_labels(labels.numpy(), frame_count=16)
 
     auc_callback = AUCCallback(predictions_model=raw_predictions_model,
                                tensorboard=tensorboard,
-                               images=images,
+                               inputs=inputs,
+                               outputs=outputs,
                                labels=labels,
                                epoch_freq=1,
                                plot_size=(128, 128)

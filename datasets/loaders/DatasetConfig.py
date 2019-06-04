@@ -10,18 +10,11 @@ from modalities import RawAudio, MelSpectrogram
 from utils.misc_utils import int_ceil
 
 
-def get_max_shard_count(sample_length: int,
-                        shard_size: int
-                        ) -> int:
+def get_shard_count(sample_length: int,
+                    shard_size: int
+                    ) -> int:
     shard_count = 1 + int_ceil((sample_length - 1) / shard_size)
     return max(2, shard_count)
-
-
-def get_min_shard_count(sample_length: int,
-                        shard_size: int
-                        ) -> int:
-    shard_count = int_ceil(sample_length / shard_size)
-    return max(1, shard_count)
 
 
 class DatasetConfig(object):
@@ -48,16 +41,14 @@ class DatasetConfig(object):
         self.output_range = output_range
 
         # region Compute maximum amount of shards required to build a sample
-        min_shard_counts, max_shard_counts = [], []
+        shard_counts = []
         for modality in self.modalities:
             sample_length = modality.io_shape.sample_length
             shard_size = self.get_modality_max_shard_size(modality)
 
-            min_shard_counts.append(get_min_shard_count(sample_length, shard_size))
-            max_shard_counts.append(get_max_shard_count(sample_length, shard_size))
+            shard_counts.append(get_shard_count(sample_length, shard_size))
 
-        self.min_shard_count_per_sample: int = max(min_shard_counts)
-        self.max_shard_count_per_sample: int = max(max_shard_counts)
+        self.shards_per_sample: int = max(shard_counts)
         # endregion
 
     def list_subset_tfrecords(self,

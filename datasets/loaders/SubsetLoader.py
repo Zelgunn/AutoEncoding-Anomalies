@@ -10,11 +10,6 @@ from modalities import MelSpectrogram
 from utils.misc_utils import int_ceil, int_floor
 
 
-def get_shard_count(sample_length, shard_size):
-    shard_count = 1 + np.ceil((sample_length - 1) / shard_size).astype(np.int)
-    return max(1, shard_count)
-
-
 # TODO : Reorder functions
 class SubsetLoader(object):
     def __init__(self,
@@ -226,6 +221,17 @@ class SubsetLoader(object):
         else:
             return inputs, outputs, labels
 
+    def add_gaussian_noise(self, *args):
+        if len(args) == 2:
+            inputs, outputs = args
+            labels = None
+        else:
+            inputs, outputs, labels = args
+
+        noise = tf.random.normal(tf.shape(inputs), mean=0.0, stddev=0.1, name="gaussian_noise")
+        inputs = tf.clip_by_value(inputs + noise, self.config.output_range[0], self.config.output_range[1])
+
+        return (inputs, outputs) if (len(args) == 2) else (inputs, outputs, labels)
     # endregion
 
     # region Sample dataset
@@ -257,8 +263,8 @@ class SubsetLoader(object):
                     raise ValueError("Modalities don't have the same number of shards in "
                                      "{}.".format(folder))
 
-            offset = np.random.randint(shards_count - self.sampler_shards_count + 1)
-            for shard_index in range(offset, offset + self.sampler_shards_count):
+            offset = np.random.randint(shards_count - self.shards_per_sample + 1)
+            for shard_index in range(offset, offset + self.shards_per_sample):
                 for file_index in range(len(files)):
                     yield files[file_index][shard_index]
 
@@ -280,11 +286,12 @@ class SubsetLoader(object):
 
         dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, output_labels))
 
-        dataset = dataset.batch(self.sampler_shards_count)
+        dataset = dataset.batch(self.shards_per_sample)
         dataset = dataset.map(self.join_shards_randomly)
         # dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.normalize_batch)
         dataset = dataset.map(self.split_batch_io)
+        # dataset = dataset.map(self.add_gaussian_noise)
 
         return dataset
 
@@ -337,8 +344,8 @@ class SubsetLoader(object):
                     raise ValueError("Modalities don't have the same number of shards in "
                                      "{}.".format(modality_folder))
 
-            for shard_index in range(shards_count - self.browser_shards_count + 1):
-                for i in range(self.browser_shards_count):
+            for shard_index in range(shards_count - self.shards_per_sample + 1):
+                for i in range(self.shards_per_sample):
                     for modality_index in range(len(files)):
                         yield files[modality_index][shard_index + i]
 
@@ -373,7 +380,8 @@ class SubsetLoader(object):
                                     loop_vars=[i_initializer, shards_arrays],
                                     parallel_iterations=1)
             joint_shard: Dict[str, tf.TensorArray] = results[1]
-            joint_shard = {modality_id: joint_shard[modality_id].stack() for modality_id in joint_shard}
+            joint_shard = {modality_id: joint_shard[modality_id].stack(name="stack_{}".format(modality_id))
+                           for modality_id in joint_shard}
             return joint_shard
 
     def get_source_browser(self,
@@ -388,7 +396,7 @@ class SubsetLoader(object):
         dataset = dataset.batch(self.records_per_sample(output_labels=True)).prefetch(1)
         dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels=True))
 
-        dataset = dataset.batch(self.browser_shards_count)
+        dataset = dataset.batch(self.shards_per_sample)
         dataset = dataset.map(lambda shards, shard_sizes:
                               self.join_shards_ordered(shards, shard_sizes, reference_modality, stride))
 
@@ -423,12 +431,8 @@ class SubsetLoader(object):
         return self._test_tf_dataset
 
     @property
-    def sampler_shards_count(self) -> int:
-        return self.config.max_shard_count_per_sample
-
-    @property
-    def browser_shards_count(self) -> int:
-        return self.config.min_shard_count_per_sample
+    def shards_per_sample(self) -> int:
+        return self.config.shards_per_sample
 
     @property
     def modalities(self) -> ModalityCollection:

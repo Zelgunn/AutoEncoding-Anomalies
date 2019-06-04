@@ -82,7 +82,8 @@ class AUCCallback(TensorBoardPlugin):
     def __init__(self,
                  predictions_model: keras.Model,
                  tensorboard: TensorBoard,
-                 images: np.ndarray,
+                 inputs: np.ndarray,
+                 outputs: np.ndarray,
                  labels: np.ndarray,
                  update_freq: int or str = "epoch",
                  epoch_freq: int = None,
@@ -99,7 +100,8 @@ class AUCCallback(TensorBoardPlugin):
         self.name = name
 
         with tf.name_scope(self.name):
-            self.images = tf.constant(images, name="images")
+            self.inputs = tf.constant(inputs, name="inputs")
+            self.outputs = tf.constant(outputs, name="outputs")
             self.labels = tf.constant(np.squeeze(labels), name="labels")
 
             self.roc = AUCWrapper(curve="ROC",
@@ -111,7 +113,7 @@ class AUCCallback(TensorBoardPlugin):
                                  plot_size=None)
 
     def _write_logs(self, index):
-        predictions = self.predictions_model.predict(self.images, self.batch_size)
+        predictions = self.predictions_model.predict((self.inputs, self.outputs), batch_size=self.batch_size)
         predictions = np.array(predictions)
         predictions = self.reformat_predictions(predictions)
 

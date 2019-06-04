@@ -1238,7 +1238,7 @@ class AutoEncoderBaseModel(ABC):
 
         raw_predictions_model = self.get_anomalies_raw_predictions_model()
         frame_auc_callback = AUCCallback(raw_predictions_model, self.tensorboard,
-                                         inputs, labels,
+                                         inputs, outputs, labels,
                                          plot_size=(128, 128), batch_size=16,
                                          name="Frame_Level_Error_AUC", epoch_freq=1)
         anomaly_callbacks.append(frame_auc_callback)

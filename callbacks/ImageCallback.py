@@ -37,6 +37,9 @@ class ImageCallback(TensorBoardPlugin):
     @staticmethod
     def convert_tensor_uint8(tensor) -> tf.Tensor:
         tensor: tf.Tensor = tf.convert_to_tensor(tensor)
+        tensor_min = tf.reduce_min(tensor)
+        tensor_max = tf.reduce_max(tensor)
+        tensor = (tensor - tensor_min) / (tensor_max - tensor_min)
         normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
         return normalized
 
@@ -134,7 +137,7 @@ class ImageCallback(TensorBoardPlugin):
 
         def one_shot_function(data, step):
             data = ImageCallback.convert_tensor_uint8(data)
-            return image_summary(name=name, data=data, step=step)
+            return image_summary(name=name, data=data, step=step, max_outputs=4)
 
         def repeated_function(data, step):
             _inputs, _outputs = data

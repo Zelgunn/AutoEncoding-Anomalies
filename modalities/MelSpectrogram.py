@@ -126,7 +126,7 @@ def mel_spectrogram_to_wave(features: np.ndarray,
     for _ in tqdm(range(iterations)):
         s = features * np.exp(1j * phase)
         x = librosa.istft(s, hop_length)
-        phase = np.angle(librosa.stft(x, nfft))
+        phase = np.angle(librosa.stft(x, nfft, hop_length=hop_length))
     # endregion
 
     return x

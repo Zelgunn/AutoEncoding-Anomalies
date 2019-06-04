@@ -144,13 +144,13 @@ def main():
                                                    audio_frequency=48000,
                                                    modalities=ModalityCollection(
                                                        [
-                                                           RawVideo(),
+                                                           # RawVideo(),
                                                            # OpticalFlow(use_polar=False),
                                                            # DoG(),
-                                                           RawAudio(),
+                                                           # RawAudio(),
                                                            MelSpectrogram(window_width=0.05,
-                                                                          window_step=0.025,
-                                                                          mel_filters_count=100)
+                                                                          window_step=0.0125,
+                                                                          mel_filters_count=256)
                                                        ]
                                                    ),
                                                    video_frame_size=(128, 128))
