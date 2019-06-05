@@ -1,7 +1,8 @@
 import tensorflow as tf
 import numpy as np
 import os
-from typing import Dict, Tuple, Optional, Type
+import copy
+from typing import Dict, Tuple, Optional, Type, List
 
 from datasets.loaders import DatasetConfig
 from modalities import Modality, ModalityCollection
@@ -232,6 +233,7 @@ class SubsetLoader(object):
         inputs = tf.clip_by_value(inputs + noise, self.config.output_range[0], self.config.output_range[1])
 
         return (inputs, outputs) if (len(args) == 2) else (inputs, outputs, labels)
+
     # endregion
 
     # region Sample dataset
@@ -241,14 +243,14 @@ class SubsetLoader(object):
             count += 1
         return count
 
-    def shard_filepath_generator(self, outputs_labels):
+    def shard_filepath_generator(self, folders, outputs_labels):
         modality_ids = [modality.id() for modality in self.modalities]
         if outputs_labels:
             modality_ids.append("labels")
 
         while True:
-            source_index = np.random.randint(len(self.subset_folders))
-            source_folder = self.subset_folders[source_index]
+            source_index = np.random.randint(len(folders))
+            source_folder = folders[source_index]
             # shards = self.subset_files[source_folder]
             files = []
             shards_count = None
@@ -274,9 +276,14 @@ class SubsetLoader(object):
         offset = tf.random.uniform(shape=(), minval=0, maxval=1.0, dtype=tf.float32, name="offset")
         return self.join_shards(shards, shard_sizes, offset)
 
-    def make_tf_dataset(self, output_labels: bool):
+    def make_tf_dataset(self, output_labels: bool, subset_folder: List[str] = None):
+        if subset_folder is not None:
+            subset_folder = copy.copy(subset_folder)
+        else:
+            subset_folder = copy.copy(self.subset_folders)
+
         def make_generator():
-            return self.shard_filepath_generator(output_labels)
+            return self.shard_filepath_generator(subset_folder, output_labels)
 
         dataset = tf.data.Dataset.from_generator(make_generator,
                                                  output_types=tf.string,
