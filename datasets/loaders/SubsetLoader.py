@@ -276,7 +276,11 @@ class SubsetLoader(object):
         offset = tf.random.uniform(shape=(), minval=0, maxval=1.0, dtype=tf.float32, name="offset")
         return self.join_shards(shards, shard_sizes, offset)
 
-    def make_tf_dataset(self, output_labels: bool, subset_folder: List[str] = None):
+    def make_tf_dataset(self,
+                        output_labels: bool,
+                        subset_folder: List[str] = None,
+                        include_targets=True
+                        ):
         if subset_folder is not None:
             subset_folder = copy.copy(subset_folder)
         else:
@@ -297,7 +301,8 @@ class SubsetLoader(object):
         dataset = dataset.map(self.join_shards_randomly)
         # dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.normalize_batch)
-        dataset = dataset.map(self.split_batch_io)
+        if include_targets:
+            dataset = dataset.map(self.split_batch_io)
         # dataset = dataset.map(self.add_gaussian_noise)
 
         return dataset

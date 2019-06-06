@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.keras.models import Model, Sequential
 from tensorflow.python.keras.layers import Input, InputLayer, Dense, Layer, Reshape, Flatten
+from tensorflow.python.keras.optimizers import Adam
 from sklearn.mixture import GaussianMixture
 import numpy as np
 from typing import Optional, Tuple
@@ -38,6 +39,8 @@ class AnomalyTestLayer(Layer):
 class NPProp(object):
     def __init__(self, embeddings_size=40, mixture_count=16, gmm_updates_per_cycle=30):
         self.embeddings_size = embeddings_size
+        self.mixture_count = mixture_count
+        self.gmm_updates_per_cycle = gmm_updates_per_cycle
 
         self.encoder: Optional[Sequential] = None
         self.normal_decoder: Optional[Sequential] = None
@@ -46,9 +49,7 @@ class NPProp(object):
         self.anomalous_autoencoder: Optional[Model] = None
         self.anomaly_detector: Optional[Model] = None
 
-        self.gmm = GaussianMixture(n_components=mixture_count, max_iter=gmm_updates_per_cycle)
-        # TODO : Fit GMM on Encoded normal sounds
-        self.gmm.fit(np.random.normal(size=[200, embeddings_size], loc=5))
+        self.gmm: Optional[GaussianMixture] = None
         self.z_threshold = -200.0
 
     # region Build models
@@ -99,7 +100,7 @@ class NPProp(object):
             reconstruction_loss = tf.reduce_mean(tf.square(y_true - y_pred))
             return self.divergence(encoded) + reconstruction_loss
 
-        self.anomalous_autoencoder.compile(optimizer="adam", loss=anomalous_loss)
+        self.anomalous_autoencoder.compile(optimizer=Adam(lr=1e-4), loss=anomalous_loss)
 
         normal_decoded = self.normal_decoder(encoded)
         true_outputs_input_layer = Input(input_shape)
@@ -118,7 +119,7 @@ class NPProp(object):
             # Goal : Increase if anomaly (TPR) and lower if normal (FPR)
             return y_pred * multipliers
 
-        self.anomaly_detector.compile(optimizer="adam", loss=detector_loss)
+        self.anomaly_detector.compile(optimizer=Adam(lr=1e-4), loss=detector_loss)
 
     @staticmethod
     def divergence(encoded):
@@ -135,41 +136,59 @@ class NPProp(object):
               batch_size: int,
               cycles: int,
               epochs_per_cycle: int,
-              steps_per_epoch: int):
+              steps_per_epoch: int,
+              gmm_sample_count: int):
 
-        anomalous_dataset, detection_dataset = self.prepare_datasets(dataset_loader, batch_size)
+        anomalous_dataset, detection_dataset, normal_code_dataset = self.prepare_datasets(dataset_loader, batch_size)
+
+        if self.gmm is None:
+            print("Initializing GMM")
+            self.gmm = GaussianMixture(n_components=self.mixture_count, max_iter=self.gmm_updates_per_cycle)
+            self.update_gmm(normal_code_dataset, gmm_sample_count)
 
         for cycle_index in range(cycles):
+            print("Fitting Anomalous autoencoder")
             self.update_anomalous_autoencoder(anomalous_dataset, epochs_per_cycle, steps_per_epoch)
+            print("Fitting Anomaly detector")
             self.update_anomaly_detector(detection_dataset, epochs_per_cycle, steps_per_epoch)
-            self.update_gmm()
+            print("Fitting GMM")
+            self.update_gmm(normal_code_dataset, gmm_sample_count)
 
     # region Datasets
     def prepare_datasets(self,
                          dataset_loader: DatasetLoader,
-                         batch_size: int):
+                         batch_size: int
+                         ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         anomalous_dataset = self.prepare_anomalous_dataset(dataset_loader, batch_size)
-        detection_dataset = self.prepare_detection_dataset(dataset_loader, batch_size)
-        return anomalous_dataset, detection_dataset
+        normal_dataset = self.prepare_base_normal_dataset(dataset_loader)
+        detection_dataset = self.prepare_detection_dataset(normal_dataset, batch_size)
+        normal_code_dataset = self.prepare_normal_code_dataset(normal_dataset, batch_size)
+        return anomalous_dataset, detection_dataset, normal_code_dataset
 
     @staticmethod
     def prepare_anomalous_dataset(dataset_loader: DatasetLoader,
-                                  batch_size: int):
+                                  batch_size: int
+                                  ) -> tf.data.Dataset:
         subset = dataset_loader.train_subset
         anomalous_samples = [folder for folder in subset.subset_folders if "normal" not in folder]
         dataset = subset.make_tf_dataset(output_labels=False, subset_folder=anomalous_samples)
         dataset = dataset.batch(batch_size).prefetch(-1)
         return dataset
 
+    @staticmethod
+    def prepare_base_normal_dataset(dataset_loader: DatasetLoader):
+        subset = dataset_loader.train_subset
+        normal_samples = [folder for folder in subset.subset_folders if "normal" in folder]
+        dataset = subset.make_tf_dataset(output_labels=False, subset_folder=normal_samples)
+        return dataset
+
     def prepare_detection_dataset(self,
-                                  dataset_loader: DatasetLoader,
-                                  batch_size: int):
+                                  normal_dataset: tf.data.Dataset,
+                                  batch_size: int
+                                  ) -> tf.data.Dataset:
         if (batch_size % 2) != 0:
             raise ValueError("Batch size must be even")
 
-        subset = dataset_loader.train_subset
-        normal_samples = [folder for folder in subset.subset_folders if "normal" in folder]
-        normal_dataset = subset.make_tf_dataset(output_labels=False, subset_folder=normal_samples)
         normal_dataset = normal_dataset.batch(batch_size // 2)
 
         anomalous_dataset = tf.data.Dataset.from_generator(self.rejection_sampling,
@@ -190,6 +209,15 @@ class NPProp(object):
 
         return detection_dataset
 
+    def prepare_normal_code_dataset(self,
+                                    normal_dataset: tf.data.Dataset,
+                                    batch_size: int
+                                    ) -> tf.data.Dataset:
+        dataset = normal_dataset.map(lambda x, y: x)
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.map(self.encoder)
+        return dataset
+
     def rejection_sampling(self):
         while True:
             z = np.random.normal(size=[self.embeddings_size])
@@ -209,10 +237,10 @@ class NPProp(object):
 
     # region Updates (Anomalous AE -> Anomaly Detector -> GMM)
     def update_anomalous_autoencoder(self,
-                                     dataset: tf.data.Dataset,
+                                     anomalous_dataset: tf.data.Dataset,
                                      epochs: int,
                                      steps_per_epoch: int):
-        self.anomalous_autoencoder.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch)
+        self.anomalous_autoencoder.fit(anomalous_dataset, epochs=epochs, steps_per_epoch=steps_per_epoch)
 
     def update_anomaly_detector(self,
                                 detection_dataset: tf.data.Dataset,
@@ -220,8 +248,23 @@ class NPProp(object):
                                 steps_per_epoch: int):
         self.anomaly_detector.fit(detection_dataset, epochs=epochs, steps_per_epoch=steps_per_epoch)
 
-    def update_gmm(self):
-        pass
+    def update_gmm(self,
+                   normal_code_dataset: tf.data.Dataset,
+                   gmm_sample_count: int
+                   ):
+        samples = np.empty([gmm_sample_count, self.embeddings_size])
+        i = 0
+        for batch in normal_code_dataset:
+            batch_size: int = batch.shape[0]
+            if batch_size <= (gmm_sample_count - i):
+                samples[i:i + batch_size] = batch.numpy()
+            else:
+                batch_size = gmm_sample_count - i
+                samples[i:i + batch_size] = batch[:batch_size].numpy()
+                break
+            i += batch_size
+
+        self.gmm.fit(samples)
     # endregion
     # endregion
 
@@ -240,10 +283,11 @@ def main():
     dataset_loader = DatasetLoader(dataset_config)
 
     np_prop.train(dataset_loader=dataset_loader,
-                  batch_size=16,
+                  batch_size=512,
                   cycles=20,
-                  epochs_per_cycle=2,
-                  steps_per_epoch=100)
+                  epochs_per_cycle=20,
+                  steps_per_epoch=100,
+                  gmm_sample_count=512*20)
 
 
 if __name__ == "__main__":
