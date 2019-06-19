@@ -289,20 +289,22 @@ class SubsetLoader(object):
         def make_generator():
             return self.shard_filepath_generator(subset_folder, output_labels)
 
+        k = 12
         dataset = tf.data.Dataset.from_generator(make_generator,
                                                  output_types=tf.string,
                                                  output_shapes=())
-        dataset = tf.data.TFRecordDataset(dataset)
+        dataset = tf.data.TFRecordDataset(dataset, num_parallel_reads=k)
         dataset = dataset.batch(self.records_per_sample(output_labels)).prefetch(1)
 
-        dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, output_labels))
+        dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, output_labels),
+                              num_parallel_calls=k)
 
         dataset = dataset.batch(self.shards_per_sample)
-        dataset = dataset.map(self.join_shards_randomly)
+        dataset = dataset.map(self.join_shards_randomly, num_parallel_calls=k)
         # dataset = dataset.map(self.augment_raw_video)
-        dataset = dataset.map(self.normalize_batch)
+        dataset = dataset.map(self.normalize_batch, num_parallel_calls=k)
         if include_targets:
-            dataset = dataset.map(self.split_batch_io)
+            dataset = dataset.map(self.split_batch_io, num_parallel_calls=k)
         # dataset = dataset.map(self.add_gaussian_noise)
 
         return dataset

@@ -132,10 +132,10 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
 
 def main():
-    from modalities import RawVideo
+    # from modalities import RawVideo
     # from modalities import OpticalFlow
     # from modalities import DoG
-    from modalities import RawAudio
+    # from modalities import RawAudio
     from modalities import MelSpectrogram
 
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
