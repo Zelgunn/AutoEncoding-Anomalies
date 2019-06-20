@@ -3,6 +3,7 @@ from modalities.Modality import Modality, ModalityShape
 from modalities.RawVideo import RawVideo
 from modalities.OpticalFlow import OpticalFlow
 from modalities.DoG import DoG
+from modalities.Landmarks import Landmarks
 from modalities.RawAudio import RawAudio
 from modalities.MelSpectrogram import MelSpectrogram
 from modalities.ModalityCollection import ModalityCollection

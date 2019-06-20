@@ -136,7 +136,8 @@ def main():
     # from modalities import OpticalFlow
     # from modalities import DoG
     # from modalities import RawAudio
-    from modalities import MelSpectrogram
+    # from modalities import MelSpectrogram
+    from modalities import Landmarks
 
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
                                                    shard_duration=1.28,
@@ -148,9 +149,10 @@ def main():
                                                            # OpticalFlow(use_polar=False),
                                                            # DoG(),
                                                            # RawAudio(),
-                                                           MelSpectrogram(window_width=0.05,
-                                                                          window_step=0.0125,
-                                                                          mel_filters_count=256)
+                                                           # MelSpectrogram(window_width=0.03,
+                                                           #                window_step=0.015,
+                                                           #                mel_filters_count=40),
+                                                           Landmarks("../shape_predictor_68_face_landmarks.dat")
                                                        ]
                                                    ),
                                                    video_frame_size=(128, 128))
