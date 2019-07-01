@@ -155,7 +155,7 @@ def main():
                                                            Landmarks("../shape_predictor_68_face_landmarks.dat")
                                                        ]
                                                    ),
-                                                   video_frame_size=(128, 128))
+                                                   video_frame_size=(1080//4, 1920//4))
     emoly_tf_record_builder.build()
 
 

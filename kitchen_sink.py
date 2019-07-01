@@ -1,31 +1,60 @@
 import tensorflow as tf
 from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.layers import Input, LeakyReLU, Layer, Concatenate, Activation, Lambda
+from tensorflow.python.keras.layers import Input, LeakyReLU, Layer, Concatenate, Activation, Lambda, Flatten, Reshape
 from tensorflow.python.keras.layers import Conv3D, AveragePooling3D, Conv3DTranspose
-from tensorflow.python.keras.layers import Conv2D, AveragePooling2D, Conv2DTranspose, Reshape, Dense
+from tensorflow.python.keras.layers import Conv2D, AveragePooling2D, Conv2DTranspose
+from tensorflow.python.keras.layers import Conv1D, AveragePooling1D, UpSampling1D
 from tensorflow.python.keras.layers import CuDNNLSTM, RepeatVector
-from tensorflow.python.keras.optimizers import Adam
-from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN
-from tensorflow.python.keras.regularizers import l1
+from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.optimizers import Adam, RMSprop
+from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN, ModelCheckpoint
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import cv2
 from time import time
-from typing import Tuple, Type, Optional
+from typing import Tuple, Type, Optional, Union
 
-from callbacks import ImageCallback, AUCCallback
+from callbacks import ImageCallback, AUCCallback, TensorBoardPlugin
 from datasets.loaders import DatasetConfig, DatasetLoader, SubsetLoader
-from modalities import ModalityShape, RawVideo, Modality
+from modalities import ModalityShape, RawVideo, Modality, Landmarks
 from layers.utility_layers import RawPredictionsLayer
+from utils.summary_utils import image_summary
+from utils.train_utils import save_model_info
 
 
 # region Callbacks
-def make_auc_callback(test_subset: SubsetLoader,
+def get_batch(dataset: Union[SubsetLoader, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
+              batch_size: int):
+    if isinstance(dataset, SubsetLoader):
+        eager_batch = dataset.get_batch(batch_size=batch_size, output_labels=False)
+        batch = eager_to_numpy(eager_batch)
+
+    elif isinstance(dataset, tf.data.Dataset):
+        data = dataset.batch(batch_size=batch_size).take(1)
+        batch = ()
+        if tf.executing_eagerly():
+            for eager_batch in data:
+                batch = eager_to_numpy(eager_batch)
+        else:
+            from tensorflow.python.data.ops import dataset_ops
+            data = dataset_ops.make_one_shot_iterator(data).get_next()
+            session = tf.compat.v1.keras.backend.get_session()
+            batch = session.run(data)
+    else:
+        batch = dataset
+    return batch
+
+
+def make_auc_callback(test_subset,
                       predictions_model: Model,
-                      tensorboard: TensorBoard
+                      tensorboard: TensorBoard,
+                      samples_count=512,
+                      prefix=""
                       ) -> AUCCallback:
-    inputs, outputs, labels = test_subset.get_batch(batch_size=1024, output_labels=True)
-    labels = SubsetLoader.timestamps_labels_to_frame_labels(labels.numpy(), inputs.shape[1])
+    inputs, outputs, labels = get_batch(test_subset, batch_size=samples_count)
+
+    labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, outputs.shape[1])
 
     auc_callback = AUCCallback(predictions_model=predictions_model,
                                tensorboard=tensorboard,
@@ -34,14 +63,75 @@ def make_auc_callback(test_subset: SubsetLoader,
                                labels=labels,
                                epoch_freq=1,
                                plot_size=(128, 128),
-                               batch_size=128)
+                               batch_size=128,
+                               prefix=prefix)
     return auc_callback
 
 
 class TmpModelCheckpoint(tf.keras.callbacks.Callback):
+    def __init__(self, filepath: str, verbose=0):
+        super(TmpModelCheckpoint, self).__init__()
+        self.filepath = filepath
+        self.verbose = verbose
+
     def on_epoch_end(self, epoch, logs=None):
-        self.model.save("../logs/tests/kitchen_sink/mfcc_only/weights_{epoch:03d}.hdf5".format(epoch=epoch),
-                        include_optimizer=False)
+        target_path = self.filepath.format(epoch=epoch + 1)
+        if self.verbose > 0:
+            print("\nEpoch {epoch:05d}: saving model to {path}".format(epoch=epoch + 1, path=target_path))
+        self.model.save(target_path,
+                        include_optimizer=not tf.executing_eagerly())
+
+
+class LandmarksVideoCallback(TensorBoardPlugin):
+    def __init__(self,
+                 data: Union[SubsetLoader, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
+                 autoencoder: Model,
+                 tensorboard: TensorBoard,
+                 epoch_freq=1,
+                 output_size=(512, 512),
+                 marker_size=5,
+                 is_train_callback=False,
+                 prefix=""):
+        super(LandmarksVideoCallback, self).__init__(tensorboard,
+                                                     update_freq="epoch",
+                                                     epoch_freq=epoch_freq)
+
+        self.output_size = output_size
+        self.marker_size = marker_size
+        self.autoencoder = autoencoder
+        self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
+        self.prefix = prefix if (len(prefix) == 0) else (prefix + "_")
+        self.ground_truth_images = None
+
+        self.inputs, self.outputs = get_batch(data, batch_size=4)
+
+    def _write_logs(self, index: int):
+        with self._get_writer(self.writer_name).as_default():
+            if index == 0:
+                self.ground_truth_images = self.landmarks_to_image(self.outputs, color=(255, 0, 0))
+                images = tf.convert_to_tensor(self.ground_truth_images)
+                image_summary(self.prefix + "ground_truth_landmarks", images, max_outputs=4, step=index)
+
+            predicted = self.autoencoder.predict(self.inputs)
+
+            images = self.landmarks_to_image(predicted, color=(0, 255, 0))
+            images = tf.convert_to_tensor(images)
+            comparison = tf.convert_to_tensor(images + self.ground_truth_images)
+            image_summary(self.prefix + "predicted_landmarks", images, max_outputs=4, step=index)
+            image_summary(self.prefix + "comparison", comparison, max_outputs=4, step=index)
+
+    def landmarks_to_image(self, landmarks_batch: np.ndarray, color):
+        if len(landmarks_batch.shape) == 3:
+            landmarks_batch = landmarks_batch.reshape([*landmarks_batch.shape[:2], 68, 2])
+
+        batch_size, sequence_length, _, _ = landmarks_batch.shape
+        images = np.zeros([batch_size, sequence_length, *self.output_size, 3], dtype=np.uint8)
+        for i in range(batch_size):
+            for j in range(sequence_length):
+                for x, y in landmarks_batch[i, j]:
+                    position = (int(x * self.output_size[0]), int(y * self.output_size[1]))
+                    cv2.drawMarker(images[i, j], position, color, markerSize=self.marker_size)
+        return images
 
 
 # endregion
@@ -207,24 +297,41 @@ class AnomalyDetector(object):
 
 # endregion
 
-def get_autoencoder_loss(input_sequence_length):
+# region helpers
+def get_temporal_loss_weights(input_sequence_length, start=1.0, stop=0.1):
     reconstruction_loss_weights = np.ones([input_sequence_length], dtype=np.float32)
-    start = 0.5
-    stop = 0.1
     step = (stop - start) / input_sequence_length
     prediction_loss_weights = np.arange(start=start, stop=stop, step=step, dtype=np.float32)
     loss_weights = np.concatenate([reconstruction_loss_weights, prediction_loss_weights])
     loss_weights *= (input_sequence_length * 2) / np.sum(loss_weights)
     temporal_loss_weights = tf.constant(loss_weights, name="temporal_loss_weights")
+    return temporal_loss_weights
+
+
+def get_autoencoder_loss(input_sequence_length, axis: Tuple[int, ...] = 2):
+    temporal_loss_weights = get_temporal_loss_weights(input_sequence_length)
 
     def autoencoder_loss(y_true, y_pred):
-        reconstruction_loss = tf.reduce_mean(tf.square(y_true - y_pred), axis=2)
+        reconstruction_loss = tf.reduce_mean(tf.square(y_true - y_pred), axis=axis)
         reconstruction_loss *= temporal_loss_weights
         reconstruction_loss = tf.reduce_mean(reconstruction_loss)
         return reconstruction_loss
 
     return autoencoder_loss
 
+
+def eager_to_numpy(data):
+    if isinstance(data, tuple):
+        return tuple(eager_to_numpy(x) for x in data)
+    elif isinstance(data, list):
+        return [eager_to_numpy(x) for x in data]
+    elif isinstance(data, np.ndarray):
+        return data
+    else:
+        return data.numpy()
+
+
+# endregion
 
 # region Video
 
@@ -426,6 +533,324 @@ def train_video_autoencoder():
 
 # endregion
 
+# region Landmarks (autoencoder)
+
+def make_landmarks_encoder(input_layer, sequence_length):
+    common_args = {"kernel_size": 3,
+                   "padding": "same",
+                   "activation": "relu",
+                   "use_bias": False}
+
+    layer = input_layer
+    layer = Reshape([sequence_length, 68 * 2])(layer)
+
+    layer = Conv1D(filters=64, **common_args)(layer)
+    layer = Conv1D(filters=64, **common_args)(layer)
+    layer = AveragePooling1D(pool_size=2, strides=2)(layer)
+    layer = Conv1D(filters=32, **common_args)(layer)
+    layer = Conv1D(filters=32, **common_args)(layer)
+    layer = AveragePooling1D(pool_size=2, strides=2)(layer)
+    layer = Conv1D(filters=16, **common_args)(layer)
+    layer = Conv1D(filters=16, **common_args)(layer)
+    layer = AveragePooling1D(pool_size=2, strides=2)(layer)
+    layer = Flatten()(layer)
+    layer = Dense(units=64, activation="relu")(layer)
+
+    return layer
+
+
+def make_landmarks_decoder(input_layer, sequence_length):
+    common_args = {"kernel_size": 3,
+                   "padding": "same",
+                   "activation": "relu",
+                   "use_bias": False}
+
+    layer = input_layer
+
+    layer = Dense(units=8 * 16, activation="relu")(layer)
+    layer = Reshape([8, 16])(layer)
+    layer = UpSampling1D(size=2)(layer)
+    layer = Conv1D(filters=16, **common_args)(layer)
+    layer = Conv1D(filters=16, **common_args)(layer)
+    layer = UpSampling1D(size=2)(layer)
+    layer = Conv1D(filters=32, **common_args)(layer)
+    layer = Conv1D(filters=32, **common_args)(layer)
+    layer = UpSampling1D(size=2)(layer)
+    layer = Conv1D(filters=64, **common_args)(layer)
+    layer = Conv1D(filters=68 * 2, kernel_size=3, padding="same", activation=None, use_bias=False)(layer)
+
+    layer = Reshape([sequence_length, 68, 2])(layer)
+
+    return layer
+
+
+def make_landmarks_autoencoder(sequence_length: int, add_predictor: bool):
+    input_shape = (sequence_length, 68, 2)
+
+    input_layer = Input(input_shape)
+
+    encoded = make_landmarks_encoder(input_layer, sequence_length)
+    decoded = make_landmarks_decoder(encoded, sequence_length)
+    if add_predictor:
+        predicted = make_landmarks_decoder(encoded, sequence_length)
+        decoded = Concatenate(axis=1)([decoded, predicted])
+
+    output_layer = decoded
+
+    autoencoder = Model(inputs=input_layer, outputs=output_layer, name="landmarks_autoencoder")
+
+    # loss = get_autoencoder_loss(sequence_length, axis=(2, 3)) if add_predictor else "mse"
+
+    def landmarks_loss(y_true, y_pred):
+        indexes = [36, 39, 42, 45] + list(range(48, 68))
+
+        mask = []
+        for i in range(68):
+            mask.append(1.0 if i in indexes else 1e-1)
+
+        mask = tf.constant(mask, shape=[1, 1, 68, 1])
+        loss = tf.square(y_true - y_pred) * mask
+        loss = tf.reduce_mean(loss, axis=[2, 3])
+        loss *= get_temporal_loss_weights(sequence_length)
+        loss = tf.reduce_mean(loss, axis=1)
+        return loss
+
+    autoencoder.compile(Adam(lr=1e-4, decay=0.0), loss=landmarks_loss)
+
+    return autoencoder
+
+
+def get_landmarks_datasets(input_sequence_length: int, output_sequence_length: int):
+    dataset_config = DatasetConfig("../datasets/emoly",
+                                   modalities_io_shapes=
+                                   {
+                                       Landmarks: ModalityShape((input_sequence_length, 68, 2),
+                                                                (output_sequence_length, 68, 2))
+                                   },
+                                   output_range=(0.0, 1.0))
+    dataset_loader = DatasetLoader(config=dataset_config)
+    train_subset = dataset_loader.train_subset
+    train_subset.subset_folders = [folder for folder in train_subset.subset_folders if "normal" in folder]
+
+    test_subset = dataset_loader.test_subset
+    test_subset.subset_folders = [folder for folder in test_subset.subset_folders if "induced" in folder]
+
+    return dataset_loader, train_subset, test_subset
+
+
+def train_landmarks_autoencoder():
+    add_predictor = True
+    sequence_length = 64
+    output_sequence_length = sequence_length * 2 if add_predictor else sequence_length
+    batch_size = 16
+
+    landmarks_autoencoder = make_landmarks_autoencoder(sequence_length=sequence_length,
+                                                       add_predictor=add_predictor)
+    # landmarks_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_020.hdf5")
+
+    dataset_loader, train_subset, test_subset = get_landmarks_datasets(sequence_length, output_sequence_length)
+
+    # region callbacks
+    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks"
+    log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
+    os.makedirs(log_dir)
+
+    tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
+
+    raw_predictions = RawPredictionsLayer((2, 3))([landmarks_autoencoder.output, landmarks_autoencoder.input])
+    raw_predictions_model = Model(inputs=landmarks_autoencoder.input, outputs=raw_predictions,
+                                  name="raw_predictions_model")
+    auc_callback = make_auc_callback(test_subset=test_subset, predictions_model=raw_predictions_model,
+                                     tensorboard=tensorboard)
+
+    train_landmarks_callback = LandmarksVideoCallback(train_subset, landmarks_autoencoder, tensorboard)
+    test_landmarks_callback = LandmarksVideoCallback(test_subset, landmarks_autoencoder, tensorboard)
+
+    model_checkpoint = TmpModelCheckpoint(os.path.join(base_log_dir, "weights_{epoch:03d}.hdf5"))
+    callbacks = [tensorboard,
+                 train_landmarks_callback,
+                 test_landmarks_callback,
+                 auc_callback,
+                 model_checkpoint]
+
+    summary_filename = os.path.join(log_dir, "{}_summary.txt".format(landmarks_autoencoder.name))
+    with open(summary_filename, "w") as file:
+        landmarks_autoencoder.summary(print_fn=lambda summary: file.write(summary + '\n'))
+
+    # endregion
+
+    train_dataset = train_subset.tf_dataset
+    train_dataset = train_dataset.batch(batch_size).prefetch(-1)
+
+    test_dataset = test_subset.tf_dataset
+    test_dataset = test_dataset.batch(batch_size)
+
+    landmarks_autoencoder.fit(train_dataset, epochs=10, steps_per_epoch=10000,
+                              validation_data=test_dataset, validation_steps=200,
+                              callbacks=callbacks)
+    # landmarks_autoencoder.load_weights(os.path.join(base_log_dir, "weights_006.hdf5"))
+
+    anomaly_detector = AnomalyDetector(landmarks_autoencoder)
+    anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
+                                          modality=Landmarks,
+                                          log_dir=log_dir,
+                                          stride=1)
+
+
+# endregion
+
+# region Landmarks (transformer)
+
+def flatten_landmarks(inputs, outputs):
+    input_sequence_length = tf.shape(inputs)[0]
+    output_sequence_length = tf.shape(outputs)[0]
+    inputs = tf.reshape(inputs, [input_sequence_length, 136])
+    outputs = tf.reshape(outputs, [output_sequence_length, 136])
+    return inputs, outputs
+
+
+def train_landmarks_transformer():
+    # tf.compat.v1.disable_eager_execution()
+    from transformer import Transformer
+    from transformer.layers import PositionalEncodingMode
+
+    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks_transformer"
+    batch_size = 16
+    input_sequence_length = 32
+    output_sequence_length = input_sequence_length * 4
+
+    landmarks_transformer = Transformer(max_input_length=input_sequence_length,
+                                        max_output_length=output_sequence_length,
+                                        input_size=68 * 2,
+                                        output_size=68 * 2,
+                                        output_activation="linear",
+                                        layers_intermediate_size=256,
+                                        layers_count=4,
+                                        attention_heads_count=4,
+                                        attention_key_size=32,
+                                        attention_values_size=32,
+                                        dropout_rate=0.1,
+                                        decoder_pre_net=Dense(units=64, activation="relu"),
+                                        # decoder_pre_net=None,
+                                        positional_encoding_mode=PositionalEncodingMode.ADD,
+                                        positional_encoding_range=0.02,
+                                        name="Transformer")
+    landmarks_transformer.add_loss(landmarks_transformer.get_transformer_loss(use_loss_temporal_mask=True))
+    landmarks_transformer.compile(RMSprop(lr=2e-4))
+    landmarks_transformer.summary()
+
+    # landmarks_transformer.save(base_log_dir + "/weights_000.hdf5")
+    # landmarks_transformer.load_weights(base_log_dir+"/weights_006.hdf5")
+
+    autonomous_transformer = landmarks_transformer.make_autonomous_model()
+
+    # region Datasets
+    dataset_loader, train_subset, test_subset = get_landmarks_datasets(input_sequence_length, output_sequence_length)
+
+    train_dataset = train_subset.tf_dataset
+    train_dataset = train_dataset.map(flatten_landmarks)
+    train_dataset = train_dataset.map(lambda x, y: ((x, y),))
+
+    test_dataset = test_subset.tf_dataset
+    test_dataset = test_dataset.map(flatten_landmarks)
+    test_dataset = test_dataset.map(lambda x, y: ((x, y),))
+    # endregion
+
+    # tmp = Model(inputs=landmarks_transformer.inputs,
+    #             outputs=landmarks_transformer.decoder_attention_weights)
+    # self_pwet, encoder_pwet = tmp.predict(train_dataset.batch(1), steps=1)
+    # self_pwet = np.squeeze(self_pwet)
+    # encoder_pwet = np.squeeze(encoder_pwet)
+    # layer_count, head_count, _, _ = self_pwet.shape
+    # import matplotlib.pyplot as plt
+    # for i in range(layer_count):
+    #     for j in range(head_count):
+    #         plt.pcolormesh(self_pwet[i, j], cmap="jet")
+    #         plt.show()
+    # exit()
+
+    # region Callbacks
+    log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
+    os.makedirs(log_dir)
+    save_model_info(landmarks_transformer, log_dir)
+
+    tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
+
+    # region Landmarks (video)
+    # region Default
+    lvc_train_dataset = train_dataset.map(lambda data: (data, data[1]))
+    lvc_test_dataset = test_dataset.map(lambda data: (data, data[1]))
+
+    train_landmarks_callback = LandmarksVideoCallback(lvc_train_dataset, landmarks_transformer, tensorboard,
+                                                      is_train_callback=True)
+    test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, landmarks_transformer, tensorboard,
+                                                     is_train_callback=False)
+    # endregion
+
+    # region Autonomous
+    # lvc_train_dataset = train_dataset.map(lambda data: (data[0], data[1]))
+    lvc_test_dataset = test_dataset.map(lambda data: (data[0], data[1]))
+    # autonomous_train_landmarks_callback = LandmarksVideoCallback(lvc_train_dataset, autonomous_transformer,
+    #                                                              tensorboard, is_train_callback=True,
+    #                                                              prefix="autonomous")
+    autonomous_test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, autonomous_transformer,
+                                                                tensorboard, is_train_callback=False,
+                                                                prefix="autonomous")
+    # endregion
+    # endregion
+
+    # region AUC
+    # region Default
+    raw_predictions = RawPredictionsLayer((2,))([landmarks_transformer.decoded,
+                                                 landmarks_transformer.decoder_target_layer])
+    raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
+                                  name="raw_predictions_model")
+
+    labeled_test_subset = test_subset.labeled_tf_dataset
+    labeled_test_subset = labeled_test_subset.map(lambda x, y, l: (*flatten_landmarks(x, y), l))
+    auc_callback = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
+                                     tensorboard=tensorboard, samples_count=512)
+    # endregion
+    # region Autonomous
+    autonomous_ground_truth = Input(batch_shape=autonomous_transformer.output.shape, name="autonomous_ground_truth")
+    autonomous_raw_predictions = RawPredictionsLayer((2,))([autonomous_transformer.output,
+                                                            autonomous_ground_truth])
+    autonomous_raw_predictions_model = Model(inputs=[autonomous_transformer.input, autonomous_ground_truth],
+                                             outputs=autonomous_raw_predictions,
+                                             name="autonomous_raw_predictions_model")
+    autonomous_auc_callback = make_auc_callback(test_subset=labeled_test_subset,
+                                                predictions_model=autonomous_raw_predictions_model,
+                                                tensorboard=tensorboard, samples_count=512,
+                                                prefix="autonomous")
+    # endregion
+    # endregion
+
+    model_checkpoint = TmpModelCheckpoint(os.path.join(base_log_dir, "weights_{epoch:03d}.hdf5"),
+                                          verbose=1)
+    callbacks = [model_checkpoint,
+                 tensorboard,
+                 # train_landmarks_callback,
+                 test_landmarks_callback,
+                 # autonomous_train_landmarks_callback,
+                 # autonomous_test_landmarks_callback,
+                 auc_callback,
+                 # autonomous_auc_callback
+                 ]
+
+    # endregion
+
+    train_dataset = train_dataset.batch(batch_size).prefetch(-1)
+    test_dataset = test_dataset.batch(batch_size)
+    if not tf.executing_eagerly():
+        train_dataset = train_dataset.map(lambda x: (x, []))
+        test_dataset = test_dataset.map(lambda x: (x, []))
+    landmarks_transformer.fit(train_dataset, epochs=100, steps_per_epoch=20000,
+                              validation_data=test_dataset, validation_steps=500,
+                              callbacks=callbacks)
+
+
+# endregion
+
 
 # region Audio
 
@@ -620,7 +1045,7 @@ def train_audio_autoencoder():
     # test_subset.subset_folders = [folder for folder in test_subset.subset_folders if "induced" in folder]
 
     # region callbacks
-    log_dir = "../logs/tests/kitchen_sink/mfcc_only"
+    log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/mfcc"
     log_dir = os.path.join(log_dir, "log_{}".format(int(time())))
     os.makedirs(log_dir)
 
@@ -640,7 +1065,7 @@ def train_audio_autoencoder():
                                      tensorboard=tensorboard)
 
     # model_checkpoint = ModelCheckpoint("../logs/tests/kitchen_sink/mfcc_only/weights.{epoch:03d}.hdf5", )
-    model_checkpoint = TmpModelCheckpoint()
+    model_checkpoint = TmpModelCheckpoint(os.path.join(log_dir, "weights_{epoch:03d}.hdf5"))
     callbacks = [tensorboard, *train_image_callbacks, auc_callback, TerminateOnNaN(), model_checkpoint]
 
     summary_filename = os.path.join(log_dir, "{}_summary.txt".format(audio_autoencoder.name))
@@ -668,7 +1093,8 @@ def train_audio_autoencoder():
 
 
 def main():
-    train_audio_autoencoder()
+    train_landmarks_transformer()
+    # train_landmarks_autoencoder()
 
 
 if __name__ == "__main__":

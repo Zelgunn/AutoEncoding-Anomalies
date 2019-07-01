@@ -1,8 +1,8 @@
 import tensorflow as tf
 import numpy as np
-from typing import Dict, Union, List
 import dlib
 import cv2
+from typing import Dict, Union, List, Any
 
 from modalities import Modality
 
@@ -15,6 +15,13 @@ class Landmarks(Modality):
 
         self.dlib_face_detector = dlib.get_frontal_face_detector()
         self.dlib_shape_predictor = dlib.shape_predictor(dlib_shape_predictor_path)
+
+    def get_config(self) -> Dict[str, Any]:
+        base_config = super(Landmarks, self).get_config()
+        config = {
+            "dlib_shape_predictor_path": self.dlib_shape_predictor_path,
+        }
+        return {**base_config, **config}
 
     @classmethod
     def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:
@@ -31,9 +38,9 @@ class Landmarks(Modality):
 
     @classmethod
     def rank(cls) -> int:
-        return 2
+        return 3
 
-    def compute_landmarks(self, frames: np.ndarray, upsampling=(1, 2, 3), use_other_if_fail=False) -> np.ndarray:
+    def compute_landmarks(self, frames: np.ndarray, upsampling=(1, 2), use_other_if_fail=False) -> np.ndarray:
         frame_count, height, width, _ = frames.shape
 
         if frames.dtype != np.uint8:
@@ -85,6 +92,9 @@ class Landmarks(Modality):
             landmarks[i] = landmarks[copy_index]
 
         landmarks /= [width, height]
+
+        if use_other_if_fail:
+            print(" - Failed to identify landmarks {} times".format(len(failed_indexes)))
 
         return landmarks
 

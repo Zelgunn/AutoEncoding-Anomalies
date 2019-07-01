@@ -5,7 +5,7 @@ from typing import Dict, Type, List, Any, Tuple, Union
 
 from datasets.tfrecord_builders import tfrecords_config_filename
 from modalities import Modality, ModalityCollection, ModalityShape
-from modalities import RawVideo, OpticalFlow, DoG
+from modalities import RawVideo, OpticalFlow, DoG, Landmarks
 from modalities import RawAudio, MelSpectrogram
 from utils.misc_utils import int_ceil
 
@@ -67,7 +67,7 @@ class DatasetConfig(object):
                                 modality: Modality
                                 ) -> Union[float, int]:
 
-        if isinstance(modality, (RawVideo, DoG)):
+        if isinstance(modality, (RawVideo, DoG, Landmarks)):
             shard_size = self.video_frequency * self.shard_duration
         elif isinstance(modality, OpticalFlow):
             shard_size = self.video_frequency * self.shard_duration - 1

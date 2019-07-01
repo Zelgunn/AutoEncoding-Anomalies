@@ -90,9 +90,14 @@ def gif_summary(name: str,
 
     with summary_scope as (tag, _):
         tf.debugging.assert_rank(data, 5)
-        tf.debugging.assert_non_negative(max_outputs)
 
         summary = summary_pb2.Summary()
+
+        if tf.executing_eagerly():
+            data = data.numpy()
+        else:
+            session = tf.compat.v1.keras.backend.get_session()
+            data = session.run(data)
 
         for i in range(batch_size):
             ith_image_summary = summary_pb2.Summary.Image()
@@ -101,7 +106,7 @@ def gif_summary(name: str,
             ith_image_summary.colorspace = channels
 
             try:
-                ith_image_summary.encoded_image_string = encode_gif(data[i].numpy(), fps)
+                ith_image_summary.encoded_image_string = encode_gif(data[i], fps)
             except (IOError, OSError) as exception:
                 raise IOError("Unable to encode images to a gif string because either ffmpeg is "
                               "not installed or ffmpeg returned an error: {}.".format(repr(exception)))

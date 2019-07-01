@@ -18,6 +18,7 @@ class BuildersList(object):
         for partial_shards in builders_iterator:
             shard = {modality: partial_shard[modality]
                      for partial_shard in partial_shards
+                     if partial_shard is not None
                      for modality in partial_shard}
 
             yield shard

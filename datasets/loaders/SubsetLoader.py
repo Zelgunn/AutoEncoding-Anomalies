@@ -6,7 +6,7 @@ from typing import Dict, Tuple, Optional, Type, List
 
 from datasets.loaders import DatasetConfig
 from modalities import Modality, ModalityCollection
-from modalities import RawVideo
+from modalities import RawVideo, Landmarks
 from modalities import MelSpectrogram
 from utils.misc_utils import int_ceil, int_floor
 
@@ -147,7 +147,7 @@ class SubsetLoader(object):
 
                 modality_shards_shape = tf.shape(modality_shards, name="modality_shard_shape")
                 modality_shards_shape.set_shape(modality.rank() + 1)
-                modality_shards_shape = tf.unstack(modality_shards_shape)
+                modality_shards_shape = tf.unstack(modality_shards_shape, name="unstack_modality_shape")
                 shards_per_sample, modality_size, *modality_shape = modality_shards_shape
                 modality_shards_shape = [shards_per_sample * modality_size, *modality_shape]
                 modality_shards = tf.reshape(modality_shards, modality_shards_shape, "concatenate_shards")
@@ -186,6 +186,8 @@ class SubsetLoader(object):
                 modality_value = modality_value / tf.constant(255.0, modality_value.dtype)
             elif modality_id == MelSpectrogram.id():
                 modality_value = tf.clip_by_value(modality_value, 0.0, 1.0, name="clip_mel_spectrogram")
+            elif modality_id == Landmarks.id():
+                modality_value = modality_value
             else:
                 modality_min, modality_max = self.config.modalities_ranges[modality_id]
                 modality_value = (modality_value - modality_min) / (modality_max - modality_min)
@@ -251,13 +253,14 @@ class SubsetLoader(object):
         while True:
             source_index = np.random.randint(len(folders))
             source_folder = folders[source_index]
-            # shards = self.subset_files[source_folder]
             files = []
             shards_count = None
             for modality_id in modality_ids:
                 folder = os.path.join(source_folder, modality_id)
+
                 modality_files = [os.path.join(folder, file)
                                   for file in os.listdir(folder) if file.endswith(".tfrecord")]
+
                 files.append(modality_files)
                 if shards_count is None:
                     shards_count = len(modality_files)
@@ -301,6 +304,7 @@ class SubsetLoader(object):
 
         dataset = dataset.batch(self.shards_per_sample)
         dataset = dataset.map(self.join_shards_randomly, num_parallel_calls=k)
+
         # dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.normalize_batch, num_parallel_calls=k)
         if include_targets:
@@ -327,6 +331,7 @@ class SubsetLoader(object):
 
     # endregion
 
+    # region Ordered reading
     def get_batch(self, batch_size: int, output_labels: bool):
         dataset = self.labeled_tf_dataset if output_labels else self.tf_dataset
         dataset = dataset.batch(batch_size)
@@ -421,7 +426,7 @@ class SubsetLoader(object):
         dataset = dataset.map(lambda x:
                               (
                                   (
-                                      x[MelSpectrogram.id()],
+                                      x[Landmarks.id()],
                                       x["labels"]
                                   ),
                               )

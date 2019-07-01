@@ -13,7 +13,8 @@ class AUCWrapper(object):
     def __init__(self,
                  curve: str,
                  num_thresholds: int,
-                 plot_size: Optional[Tuple[int, int]]):
+                 plot_size: Optional[Tuple[int, int]],
+                 prefix=""):
         if curve not in ["ROC", "PR"]:
             raise ValueError("`curve`({}) not in [ROC, PR].".format(curve))
 
@@ -21,8 +22,9 @@ class AUCWrapper(object):
         self.curve_name = curve.lower()
         self.num_thresholds = num_thresholds
         self.plot_size = plot_size
+        self.prefix = prefix
 
-        self.auc = keras.metrics.AUC(curve=self.curve, name=self.curve_name)
+        self.auc = keras.metrics.AUC(curve=self.curve, name=self.base_name)
 
     # region Properties
     @property
@@ -52,7 +54,7 @@ class AUCWrapper(object):
         self.reset_states()
         self.update_state(y_true, y_pred)
         auc_scalar = self.result()
-        tf.summary.scalar(name=self.curve_name + "_scalar", data=auc_scalar, step=step)
+        tf.summary.scalar(name=self.base_name + "_scalar", data=auc_scalar, step=step)
 
     def write_plot_summary(self, step):
         if self.plot_size is None:
@@ -66,7 +68,7 @@ class AUCWrapper(object):
         auc_plot_image = np.expand_dims(auc_plot_image, axis=-1)
         auc_plot_image = np.expand_dims(auc_plot_image, axis=0)
 
-        tf.summary.image(name=self.curve_name + "_plot", data=auc_plot_image, step=step)
+        tf.summary.image(name=self.base_name + "_plot", data=auc_plot_image, step=step)
 
     def update_state(self, y_true, y_pred):
         self.auc.update_state(y_true, y_pred)
@@ -76,6 +78,13 @@ class AUCWrapper(object):
 
     def result(self):
         return self.auc.result()
+
+    @property
+    def base_name(self):
+        if (self.prefix is not None) and (len(self.prefix) > 0):
+            return "{}_{}".format(self.prefix, self.curve_name)
+        else:
+            return self.curve_name
 
 
 class AUCCallback(TensorBoardPlugin):
@@ -90,7 +99,8 @@ class AUCCallback(TensorBoardPlugin):
                  plot_size: Tuple = None,
                  batch_size=32,
                  num_thresholds=100,
-                 name="AUC_Callback"):
+                 name="AUC_Callback",
+                 prefix=""):
         super(AUCCallback, self).__init__(tensorboard, update_freq, epoch_freq)
 
         self.predictions_model = predictions_model
@@ -106,11 +116,13 @@ class AUCCallback(TensorBoardPlugin):
 
             self.roc = AUCWrapper(curve="ROC",
                                   num_thresholds=num_thresholds,
-                                  plot_size=self.plot_size)
+                                  plot_size=self.plot_size,
+                                  prefix=prefix)
 
             self.pr = AUCWrapper(curve="PR",
                                  num_thresholds=num_thresholds,
-                                 plot_size=None)
+                                 plot_size=None,
+                                 prefix=prefix)
 
     def _write_logs(self, index):
         predictions = self.predictions_model.predict((self.inputs, self.outputs), batch_size=self.batch_size)
