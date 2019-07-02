@@ -128,7 +128,7 @@ def main():
     tensorboard = keras.callbacks.TensorBoard(log_dir)
 
     decoded = model.decoder(model.encoder(model.encoder.input))
-    raw_predictions = RawPredictionsLayer((2, 3, 4))([decoded, model.encoder.input])
+    raw_predictions = RawPredictionsLayer()([decoded, model.encoder.input])
     raw_predictions_model = keras.Model(inputs=model.encoder.input, outputs=raw_predictions,
                                         name="raw_predictions_model")
 

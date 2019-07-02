@@ -1,19 +1,18 @@
 import tensorflow as tf
 from tensorflow.python.keras.engine.base_layer import Layer
-from typing import Union, List, Tuple
 
 
 class RawPredictionsLayer(Layer):
     def __init__(self,
-                 reduction_axis: Union[List[int], Tuple[int, ...], int],
                  output_length: int = None,
                  **kwargs):
         super(RawPredictionsLayer, self).__init__(trainable=False,
                                                   **kwargs)
-        self.reduction_axis = reduction_axis
+        self.reduction_axis = None
         self.output_length = output_length
 
     def build(self, input_shape):
+        self.reduction_axis = tuple(range(2, len(input_shape[0])))
         self.built = True
 
     def call(self, inputs, **kwargs):

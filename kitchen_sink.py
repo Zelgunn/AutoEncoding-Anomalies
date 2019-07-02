@@ -90,6 +90,7 @@ class LandmarksVideoCallback(TensorBoardPlugin):
                  epoch_freq=1,
                  output_size=(512, 512),
                  marker_size=5,
+                 fps=25,
                  is_train_callback=False,
                  prefix=""):
         super(LandmarksVideoCallback, self).__init__(tensorboard,
@@ -98,6 +99,7 @@ class LandmarksVideoCallback(TensorBoardPlugin):
 
         self.output_size = output_size
         self.marker_size = marker_size
+        self.fps = fps
         self.autoencoder = autoencoder
         self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
         self.prefix = prefix if (len(prefix) == 0) else (prefix + "_")
@@ -110,15 +112,15 @@ class LandmarksVideoCallback(TensorBoardPlugin):
             if index == 0:
                 self.ground_truth_images = self.landmarks_to_image(self.outputs, color=(255, 0, 0))
                 images = tf.convert_to_tensor(self.ground_truth_images)
-                image_summary(self.prefix + "ground_truth_landmarks", images, max_outputs=4, step=index)
+                image_summary(self.prefix + "ground_truth_landmarks", images, max_outputs=4, step=index, fps=self.fps)
 
             predicted = self.autoencoder.predict(self.inputs)
 
             images = self.landmarks_to_image(predicted, color=(0, 255, 0))
             images = tf.convert_to_tensor(images)
             comparison = tf.convert_to_tensor(images + self.ground_truth_images)
-            image_summary(self.prefix + "predicted_landmarks", images, max_outputs=4, step=index)
-            image_summary(self.prefix + "comparison", comparison, max_outputs=4, step=index)
+            image_summary(self.prefix + "predicted_landmarks", images, max_outputs=4, step=index, fps=self.fps)
+            image_summary(self.prefix + "comparison", comparison, max_outputs=4, step=index, fps=self.fps)
 
     def landmarks_to_image(self, landmarks_batch: np.ndarray, color):
         if len(landmarks_batch.shape) == 3:
@@ -147,7 +149,7 @@ class AnomalyDetector(object):
     def make_raw_predictions_model(self, include_labels_io=False) -> Model:
         reduction_axis = tuple(range(2, len(self.autoencoder.output_shape)))
         predictions_inputs = [self.autoencoder(self.autoencoder.input), self.autoencoder.input]
-        predictions = RawPredictionsLayer(reduction_axis)(predictions_inputs)
+        predictions = RawPredictionsLayer()(predictions_inputs)
 
         inputs = [self.autoencoder.input]
         outputs = [predictions]
@@ -297,7 +299,7 @@ class AnomalyDetector(object):
 
 # endregion
 
-# region helpers
+# region Helpers
 def get_temporal_loss_weights(input_sequence_length, start=1.0, stop=0.1):
     reconstruction_loss_weights = np.ones([input_sequence_length], dtype=np.float32)
     step = (stop - start) / input_sequence_length
@@ -657,7 +659,7 @@ def train_landmarks_autoencoder():
 
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
 
-    raw_predictions = RawPredictionsLayer((2, 3))([landmarks_autoencoder.output, landmarks_autoencoder.input])
+    raw_predictions = RawPredictionsLayer()([landmarks_autoencoder.output, landmarks_autoencoder.input])
     raw_predictions_model = Model(inputs=landmarks_autoencoder.input, outputs=raw_predictions,
                                   name="raw_predictions_model")
     auc_callback = make_auc_callback(test_subset=test_subset, predictions_model=raw_predictions_model,
@@ -715,32 +717,38 @@ def train_landmarks_transformer():
     from transformer.layers import PositionalEncodingMode
 
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks_transformer"
-    batch_size = 16
+    batch_size = 32
     input_sequence_length = 32
     output_sequence_length = input_sequence_length * 4
+
+    pre_net_params = {"activation": "relu",
+                      "kernel_initializer": "he_normal"}
+    pre_net = tf.keras.models.Sequential(layers=[Dense(units=64, **pre_net_params),
+                                                 Dense(units=32, **pre_net_params)],
+                                         name="pre_net")
 
     landmarks_transformer = Transformer(max_input_length=input_sequence_length,
                                         max_output_length=output_sequence_length,
                                         input_size=68 * 2,
                                         output_size=68 * 2,
                                         output_activation="linear",
-                                        layers_intermediate_size=256,
+                                        layers_intermediate_size=64,
                                         layers_count=4,
                                         attention_heads_count=4,
                                         attention_key_size=32,
                                         attention_values_size=32,
-                                        dropout_rate=0.1,
-                                        decoder_pre_net=Dense(units=64, activation="relu"),
-                                        # decoder_pre_net=None,
-                                        positional_encoding_mode=PositionalEncodingMode.ADD,
-                                        positional_encoding_range=0.02,
+                                        dropout_rate=0.0,
+                                        # decoder_pre_net=pre_net,
+                                        decoder_pre_net=None,
+                                        positional_encoding_mode=PositionalEncodingMode.CONCAT,
+                                        positional_encoding_range=0.1,
+                                        positional_encoding_size=32,
                                         name="Transformer")
     landmarks_transformer.add_loss(landmarks_transformer.get_transformer_loss(use_loss_temporal_mask=True))
     landmarks_transformer.compile(RMSprop(lr=2e-4))
     landmarks_transformer.summary()
 
-    # landmarks_transformer.save(base_log_dir + "/weights_000.hdf5")
-    # landmarks_transformer.load_weights(base_log_dir+"/weights_006.hdf5")
+    # landmarks_transformer.load_weights(base_log_dir+"/weights_014.hdf5")
 
     autonomous_transformer = landmarks_transformer.make_autonomous_model()
 
@@ -767,6 +775,8 @@ def train_landmarks_transformer():
     #     for j in range(head_count):
     #         plt.pcolormesh(self_pwet[i, j], cmap="jet")
     #         plt.show()
+    #         plt.pcolormesh(encoder_pwet[i, j], cmap="jet")
+    #         plt.show()
     # exit()
 
     # region Callbacks
@@ -782,7 +792,7 @@ def train_landmarks_transformer():
     lvc_test_dataset = test_dataset.map(lambda data: (data, data[1]))
 
     train_landmarks_callback = LandmarksVideoCallback(lvc_train_dataset, landmarks_transformer, tensorboard,
-                                                      is_train_callback=True)
+                                                      is_train_callback=True, fps=10)
     test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, landmarks_transformer, tensorboard,
                                                      is_train_callback=False)
     # endregion
@@ -801,8 +811,8 @@ def train_landmarks_transformer():
 
     # region AUC
     # region Default
-    raw_predictions = RawPredictionsLayer((2,))([landmarks_transformer.decoded,
-                                                 landmarks_transformer.decoder_target_layer])
+    raw_predictions = RawPredictionsLayer(output_length=32)([landmarks_transformer.decoded,
+                                                             landmarks_transformer.decoder_target_layer])
     raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
                                   name="raw_predictions_model")
 
@@ -813,8 +823,7 @@ def train_landmarks_transformer():
     # endregion
     # region Autonomous
     autonomous_ground_truth = Input(batch_shape=autonomous_transformer.output.shape, name="autonomous_ground_truth")
-    autonomous_raw_predictions = RawPredictionsLayer((2,))([autonomous_transformer.output,
-                                                            autonomous_ground_truth])
+    autonomous_raw_predictions = RawPredictionsLayer()([autonomous_transformer.output, autonomous_ground_truth])
     autonomous_raw_predictions_model = Model(inputs=[autonomous_transformer.input, autonomous_ground_truth],
                                              outputs=autonomous_raw_predictions,
                                              name="autonomous_raw_predictions_model")
@@ -829,7 +838,7 @@ def train_landmarks_transformer():
                                           verbose=1)
     callbacks = [model_checkpoint,
                  tensorboard,
-                 # train_landmarks_callback,
+                 train_landmarks_callback,
                  test_landmarks_callback,
                  # autonomous_train_landmarks_callback,
                  # autonomous_test_landmarks_callback,
@@ -844,7 +853,7 @@ def train_landmarks_transformer():
     if not tf.executing_eagerly():
         train_dataset = train_dataset.map(lambda x: (x, []))
         test_dataset = test_dataset.map(lambda x: (x, []))
-    landmarks_transformer.fit(train_dataset, epochs=100, steps_per_epoch=20000,
+    landmarks_transformer.fit(train_dataset, epochs=100, steps_per_epoch=10000,
                               validation_data=test_dataset, validation_steps=500,
                               callbacks=callbacks)
 
@@ -1058,7 +1067,7 @@ def train_audio_autoencoder():
                                                                            tensorboard=tensorboard,
                                                                            epoch_freq=1)
 
-    raw_predictions = RawPredictionsLayer((2,))([audio_autoencoder.output, audio_autoencoder.input])
+    raw_predictions = RawPredictionsLayer()([audio_autoencoder.output, audio_autoencoder.input])
     raw_predictions_model = Model(inputs=audio_autoencoder.input, outputs=raw_predictions,
                                   name="raw_predictions_model")
     auc_callback = make_auc_callback(test_subset=test_subset, predictions_model=raw_predictions_model,

@@ -188,7 +188,7 @@ class AutoEncoderBaseModel(ABC):
         self._encoder: Optional[KerasModel] = None
         self._decoder: Optional[KerasModel] = None
         self._autoencoder: Optional[KerasModel] = None
-        self._raw_predictions_models: Dict[bool, Dict[Tuple, KerasModel]] = {False: {}, True: {}}
+        self._raw_predictions_model: Optional[KerasModel] = None
         self._reconstructor_model: Optional[KerasModel] = None
 
         self.decoder_input_layer = None
@@ -902,8 +902,8 @@ class AutoEncoderBaseModel(ABC):
 
         video_writer.release()
 
-    def get_anomalies_raw_predictions_model(self, reduction_axis=(2, 3, 4), include_labels_io=False) -> KerasModel:
-        if reduction_axis not in self._raw_predictions_models:
+    def get_anomalies_raw_predictions_model(self, include_labels_io=False) -> KerasModel:
+        if self._raw_predictions_model is None:
             reconstructor = KerasModel(inputs=self.decoder_input_layer, outputs=self.reconstructor_output,
                                        name="Reconstructor")
             encoder_output = self.encoder(self.encoder.get_input_at(0))
@@ -911,7 +911,7 @@ class AutoEncoderBaseModel(ABC):
                 encoder_output = encoder_output[0]
             pred_output = reconstructor(encoder_output)
             true_output = self.encoder.get_input_at(0)
-            error = RawPredictionsLayer(reduction_axis)([pred_output, true_output])
+            error = RawPredictionsLayer()([pred_output, true_output])
 
             labels_input_layer = Input(shape=[None, 2], dtype=tf.float32, name="labels_input_layer")
             labels_output_layer = Lambda(tf.identity, name="labels_identity")(labels_input_layer)
@@ -924,9 +924,9 @@ class AutoEncoderBaseModel(ABC):
 
             raw_predictions_model = KerasModel(inputs=inputs, outputs=outputs)
 
-            self._raw_predictions_models[include_labels_io][reduction_axis] = raw_predictions_model
+            self._raw_predictions_model = raw_predictions_model
 
-        return self._raw_predictions_models[include_labels_io][reduction_axis]
+        return self._raw_predictions_model
 
     # region Using attractors
     def get_reconstructor_run_model(self) -> KerasModel:
