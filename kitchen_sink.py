@@ -54,7 +54,7 @@ def make_auc_callback(test_subset,
                       ) -> AUCCallback:
     inputs, outputs, labels = get_batch(test_subset, batch_size=samples_count)
 
-    labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, outputs.shape[1])
+    labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, predictions_model.output_shape[1])
 
     auc_callback = AUCCallback(predictions_model=predictions_model,
                                tensorboard=tensorboard,
@@ -124,7 +124,8 @@ class LandmarksVideoCallback(TensorBoardPlugin):
 
     def landmarks_to_image(self, landmarks_batch: np.ndarray, color):
         if len(landmarks_batch.shape) == 3:
-            landmarks_batch = landmarks_batch.reshape([*landmarks_batch.shape[:2], 68, 2])
+            batch_size = landmarks_batch.shape[0]
+            landmarks_batch = landmarks_batch.reshape([batch_size, - 1, 68, 2])
 
         batch_size, sequence_length, _, _ = landmarks_batch.shape
         images = np.zeros([batch_size, sequence_length, *self.output_size, 3], dtype=np.uint8)
@@ -147,7 +148,6 @@ class AnomalyDetector(object):
         self._raw_predictions_model: Optional[Model] = None
 
     def make_raw_predictions_model(self, include_labels_io=False) -> Model:
-        reduction_axis = tuple(range(2, len(self.autoencoder.output_shape)))
         predictions_inputs = [self.autoencoder(self.autoencoder.input), self.autoencoder.input]
         predictions = RawPredictionsLayer()(predictions_inputs)
 
@@ -720,47 +720,52 @@ def train_landmarks_transformer():
     batch_size = 32
     input_sequence_length = 32
     output_sequence_length = input_sequence_length * 4
+    frame_per_prediction = 4
 
-    pre_net_params = {"activation": "relu",
-                      "kernel_initializer": "he_normal"}
-    pre_net = tf.keras.models.Sequential(layers=[Dense(units=64, **pre_net_params),
-                                                 Dense(units=32, **pre_net_params)],
-                                         name="pre_net")
+    # pre_net_params = {"activation": "relu",
+    #                   "kernel_initializer": "he_normal"}
+    # pre_net = tf.keras.models.Sequential(layers=[Dense(units=64, **pre_net_params),
+    #                                              Dense(units=32, **pre_net_params)],
+    #                                      name="pre_net")
 
     landmarks_transformer = Transformer(max_input_length=input_sequence_length,
-                                        max_output_length=output_sequence_length,
+                                        max_output_length=output_sequence_length // frame_per_prediction,
                                         input_size=68 * 2,
-                                        output_size=68 * 2,
+                                        output_size=68 * 2 * frame_per_prediction,
                                         output_activation="linear",
                                         layers_intermediate_size=64,
                                         layers_count=4,
                                         attention_heads_count=4,
                                         attention_key_size=32,
                                         attention_values_size=32,
-                                        dropout_rate=0.0,
+                                        dropout_rate=0.2,
                                         # decoder_pre_net=pre_net,
                                         decoder_pre_net=None,
-                                        positional_encoding_mode=PositionalEncodingMode.CONCAT,
+                                        positional_encoding_mode=PositionalEncodingMode.ADD,
                                         positional_encoding_range=0.1,
-                                        positional_encoding_size=32,
+                                        # positional_encoding_size=16,
                                         name="Transformer")
-    landmarks_transformer.add_loss(landmarks_transformer.get_transformer_loss(use_loss_temporal_mask=True))
+
+    landmarks_transformer.add_transformer_loss()
+
     landmarks_transformer.compile(RMSprop(lr=2e-4))
     landmarks_transformer.summary()
 
     # landmarks_transformer.load_weights(base_log_dir+"/weights_014.hdf5")
 
-    autonomous_transformer = landmarks_transformer.make_autonomous_model()
+    # autonomous_transformer = landmarks_transformer.make_autonomous_model()
 
     # region Datasets
     dataset_loader, train_subset, test_subset = get_landmarks_datasets(input_sequence_length, output_sequence_length)
 
     train_dataset = train_subset.tf_dataset
     train_dataset = train_dataset.map(flatten_landmarks)
+    train_dataset = train_dataset.map(lambda x, y: (x, tf.reshape(y, [-1, 68 * 2 * frame_per_prediction])))
     train_dataset = train_dataset.map(lambda x, y: ((x, y),))
 
     test_dataset = test_subset.tf_dataset
     test_dataset = test_dataset.map(flatten_landmarks)
+    test_dataset = test_dataset.map(lambda x, y: (x, tf.reshape(y, [-1, 68 * 2 * frame_per_prediction])))
     test_dataset = test_dataset.map(lambda x, y: ((x, y),))
     # endregion
 
@@ -799,38 +804,42 @@ def train_landmarks_transformer():
 
     # region Autonomous
     # lvc_train_dataset = train_dataset.map(lambda data: (data[0], data[1]))
-    lvc_test_dataset = test_dataset.map(lambda data: (data[0], data[1]))
+    # lvc_test_dataset = test_dataset.map(lambda data: (data[0], data[1]))
     # autonomous_train_landmarks_callback = LandmarksVideoCallback(lvc_train_dataset, autonomous_transformer,
     #                                                              tensorboard, is_train_callback=True,
     #                                                              prefix="autonomous")
-    autonomous_test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, autonomous_transformer,
-                                                                tensorboard, is_train_callback=False,
-                                                                prefix="autonomous")
+    # autonomous_test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, autonomous_transformer,
+    #                                                             tensorboard, is_train_callback=False,
+    #                                                             prefix="autonomous")
     # endregion
     # endregion
 
     # region AUC
     # region Default
-    raw_predictions = RawPredictionsLayer(output_length=32)([landmarks_transformer.decoded,
+    raw_predictions = RawPredictionsLayer(output_length=32)([landmarks_transformer.output,
                                                              landmarks_transformer.decoder_target_layer])
     raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
                                   name="raw_predictions_model")
 
     labeled_test_subset = test_subset.labeled_tf_dataset
     labeled_test_subset = labeled_test_subset.map(lambda x, y, l: (*flatten_landmarks(x, y), l))
+    labeled_test_subset = labeled_test_subset.map(lambda x, y, l: (x,
+                                                                   tf.reshape(y, [-1, 68 * 2 * frame_per_prediction]),
+                                                                   l)
+                                                  )
     auc_callback = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
                                      tensorboard=tensorboard, samples_count=512)
     # endregion
     # region Autonomous
-    autonomous_ground_truth = Input(batch_shape=autonomous_transformer.output.shape, name="autonomous_ground_truth")
-    autonomous_raw_predictions = RawPredictionsLayer()([autonomous_transformer.output, autonomous_ground_truth])
-    autonomous_raw_predictions_model = Model(inputs=[autonomous_transformer.input, autonomous_ground_truth],
-                                             outputs=autonomous_raw_predictions,
-                                             name="autonomous_raw_predictions_model")
-    autonomous_auc_callback = make_auc_callback(test_subset=labeled_test_subset,
-                                                predictions_model=autonomous_raw_predictions_model,
-                                                tensorboard=tensorboard, samples_count=512,
-                                                prefix="autonomous")
+    # autonomous_ground_truth = Input(batch_shape=autonomous_transformer.output.shape, name="autonomous_ground_truth")
+    # autonomous_raw_predictions = RawPredictionsLayer()([autonomous_transformer.output, autonomous_ground_truth])
+    # autonomous_raw_predictions_model = Model(inputs=[autonomous_transformer.input, autonomous_ground_truth],
+    #                                          outputs=autonomous_raw_predictions,
+    #                                          name="autonomous_raw_predictions_model")
+    # autonomous_auc_callback = make_auc_callback(test_subset=labeled_test_subset,
+    #                                             predictions_model=autonomous_raw_predictions_model,
+    #                                             tensorboard=tensorboard, samples_count=512,
+    #                                             prefix="autonomous")
     # endregion
     # endregion
 
@@ -850,10 +859,8 @@ def train_landmarks_transformer():
 
     train_dataset = train_dataset.batch(batch_size).prefetch(-1)
     test_dataset = test_dataset.batch(batch_size)
-    if not tf.executing_eagerly():
-        train_dataset = train_dataset.map(lambda x: (x, []))
-        test_dataset = test_dataset.map(lambda x: (x, []))
-    landmarks_transformer.fit(train_dataset, epochs=100, steps_per_epoch=10000,
+
+    landmarks_transformer.fit(train_dataset, epochs=100, steps_per_epoch=5000,
                               validation_data=test_dataset, validation_steps=500,
                               callbacks=callbacks)
 
