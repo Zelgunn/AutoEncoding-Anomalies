@@ -351,7 +351,7 @@ def main():
     np_prop.build(input_shape=(sequence_length, mel_filter_count))
 
     dataset_config = DatasetConfig("E:/datasets/emoly",
-                                   modalities_io_shapes=
+                                   modalities_pattern=
                                    {
                                        MelSpectrogram: ModalityShape((sequence_length, mel_filter_count),
                                                                      (sequence_length, mel_filter_count))

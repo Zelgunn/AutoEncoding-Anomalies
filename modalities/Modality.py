@@ -1,38 +1,15 @@
 import tensorflow as tf
 import numpy as np
 from abc import ABC, abstractmethod
-from typing import List, Union, Tuple, Dict, Optional, Any
+from typing import List, Union, Tuple, Dict, Optional, Any, NamedTuple, Type
 
 from modalities import int64_list_feature, bytes_list_feature
 
 
-class ModalityShape(object):
-    def __init__(self,
-                 input_shape: Union[List[int], Tuple[int, ...]],
-                 output_shape: Union[List[int], Tuple[int, ...]]):
-        self.input_shape = input_shape
-        self.output_shape = output_shape
-
-    @property
-    def input_length(self) -> int:
-        return self.input_shape[0]
-
-    @property
-    def output_length(self) -> int:
-        return self.output_shape[0]
-
-    @property
-    def sample_length(self) -> int:
-        return max(self.input_length, self.output_length)
-
-    @property
-    def rank(self) -> int:
-        return len(self.input_shape)
-
-
 class Modality(ABC):
     def __init__(self, **kwargs):
-        self.io_shape: Optional[ModalityShape] = None
+        # self.io_shape: Optional[ModalityShape] = None
+        pass
 
     def get_config(self) -> Dict[str, Any]:
         return {}
@@ -101,3 +78,58 @@ class Modality(ABC):
     @abstractmethod
     def rank(cls) -> int:
         raise NotImplementedError
+
+
+ModalitiesPattern = Tuple[Union[Tuple, "ModalityLoadInfo", str], ...]
+
+
+class ModalityLoadInfo(NamedTuple):
+    modality: Type[Modality]
+    length: int
+    output_shape: Tuple[int, ...]
+
+    @property
+    def rank(self) -> int:
+        return len(self.output_shape)
+
+    @classmethod
+    def extract_modalities_types(cls,
+                                 modalities_pattern: ModalitiesPattern
+                                 ) -> List[Type[Modality]]:
+        types: List[Type[Modality]] = []
+        for element in modalities_pattern:
+            if isinstance(element, cls):
+                if element.modality not in types:
+                    types.append(element.modality)
+            else:
+                element_types = cls.extract_modalities_types(element)
+                for element_type in element_types:
+                    if element_type not in types:
+                        types.append(element_type)
+        return types
+
+    @classmethod
+    def pattern_to_flat_list(cls,
+                             modalities_pattern: ModalitiesPattern
+                             ) -> List["ModalityLoadInfo"]:
+        return sum(([x] if (isinstance(x, str) or isinstance(x, cls)) else cls.pattern_to_flat_list(x)
+                    for x in modalities_pattern), [])
+
+    @classmethod
+    def pattern_to_dict(cls,
+                        modalities_pattern: ModalitiesPattern
+                        ) -> Dict[Type[Modality], List["ModalityLoadInfo"]]:
+        load_info_dict: Dict[Type[Modality], List["ModalityLoadInfo"]] = {}
+        flat_load_info = cls.pattern_to_flat_list(modalities_pattern)
+
+        for modality_load_info in flat_load_info:
+            if isinstance(modality_load_info, str):
+                continue
+
+            modality_type = modality_load_info.modality
+            if modality_type in load_info_dict:
+                load_info_dict[modality_type].append(modality_load_info)
+            else:
+                load_info_dict[modality_type] = [modality_load_info]
+
+        return load_info_dict

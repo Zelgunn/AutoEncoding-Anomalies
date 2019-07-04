@@ -63,7 +63,7 @@ class AUCWrapper(object):
         fpr = self.false_positive_rate.numpy()
         tpr = self.true_positive_rate.numpy()
 
-        auc_plot_image = plot_line2d_to_array(fpr, tpr, self.plot_size)
+        auc_plot_image = plot_line2d_to_array(fpr, tpr, self.plot_size, normalize=False)
         auc_plot_image = cv2.cvtColor(auc_plot_image, cv2.COLOR_RGB2GRAY)
         auc_plot_image = np.expand_dims(auc_plot_image, axis=-1)
         auc_plot_image = np.expand_dims(auc_plot_image, axis=0)

@@ -91,6 +91,9 @@ class Landmarks(Modality):
                 raise ValueError("Could not find any face in this video.")
             landmarks[i] = landmarks[copy_index]
 
+        if use_other_if_fail:
+            print(" - Failed {} detections.".format(len(failed_indexes)))
+
         landmarks /= [width, height]
 
         if use_other_if_fail:

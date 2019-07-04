@@ -8,6 +8,7 @@
       <w>blurrer</w>
       <w>castable</w>
       <w>chunking</w>
+      <w>cmap</w>
       <w>compat</w>
       <w>dataframe</w>
       <w>degva</w>
@@ -41,8 +42,10 @@
       <w>nmels</w>
       <w>paddings</w>
       <w>pathlib</w>
+      <w>pcolormesh</w>
       <w>pixar</w>
       <w>pwet</w>
+      <w>pyplot</w>
       <w>resampling</w>
       <w>softmax</w>
       <w>spatio</w>

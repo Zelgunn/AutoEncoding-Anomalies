@@ -1,6 +1,6 @@
-from typing import Dict, Type, List, Optional, Any
+from typing import Dict, Type, List, Optional, Any, Tuple, Union
 
-from modalities import Modality, RawVideo, OpticalFlow, DoG, Landmarks, RawAudio, MelSpectrogram, ModalityShape
+from modalities import Modality, RawVideo, OpticalFlow, DoG, Landmarks, RawAudio, MelSpectrogram, ModalityLoadInfo
 
 EXISTING_MODALITIES: List[Type[Modality]] = [RawVideo, OpticalFlow, DoG, Landmarks, RawAudio, MelSpectrogram]
 MODALITY_ID_TO_CLASS: Dict[str, Type[Modality]] = {modality_type.id(): modality_type
@@ -8,7 +8,6 @@ MODALITY_ID_TO_CLASS: Dict[str, Type[Modality]] = {modality_type.id(): modality_
 
 
 class ModalityCollection(object):
-
     def __init__(self,
                  modalities: Optional[List[Modality]] = None
                  ):
@@ -16,6 +15,7 @@ class ModalityCollection(object):
         if modalities is not None:
             for modality in modalities:
                 self._modalities[type(modality)] = modality
+        self.modalities_pattern: Optional[Tuple[Union[Tuple, ModalityLoadInfo], ...]] = None
 
     def __iter__(self):
         for modality in self._modalities.values():
@@ -50,22 +50,13 @@ class ModalityCollection(object):
         return config
 
     @classmethod
-    def from_config(cls, config: Dict[str, Dict[str, Any]]):
+    def from_config(cls, config: Dict[str, Dict[str, Any]]) -> "ModalityCollection":
         modalities: List[Modality] = []
         for modality_id, modality_config in config.items():
             modality_type = MODALITY_ID_TO_CLASS[modality_id]
             modality = modality_type.from_config(modality_config)
             modalities.append(modality)
         return cls(modalities)
-
-    def set_modalities_shapes(self,
-                              modalities_shapes: Dict[Type[Modality], ModalityShape],
-                              filter_missing_modalities=False):
-        if filter_missing_modalities:
-            self.filter(list(modalities_shapes.keys()))
-
-        for modality_type, modality_shape in modalities_shapes.items():
-            self._modalities[modality_type].io_shape = modality_shape
 
     def filter(self, modalities_types: List[Type[Modality]]):
         keys = list(self._modalities.keys())

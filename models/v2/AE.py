@@ -110,7 +110,7 @@ def main():
     # region Dataset
 
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
-                           modalities_io_shapes=
+                           modalities_pattern=
                            {
                                RawVideo: ModalityShape(input_shape=input_shape,
                                                        output_shape=input_shape),

@@ -146,7 +146,7 @@ def get_model(mode):
 
 def get_ucsd_dataset():
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
-                           modalities_io_shapes=
+                           modalities_pattern=
                            {
                                RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
                                                        output_shape=(32, 128, 128, 1)),
@@ -159,7 +159,7 @@ def get_ucsd_dataset():
 
 def get_subway_dataset():
     config = DatasetConfig(tfrecords_config_folder="../datasets/subway/exit",
-                           modalities_io_shapes=
+                           modalities_pattern=
                            {
                                RawVideo: ModalityShape(input_shape=(16, 128, 128, 3),
                                                        output_shape=(32, 128, 128, 3)),

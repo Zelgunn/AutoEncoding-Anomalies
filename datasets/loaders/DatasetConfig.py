@@ -1,10 +1,9 @@
-import numpy as np
 import json
 import os
-from typing import Dict, Type, List, Any, Tuple, Union
+from typing import Dict, List, Any, Tuple, Union, Type
 
 from datasets.tfrecord_builders import tfrecords_config_filename
-from modalities import Modality, ModalityCollection, ModalityShape
+from modalities import Modality, ModalityCollection, ModalityLoadInfo
 from modalities import RawVideo, OpticalFlow, DoG, Landmarks
 from modalities import RawAudio, MelSpectrogram
 from utils.misc_utils import int_ceil
@@ -20,7 +19,6 @@ def get_shard_count(sample_length: int,
 class DatasetConfig(object):
     def __init__(self,
                  tfrecords_config_folder: str,
-                 modalities_io_shapes: Dict[Type[Modality], ModalityShape],
                  output_range: Tuple[float, float],
                  ):
         self.tfrecords_config_folder = tfrecords_config_folder
@@ -37,19 +35,7 @@ class DatasetConfig(object):
 
         self.modalities_ranges = self.tfrecords_config["modalities_ranges"]
 
-        self.modalities.set_modalities_shapes(modalities_io_shapes, filter_missing_modalities=True)
         self.output_range = output_range
-
-        # region Compute maximum amount of shards required to build a sample
-        shard_counts = []
-        for modality in self.modalities:
-            sample_length = modality.io_shape.sample_length
-            shard_size = self.get_modality_max_shard_size(modality)
-
-            shard_counts.append(get_shard_count(sample_length, shard_size))
-
-        self.shards_per_sample: int = max(shard_counts)
-        # endregion
 
     def list_subset_tfrecords(self,
                               subset_name: str
@@ -83,3 +69,24 @@ class DatasetConfig(object):
 
     def get_modality_max_shard_size(self, modality: Modality) -> int:
         return int_ceil(self.get_modality_shard_size(modality))
+
+    def compute_shards_per_sample(self,
+                                  modalities_pattern: Tuple[Union[Tuple, ModalityLoadInfo], ...]
+                                  ) -> int:
+        shard_counts = []
+        flat_load_info = ModalityLoadInfo.pattern_to_flat_list(modalities_pattern)
+        for modality_load_info in flat_load_info:
+            if isinstance(modality_load_info, str):
+                continue
+
+            sample_length = modality_load_info.length
+            modality_type = modality_load_info.modality
+
+            modality = self.modalities[modality_type]
+            shard_size = self.get_modality_max_shard_size(modality)
+            shard_count = get_shard_count(sample_length, shard_size)
+
+            shard_counts.append(shard_count)
+
+        shards_per_sample: int = max(shard_counts)
+        return shards_per_sample

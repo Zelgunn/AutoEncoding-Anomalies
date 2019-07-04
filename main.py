@@ -82,7 +82,7 @@ def main():
     # TODO : In config => Set ModalityShapes
     # TODO : In config => Set Normalization
     config = DatasetConfig(tfrecords_config_folder=dataset_path,
-                           modalities_io_shapes=
+                           modalities_pattern=
                            {
                                RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
                                                        output_shape=(32, 128, 128, 1)),

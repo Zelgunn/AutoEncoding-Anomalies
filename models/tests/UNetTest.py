@@ -174,7 +174,7 @@ def get_dense_block_model():
 
 def get_dataset():
     config = DatasetConfig(tfrecords_config_folder="../datasets/subway/exit",
-                           modalities_io_shapes=
+                           modalities_pattern=
                            {
                                RawVideo: ModalityShape(input_shape=(16, 128, 128, 3),
                                                        output_shape=(32, 128, 128, 3)),
