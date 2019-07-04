@@ -7,7 +7,7 @@ import time
 from typing import Union, List
 
 from datasets import DatasetLoader, DatasetConfig, SubsetLoader
-from modalities import RawVideo, ModalityShape
+from modalities import RawVideo, ModalityLoadInfo
 from callbacks import AUCCallback
 from layers.utility_layers import RawPredictionsLayer
 
@@ -109,16 +109,15 @@ def main():
 
     # region Dataset
 
+    modalities_pattern = (
+        ModalityLoadInfo(RawVideo, input_shape[0], input_shape),
+        ModalityLoadInfo(RawVideo, input_shape[0], input_shape)
+    )
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
-                           modalities_pattern=
-                           {
-                               RawVideo: ModalityShape(input_shape=input_shape,
-                                                       output_shape=input_shape),
-                           },
                            output_range=(0.0, 1.0))
 
     dataset_loader = DatasetLoader(config)
-    train_dataset = dataset_loader.train_subset.tf_dataset
+    train_dataset = dataset_loader.train_subset.make_tf_dataset(modalities_pattern)
     train_dataset = train_dataset.map(lambda x, y: x)
     train_dataset = train_dataset.batch(batch_size)
     # endregion
@@ -132,7 +131,12 @@ def main():
     raw_predictions_model = keras.Model(inputs=model.encoder.input, outputs=raw_predictions,
                                         name="raw_predictions_model")
 
-    inputs, outputs, labels = dataset_loader.test_subset.get_batch(batch_size=16, output_labels=True)
+    anomaly_modalities_pattern = (
+        *modalities_pattern,
+        "labels"
+    )
+    inputs, outputs, labels = dataset_loader.test_subset.get_batch(batch_size=16,
+                                                                   modalities_pattern=anomaly_modalities_pattern)
     labels = SubsetLoader.timestamps_labels_to_frame_labels(labels.numpy(), frame_count=16)
 
     auc_callback = AUCCallback(predictions_model=raw_predictions_model,

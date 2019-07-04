@@ -13,36 +13,27 @@ import matplotlib.pyplot as plt
 import os
 import cv2
 from time import time
-from typing import Tuple, Type, Union
+from typing import Tuple, Union
 
 from callbacks import ImageCallback, AUCCallback, TensorBoardPlugin
 from datasets.loaders import DatasetConfig, DatasetLoader, SubsetLoader
-from modalities import ModalityLoadInfo, RawVideo, Modality, Landmarks, ModalitiesPattern
+from modalities import ModalityLoadInfo, RawVideo, Landmarks, ModalitiesPattern
 from layers.utility_layers import RawPredictionsLayer
 from utils.summary_utils import image_summary
 from utils.train_utils import save_model_info
 
 
 # region Callbacks
-def get_batch(dataset: Union[SubsetLoader, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
+def get_batch(dataset: tf.data.Dataset,
               batch_size: int):
-    if isinstance(dataset, SubsetLoader):
-        eager_batch = dataset.get_batch(batch_size=batch_size, output_labels=False)
+    if not isinstance(dataset, tf.data.Dataset):
+        raise TypeError("`dataset` must be a tf.data.Dataset, got {}.".format(dataset))
+
+    data = dataset.batch(batch_size=batch_size).take(1)
+    batch = ()
+    for eager_batch in data:
         batch = eager_to_numpy(eager_batch)
 
-    elif isinstance(dataset, tf.data.Dataset):
-        data = dataset.batch(batch_size=batch_size).take(1)
-        batch = ()
-        if tf.executing_eagerly():
-            for eager_batch in data:
-                batch = eager_to_numpy(eager_batch)
-        else:
-            from tensorflow.python.data.ops import dataset_ops
-            data = dataset_ops.make_one_shot_iterator(data).get_next()
-            session = tf.compat.v1.keras.backend.get_session()
-            batch = session.run(data)
-    else:
-        batch = dataset
     return batch
 
 
@@ -84,7 +75,7 @@ class TmpModelCheckpoint(tf.keras.callbacks.Callback):
 
 class LandmarksVideoCallback(TensorBoardPlugin):
     def __init__(self,
-                 data: Union[SubsetLoader, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
+                 dataset: Union[SubsetLoader, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
                  autoencoder: Model,
                  tensorboard: TensorBoard,
                  epoch_freq=1,
@@ -105,7 +96,7 @@ class LandmarksVideoCallback(TensorBoardPlugin):
         self.prefix = prefix if (len(prefix) == 0) else (prefix + "_")
         self.ground_truth_images = None
 
-        self.inputs, self.outputs = get_batch(data, batch_size=4)
+        self.inputs, self.outputs = get_batch(dataset, batch_size=4)
 
     def _write_logs(self, index: int):
         with self._get_writer(self.writer_name).as_default():
@@ -465,21 +456,21 @@ def make_video_autoencoder(channels_count=3):
 
 
 def train_video_autoencoder():
-    input_sequence_length = 16
+    input_length = 16
+    output_length = input_length * 2
     channels_count = 3
     video_autoencoder = make_video_autoencoder(channels_count=channels_count)
 
     # region dataset
-    dataset_config = DatasetConfig("C:/datasets/emoly",
-                                   modalities_pattern=(
-                                       ModalityLoadInfo(RawVideo, (input_sequence_length, 128, 128, channels_count)),
-                                       ModalityLoadInfo(RawVideo, (input_sequence_length * 2, 128, 128, channels_count))
-                                   ),
-                                   output_range=(0.0, 1.0))
+    modalities_pattern = (
+        ModalityLoadInfo(RawVideo, input_length, (input_length, 128, 128, channels_count)),
+        ModalityLoadInfo(RawVideo, output_length, (output_length, 128, 128, channels_count))
+    )
+    dataset_config = DatasetConfig("C:/datasets/emoly", output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
     # region train
     train_subset = dataset_loader.train_subset
-    dataset = train_subset.tf_dataset
+    dataset = train_subset.make_tf_dataset(modalities_pattern)
 
     batch_size = 4
     dataset = dataset.batch(batch_size).prefetch(1)
@@ -525,7 +516,7 @@ def train_video_autoencoder():
                                        output=video_autoencoder.output,
                                        ground_truth=video_autoencoder.inputs)
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          modality=RawVideo,
+                                          modalities_pattern=modalities_pattern,
                                           log_dir=log_dir,
                                           stride=2)
 
@@ -624,29 +615,35 @@ def get_landmarks_datasets():
                                    output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
     train_subset = dataset_loader.train_subset
-    train_subset.subset_folders = [folder for folder in train_subset.subset_folders if "normal" in folder]
+    # train_subset.subset_folders = [folder for folder in train_subset.subset_folders if "normal" in folder]
 
     test_subset = dataset_loader.test_subset
-    test_subset.subset_folders = [folder for folder in test_subset.subset_folders if "induced" in folder]
+    # test_subset.subset_folders = [folder for folder in test_subset.subset_folders if "induced" in folder]
 
     return dataset_loader, train_subset, test_subset
 
 
 def train_landmarks_autoencoder():
     add_predictor = True
-    sequence_length = 64
-    output_sequence_length = sequence_length * 2 if add_predictor else sequence_length
+    input_length = 64
+    output_length = input_length * 2 if add_predictor else input_length
     batch_size = 16
 
-    landmarks_autoencoder = make_landmarks_autoencoder(sequence_length=sequence_length,
+    landmarks_autoencoder = make_landmarks_autoencoder(sequence_length=input_length,
                                                        add_predictor=add_predictor)
     # landmarks_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_020.hdf5")
 
-    dataset_loader, train_subset, test_subset = get_landmarks_datasets(sequence_length, output_sequence_length)
+    dataset_loader, train_subset, test_subset = get_landmarks_datasets()
     modalities_pattern = (
-        ModalityLoadInfo(Landmarks, (sequence_length, 136)),
-        ModalityLoadInfo(Landmarks, (output_sequence_length, 136))
+        ModalityLoadInfo(Landmarks, input_length, (input_length, 136)),
+        ModalityLoadInfo(Landmarks, output_length, (output_length, 136))
     )
+
+    train_dataset = train_subset.make_tf_dataset(modalities_pattern)
+    train_dataset = train_dataset.batch(batch_size).prefetch(-1)
+
+    test_dataset = test_subset.make_tf_dataset(modalities_pattern)
+    test_dataset = test_dataset.batch(batch_size)
 
     # region callbacks
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks"
@@ -661,8 +658,8 @@ def train_landmarks_autoencoder():
     auc_callback = make_auc_callback(test_subset=test_subset, predictions_model=raw_predictions_model,
                                      tensorboard=tensorboard)
 
-    train_landmarks_callback = LandmarksVideoCallback(train_subset, landmarks_autoencoder, tensorboard)
-    test_landmarks_callback = LandmarksVideoCallback(test_subset, landmarks_autoencoder, tensorboard)
+    train_landmarks_callback = LandmarksVideoCallback(train_dataset, landmarks_autoencoder, tensorboard)
+    test_landmarks_callback = LandmarksVideoCallback(test_dataset, landmarks_autoencoder, tensorboard)
 
     model_checkpoint = TmpModelCheckpoint(os.path.join(base_log_dir, "weights_{epoch:03d}.hdf5"))
     callbacks = [tensorboard,
@@ -677,12 +674,6 @@ def train_landmarks_autoencoder():
 
     # endregion
 
-    train_dataset = train_subset.tf_dataset
-    train_dataset = train_dataset.batch(batch_size).prefetch(-1)
-
-    test_dataset = test_subset.tf_dataset
-    test_dataset = test_dataset.batch(batch_size)
-
     landmarks_autoencoder.fit(train_dataset, epochs=10, steps_per_epoch=10000,
                               validation_data=test_dataset, validation_steps=200,
                               callbacks=callbacks)
@@ -692,7 +683,7 @@ def train_landmarks_autoencoder():
                                        output=landmarks_autoencoder.output,
                                        ground_truth=landmarks_autoencoder.inputs)
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          modality=Landmarks,
+                                          modalities_pattern=modalities_pattern,
                                           log_dir=log_dir,
                                           stride=1)
 
@@ -701,13 +692,21 @@ def train_landmarks_autoencoder():
 
 # region Landmarks (transformer)
 
+def add_batch_noise(*args):
+    inputs, outputs = args[0]
+    noise = tf.random.normal([], mean=0.0, stddev=0.1)
+    inputs = tf.clip_by_value(inputs + noise, clip_value_min=0.0, clip_value_max=1.0)
+    outputs = tf.clip_by_value(outputs + noise, clip_value_min=0.0, clip_value_max=1.0)
+    return (inputs, outputs),
+
+
 def train_landmarks_transformer():
     # tf.compat.v1.disable_eager_execution()
     from transformer import Transformer
     from transformer.layers import PositionalEncodingMode
 
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks_transformer"
-    batch_size = 32
+    batch_size = 16
     input_sequence_length = 32
     output_sequence_length = input_sequence_length * 4
     frame_per_prediction = 4
@@ -723,17 +722,17 @@ def train_landmarks_transformer():
                                         input_size=68 * 2,
                                         output_size=68 * 2 * frame_per_prediction,
                                         output_activation="linear",
-                                        layers_intermediate_size=64,
-                                        layers_count=4,
+                                        layers_intermediate_size=128,
+                                        layers_count=2,
                                         attention_heads_count=4,
                                         attention_key_size=32,
                                         attention_values_size=32,
-                                        dropout_rate=0.2,
+                                        dropout_rate=0.0,
                                         # decoder_pre_net=pre_net,
                                         decoder_pre_net=None,
                                         positional_encoding_mode=PositionalEncodingMode.ADD,
                                         positional_encoding_range=0.1,
-                                        # positional_encoding_size=16,
+                                        positional_encoding_size=32,
                                         name="Transformer")
 
     landmarks_transformer.add_transformer_loss()
@@ -741,7 +740,7 @@ def train_landmarks_transformer():
     landmarks_transformer.compile(RMSprop(lr=2e-4))
     landmarks_transformer.summary()
 
-    # landmarks_transformer.load_weights(base_log_dir+"/weights_014.hdf5")
+    # landmarks_transformer.load_weights(base_log_dir + "/weights_016.hdf5")
 
     # autonomous_transformer = landmarks_transformer.make_autonomous_model()
 
@@ -757,8 +756,9 @@ def train_landmarks_transformer():
         "labels"
     )
 
-    train_dataset = train_subset.make_tf_dataset((modalities_pattern, ))
-    test_dataset = test_subset.make_tf_dataset((modalities_pattern, ))
+    train_dataset = train_subset.make_tf_dataset((modalities_pattern,))
+    train_dataset = train_dataset.map(add_batch_noise)
+    test_dataset = test_subset.make_tf_dataset((modalities_pattern,))
     # endregion
 
     # tmp = Model(inputs=landmarks_transformer.inputs,
@@ -789,7 +789,7 @@ def train_landmarks_transformer():
     lvc_test_dataset = test_dataset.map(lambda data: (data, data[1]))
 
     train_landmarks_callback = LandmarksVideoCallback(lvc_train_dataset, landmarks_transformer, tensorboard,
-                                                      is_train_callback=True, fps=10)
+                                                      is_train_callback=True, fps=25)
     test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, landmarks_transformer, tensorboard,
                                                      is_train_callback=False)
     # endregion
@@ -847,11 +847,11 @@ def train_landmarks_transformer():
     train_dataset = train_dataset.batch(batch_size).prefetch(-1)
     test_dataset = test_dataset.batch(batch_size)
 
-    landmarks_transformer.fit(train_dataset, epochs=2, steps_per_epoch=5,
-                              validation_data=test_dataset, validation_steps=5,
+    landmarks_transformer.fit(train_dataset, epochs=100, steps_per_epoch=20000,
+                              validation_data=test_dataset, validation_steps=1000,
                               callbacks=callbacks)
 
-    anomaly_modalities_pattern = (anomaly_modalities_pattern, )
+    anomaly_modalities_pattern = (anomaly_modalities_pattern,)
     anomaly_detector = AnomalyDetector(inputs=landmarks_transformer.inputs,
                                        output=landmarks_transformer.output,
                                        ground_truth=landmarks_transformer.inputs[1])
@@ -1030,19 +1030,20 @@ def train_audio_autoencoder():
     from modalities import MelSpectrogram
 
     n_mel_filters = 100
-    sequence_length = 64
+    input_length = 64
+    output_length = input_length
     batch_size = 8
 
-    audio_autoencoder = make_audio_autoencoder(sequence_length=sequence_length,
+    audio_autoencoder = make_audio_autoencoder(sequence_length=input_length,
                                                n_mel_filters=n_mel_filters,
                                                add_predictor=False)
     # audio_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_020.hdf5")
-
+    modalities_pattern = (
+        ModalityLoadInfo(MelSpectrogram, input_length, (input_length, n_mel_filters)),
+        ModalityLoadInfo(MelSpectrogram, output_length, (output_length, n_mel_filters))
+    )
     dataset_config = DatasetConfig("../datasets/emoly",
-                                   modalities_pattern=(
-                                       ModalityLoadInfo(MelSpectrogram, (sequence_length, n_mel_filters)),
-                                       ModalityLoadInfo(MelSpectrogram, (sequence_length, n_mel_filters))
-                                   ),
+
                                    output_range=(-1.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
     train_subset = dataset_loader.train_subset
@@ -1082,10 +1083,10 @@ def train_audio_autoencoder():
         audio_autoencoder.summary(print_fn=lambda summary: file.write(summary + '\n'))
     # endregion
 
-    train_dataset = train_subset.tf_dataset
+    train_dataset = train_subset.make_tf_dataset(modalities_pattern)
     train_dataset = train_dataset.batch(batch_size).prefetch(-1)
 
-    test_dataset = test_subset.tf_dataset
+    test_dataset = test_subset.make_tf_dataset(modalities_pattern)
     test_dataset = test_dataset.batch(batch_size)
     audio_autoencoder.fit(train_dataset, epochs=500, steps_per_epoch=10000,
                           validation_data=test_dataset, validation_steps=1000,
@@ -1095,7 +1096,7 @@ def train_audio_autoencoder():
                                        output=audio_autoencoder.output,
                                        ground_truth=audio_autoencoder.inputs)
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          modality=MelSpectrogram,
+                                          modalities_pattern=modalities_pattern,
                                           log_dir=log_dir,
                                           stride=1)
 
