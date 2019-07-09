@@ -419,7 +419,7 @@ class SubsetLoader(object):
         dataset = dataset.map(lambda shards, shard_sizes:
                               self.join_shards_ordered(shards, shard_sizes, modalities_pattern, stride))
 
-        dataset = dataset.apply(tf.data.experimental.unbatch())
+        dataset = dataset.unbatch()
         dataset = dataset.map(self.normalize_batch)
         dataset = dataset.map(lambda modalities: self.apply_pattern(modalities, modalities_pattern))
         dataset = dataset.batch(1)
@@ -540,12 +540,12 @@ def main():
 
     modalities_pattern: ModalitiesPattern = (
         (
-            ModalityLoadInfo(Landmarks, (32, 136)),
-            ModalityLoadInfo(MelSpectrogram, (nfft, 100))
+            ModalityLoadInfo(Landmarks, 32, (32, 136)),
+            ModalityLoadInfo(MelSpectrogram, nfft, (nfft, 100))
         ),
         (
-            ModalityLoadInfo(Landmarks, (128, 136)),
-            ModalityLoadInfo(RawAudio, (audio_length, 2))
+            ModalityLoadInfo(Landmarks, 128, (128, 136)),
+            ModalityLoadInfo(RawAudio, audio_length, (audio_length, 2))
         )
     )
     config = DatasetConfig(tfrecords_config_folder="C:/datasets/emoly_split",

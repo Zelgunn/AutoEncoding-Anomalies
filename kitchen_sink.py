@@ -80,7 +80,7 @@ class LandmarksVideoCallback(TensorBoardPlugin):
                  tensorboard: TensorBoard,
                  epoch_freq=1,
                  output_size=(512, 512),
-                 marker_size=5,
+                 line_thickness=1,
                  fps=25,
                  is_train_callback=False,
                  prefix=""):
@@ -89,7 +89,7 @@ class LandmarksVideoCallback(TensorBoardPlugin):
                                                      epoch_freq=epoch_freq)
 
         self.output_size = output_size
-        self.marker_size = marker_size
+        self.line_thickness = line_thickness
         self.fps = fps
         self.autoencoder = autoencoder
         self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
@@ -118,13 +118,19 @@ class LandmarksVideoCallback(TensorBoardPlugin):
             batch_size = landmarks_batch.shape[0]
             landmarks_batch = landmarks_batch.reshape([batch_size, - 1, 68, 2])
 
-        batch_size, sequence_length, _, _ = landmarks_batch.shape
+        sections = [17, 22, 27, 31, 36, 42, 48, 60]
+
+        batch_size, sequence_length, landmarks_count, _ = landmarks_batch.shape
         images = np.zeros([batch_size, sequence_length, *self.output_size, 3], dtype=np.uint8)
         for i in range(batch_size):
             for j in range(sequence_length):
-                for x, y in landmarks_batch[i, j]:
+                previous_position = None
+                for k in range(landmarks_count):
+                    x, y = landmarks_batch[i, j, k]
                     position = (int(x * self.output_size[0]), int(y * self.output_size[1]))
-                    cv2.drawMarker(images[i, j], position, color, markerSize=self.marker_size)
+                    if previous_position is not None and k not in sections:
+                        cv2.line(images[i, j], previous_position, position, color, thickness=self.line_thickness)
+                    previous_position = position
         return images
 
 
@@ -178,6 +184,7 @@ class AnomalyDetector(Model):
                                     subset: SubsetLoader,
                                     modalities_pattern: ModalitiesPattern,
                                     stride: int,
+                                    pre_normalize_predictions: bool,
                                     max_samples=10):
         predictions, labels = [], []
 
@@ -189,7 +196,7 @@ class AnomalyDetector(Model):
             print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name))
             sample_results = self.predict_anomalies_on_sample(subset, modalities_pattern,
                                                               sample_index, stride,
-                                                              normalize_predictions=False)
+                                                              normalize_predictions=pre_normalize_predictions)
             sample_predictions, sample_labels = sample_results
             predictions.append(sample_predictions)
             labels.append(sample_labels)
@@ -200,12 +207,13 @@ class AnomalyDetector(Model):
                           dataset: DatasetLoader,
                           modalities_pattern: ModalitiesPattern,
                           stride=1,
-                          normalize_predictions=True,
+                          pre_normalize_predictions=True,
                           max_samples=10):
-        predictions, labels = self.predict_anomalies_on_subset(dataset.test_subset,
-                                                               modalities_pattern,
-                                                               stride,
-                                                               max_samples)
+        predictions, labels = self.predict_anomalies_on_subset(subset=dataset.test_subset,
+                                                               modalities_pattern=modalities_pattern,
+                                                               stride=stride,
+                                                               pre_normalize_predictions=pre_normalize_predictions,
+                                                               max_samples=max_samples)
 
         lengths = np.empty(shape=[len(labels)], dtype=np.int32)
         for i in range(len(labels)):
@@ -216,8 +224,7 @@ class AnomalyDetector(Model):
         predictions = np.concatenate(predictions)
         labels = np.concatenate(labels)
 
-        if normalize_predictions:
-            predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
+        predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
 
         return predictions, labels, lengths
 
@@ -229,13 +236,15 @@ class AnomalyDetector(Model):
                              tensorboard: TensorBoard = None,
                              epochs_seen=0):
         if output_figure_filepath is not None:
-            plt.plot(np.mean(predictions, axis=1), linewidth=0.5)
-            plt.plot(labels, alpha=0.75, linewidth=0.5)
+            plt.plot(np.mean(predictions, axis=1), linewidth=0.2)
+            plt.savefig(output_figure_filepath, dpi=1000)
+            plt.gca().fill_between(np.arange(len(labels)), 0, labels, alpha=0.5)
+            # plt.plot(labels, alpha=0.75, linewidth=0.2)
             if lengths is not None:
                 lengths_splits = np.zeros(shape=predictions.shape, dtype=np.float32)
                 lengths_splits[lengths - 1] = 1.0
-                plt.plot(lengths_splits, alpha=0.5, linewidth=0.2)
-            plt.savefig(output_figure_filepath, dpi=500)
+                plt.plot(lengths_splits, alpha=0.5, linewidth=0.05)
+            plt.savefig(output_figure_filepath[:-4] + "_labeled.png", dpi=1000)
             plt.clf()  # clf = clear figure
 
         roc = tf.metrics.AUC(curve="ROC")
@@ -253,8 +262,8 @@ class AnomalyDetector(Model):
         if tensorboard is not None:
             # noinspection PyProtectedMember
             with tensorboard._get_writer(tensorboard._train_run_name).as_default():
-                tf.summary.scalar(name="Video_ROC_AUC", data=roc_result, step=epochs_seen)
-                tf.summary.scalar(name="Video_PR_AUC", data=pr_result, step=epochs_seen)
+                tf.summary.scalar(name="ROC_AUC", data=roc_result, step=epochs_seen)
+                tf.summary.scalar(name="PR_AUC", data=pr_result, step=epochs_seen)
 
         return roc_result, pr_result
 
@@ -265,12 +274,13 @@ class AnomalyDetector(Model):
                              stride=1,
                              tensorboard: TensorBoard = None,
                              epochs_seen=0,
+                             pre_normalize_predictions=True,
                              max_samples=-1,
                              ):
         predictions, labels, lengths = self.predict_anomalies(dataset=dataset,
                                                               modalities_pattern=modalities_pattern,
                                                               stride=stride,
-                                                              normalize_predictions=True,
+                                                              pre_normalize_predictions=pre_normalize_predictions,
                                                               max_samples=max_samples)
         graph_filepath = os.path.join(log_dir, "Anomaly_score.png")
         roc, pr = self.evaluate_predictions(predictions=predictions,
@@ -523,6 +533,19 @@ def train_video_autoencoder():
 
 # endregion
 
+def get_landmarks_datasets():
+    dataset_config = DatasetConfig("../datasets/emoly",
+                                   output_range=(0.0, 1.0))
+    dataset_loader = DatasetLoader(config=dataset_config)
+    train_subset = dataset_loader.train_subset
+    train_subset.subset_folders = [folder for folder in train_subset.subset_folders if "normal" in folder]
+
+    test_subset = dataset_loader.test_subset
+    test_subset.subset_folders = [folder for folder in test_subset.subset_folders if "induced" in folder]
+
+    return dataset_loader, train_subset, test_subset
+
+
 # region Landmarks (autoencoder)
 
 def make_landmarks_encoder(input_layer, sequence_length):
@@ -610,19 +633,6 @@ def make_landmarks_autoencoder(sequence_length: int, add_predictor: bool):
     return autoencoder
 
 
-def get_landmarks_datasets():
-    dataset_config = DatasetConfig("../datasets/emoly",
-                                   output_range=(0.0, 1.0))
-    dataset_loader = DatasetLoader(config=dataset_config)
-    train_subset = dataset_loader.train_subset
-    # train_subset.subset_folders = [folder for folder in train_subset.subset_folders if "normal" in folder]
-
-    test_subset = dataset_loader.test_subset
-    # test_subset.subset_folders = [folder for folder in test_subset.subset_folders if "induced" in folder]
-
-    return dataset_loader, train_subset, test_subset
-
-
 def train_landmarks_autoencoder():
     add_predictor = True
     input_length = 64
@@ -694,39 +704,32 @@ def train_landmarks_autoencoder():
 
 def add_batch_noise(*args):
     inputs, outputs = args[0]
-    noise = tf.random.normal([], mean=0.0, stddev=0.1)
+    noise = tf.random.uniform([], minval=-0.1, maxval=0.1)
     inputs = tf.clip_by_value(inputs + noise, clip_value_min=0.0, clip_value_max=1.0)
     outputs = tf.clip_by_value(outputs + noise, clip_value_min=0.0, clip_value_max=1.0)
     return (inputs, outputs),
 
 
 def train_landmarks_transformer():
-    # tf.compat.v1.disable_eager_execution()
     from transformer import Transformer
     from transformer.layers import PositionalEncodingMode
 
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks_transformer"
     batch_size = 16
-    input_sequence_length = 32
-    output_sequence_length = input_sequence_length * 4
+    input_length = 32
+    output_length = input_length * 2
     frame_per_prediction = 4
 
-    # pre_net_params = {"activation": "relu",
-    #                   "kernel_initializer": "he_normal"}
-    # pre_net = tf.keras.models.Sequential(layers=[Dense(units=64, **pre_net_params),
-    #                                              Dense(units=32, **pre_net_params)],
-    #                                      name="pre_net")
-
-    landmarks_transformer = Transformer(max_input_length=input_sequence_length,
-                                        max_output_length=output_sequence_length // frame_per_prediction,
+    landmarks_transformer = Transformer(max_input_length=input_length,
+                                        max_output_length=output_length // frame_per_prediction,
                                         input_size=68 * 2,
                                         output_size=68 * 2 * frame_per_prediction,
                                         output_activation="linear",
-                                        layers_intermediate_size=128,
-                                        layers_count=2,
+                                        layers_intermediate_size=32,
+                                        layers_count=4,
                                         attention_heads_count=4,
-                                        attention_key_size=32,
-                                        attention_values_size=32,
+                                        attention_key_size=16,
+                                        attention_values_size=16,
                                         dropout_rate=0.0,
                                         # decoder_pre_net=pre_net,
                                         decoder_pre_net=None,
@@ -737,19 +740,21 @@ def train_landmarks_transformer():
 
     landmarks_transformer.add_transformer_loss()
 
-    landmarks_transformer.compile(RMSprop(lr=2e-4))
+    landmarks_transformer.compile(Adam(lr=2e-4, beta_1=0.9, beta_2=0.98, epsilon=1e-9))
     landmarks_transformer.summary()
 
-    # landmarks_transformer.load_weights(base_log_dir + "/weights_016.hdf5")
+    # landmarks_transformer.load_weights(base_log_dir + "/weights_022.hdf5")
 
-    # autonomous_transformer = landmarks_transformer.make_autonomous_model()
+    autonomous_transformer = landmarks_transformer.make_autonomous_model()
+    autonomous_transformer.compile(Adam(lr=2e-4, beta_1=0.9, beta_2=0.98, epsilon=1e-9), loss="mse")
 
     # region Datasets
     dataset_loader, train_subset, test_subset = get_landmarks_datasets()
 
     modalities_pattern = (
-        ModalityLoadInfo(Landmarks, input_sequence_length, (input_sequence_length, 136)),
-        ModalityLoadInfo(Landmarks, output_sequence_length, (output_sequence_length // 4, 136 * 4))
+        ModalityLoadInfo(Landmarks, input_length, (input_length, 136)),
+        ModalityLoadInfo(Landmarks, output_length, (output_length // frame_per_prediction,
+                                                    136 * frame_per_prediction))
     )
     anomaly_modalities_pattern = (
         *modalities_pattern,
@@ -795,38 +800,47 @@ def train_landmarks_transformer():
     # endregion
 
     # region Autonomous
-    # lvc_train_dataset = train_dataset.map(lambda data: (data[0], data[1]))
-    # lvc_test_dataset = test_dataset.map(lambda data: (data[0], data[1]))
-    # autonomous_train_landmarks_callback = LandmarksVideoCallback(lvc_train_dataset, autonomous_transformer,
-    #                                                              tensorboard, is_train_callback=True,
-    #                                                              prefix="autonomous")
-    # autonomous_test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, autonomous_transformer,
-    #                                                             tensorboard, is_train_callback=False,
-    #                                                             prefix="autonomous")
+    lvc_train_dataset = train_dataset.map(lambda data: data)
+    lvc_test_dataset = test_dataset.map(lambda data: data)
+    autonomous_train_landmarks_callback = LandmarksVideoCallback(lvc_train_dataset, autonomous_transformer,
+                                                                 tensorboard, is_train_callback=True,
+                                                                 prefix="autonomous")
+    autonomous_test_landmarks_callback = LandmarksVideoCallback(lvc_test_dataset, autonomous_transformer,
+                                                                tensorboard, is_train_callback=False,
+                                                                prefix="autonomous")
     # endregion
     # endregion
 
     # region AUC
-    # region Default
-    raw_predictions = RawPredictionsLayer(output_length=32)([landmarks_transformer.output,
-                                                             landmarks_transformer.decoder_target_layer])
-    raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
-                                  name="raw_predictions_model")
-
     labeled_test_subset = test_subset.make_tf_dataset(anomaly_modalities_pattern)
-    auc_callback = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
-                                     tensorboard=tensorboard, samples_count=512)
+    # region Default (32 frames)
+    raw_predictions = RawPredictionsLayer(output_length=input_length)([landmarks_transformer.output,
+                                                                       landmarks_transformer.decoder_target_layer])
+    raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
+                                  name="raw_predictions_model_{}".format(input_length))
+
+    auc_callback_32 = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
+                                        tensorboard=tensorboard, samples_count=512, prefix=str(input_length))
+    # endregion
+    # region Default (128 frames)
+    raw_predictions = RawPredictionsLayer(output_length=output_length)([landmarks_transformer.output,
+                                                                        landmarks_transformer.decoder_target_layer])
+    raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
+                                  name="raw_predictions_model".format(output_length))
+
+    auc_callback_128 = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
+                                         tensorboard=tensorboard, samples_count=512, prefix=str(output_length))
     # endregion
     # region Autonomous
-    # autonomous_ground_truth = Input(batch_shape=autonomous_transformer.output.shape, name="autonomous_ground_truth")
-    # autonomous_raw_predictions = RawPredictionsLayer()([autonomous_transformer.output, autonomous_ground_truth])
-    # autonomous_raw_predictions_model = Model(inputs=[autonomous_transformer.input, autonomous_ground_truth],
-    #                                          outputs=autonomous_raw_predictions,
-    #                                          name="autonomous_raw_predictions_model")
-    # autonomous_auc_callback = make_auc_callback(test_subset=labeled_test_subset,
-    #                                             predictions_model=autonomous_raw_predictions_model,
-    #                                             tensorboard=tensorboard, samples_count=512,
-    #                                             prefix="autonomous")
+    autonomous_ground_truth = Input(batch_shape=autonomous_transformer.output.shape, name="autonomous_ground_truth")
+    autonomous_raw_predictions = RawPredictionsLayer()([autonomous_transformer.output, autonomous_ground_truth])
+    autonomous_raw_predictions_model = Model(inputs=[autonomous_transformer.input, autonomous_ground_truth],
+                                             outputs=autonomous_raw_predictions,
+                                             name="autonomous_raw_predictions_model")
+    autonomous_auc_callback = make_auc_callback(test_subset=labeled_test_subset,
+                                                predictions_model=autonomous_raw_predictions_model,
+                                                tensorboard=tensorboard, samples_count=512,
+                                                prefix="autonomous")
     # endregion
     # endregion
 
@@ -836,10 +850,11 @@ def train_landmarks_transformer():
                  tensorboard,
                  train_landmarks_callback,
                  test_landmarks_callback,
-                 # autonomous_train_landmarks_callback,
-                 # autonomous_test_landmarks_callback,
-                 auc_callback,
-                 # autonomous_auc_callback
+                 autonomous_train_landmarks_callback,
+                 autonomous_test_landmarks_callback,
+                 auc_callback_32,
+                 auc_callback_128,
+                 autonomous_auc_callback
                  ]
 
     # endregion
@@ -847,9 +862,16 @@ def train_landmarks_transformer():
     train_dataset = train_dataset.batch(batch_size).prefetch(-1)
     test_dataset = test_dataset.batch(batch_size)
 
-    landmarks_transformer.fit(train_dataset, epochs=100, steps_per_epoch=20000,
+    # autonomous_train_dataset = train_dataset.map(lambda x: x)
+    # autonomous_test_dataset = test_dataset.map(lambda x: x)
+
+    landmarks_transformer.fit(train_dataset, epochs=30, steps_per_epoch=10000,
                               validation_data=test_dataset, validation_steps=1000,
                               callbacks=callbacks)
+
+    # autonomous_transformer.fit(autonomous_train_dataset, epochs=30, steps_per_epoch=2000,
+    #                            validation_data=autonomous_test_dataset, validation_steps=500,
+    #                            callbacks=callbacks)
 
     anomaly_modalities_pattern = (anomaly_modalities_pattern,)
     anomaly_detector = AnomalyDetector(inputs=landmarks_transformer.inputs,
@@ -858,7 +880,8 @@ def train_landmarks_transformer():
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
                                           modalities_pattern=anomaly_modalities_pattern,
                                           log_dir=log_dir,
-                                          stride=1)
+                                          stride=1,
+                                          pre_normalize_predictions=True)
 
 
 # endregion
