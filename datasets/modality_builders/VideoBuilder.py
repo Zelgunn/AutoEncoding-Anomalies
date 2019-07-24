@@ -43,6 +43,8 @@ class VideoBuilder(ModalityBuilder):
         if self.default_frame_size is not None:
             if tuple(self.default_frame_size) != frame.shape[:2]:
                 frame = cv2.resize(frame, dsize=tuple(reversed(self.default_frame_size)))
+        if len(frame.shape) == 2:
+            frame = np.expand_dims(frame, axis=-1)
         return frame
 
     def check_shard(self, frames: np.ndarray) -> bool:

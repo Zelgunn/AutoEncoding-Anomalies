@@ -6,6 +6,7 @@ from typing import List, Union
 from callbacks import TensorBoardPlugin
 from utils.summary_utils import image_summary
 from datasets import SubsetLoader
+from modalities import ModalitiesPattern
 
 
 class ImageCallback(TensorBoardPlugin):
@@ -79,13 +80,14 @@ class ImageCallback(TensorBoardPlugin):
     @staticmethod
     def make_video_autoencoder_callbacks(autoencoder: keras.Model,
                                          subset: Union[SubsetLoader],
+                                         modalities_pattern: ModalitiesPattern,
                                          name: str,
                                          is_train_callback: bool,
                                          tensorboard: keras.callbacks.TensorBoard,
                                          update_freq="epoch",
                                          epoch_freq=1,
                                          ) -> List["ImageCallback"]:
-        inputs, outputs = subset.get_batch(batch_size=4, output_labels=False)
+        inputs, outputs = subset.get_batch(batch_size=4, modalities_pattern=modalities_pattern)
 
         def one_shot_function(data, step):
             return ImageCallback.video_summary(name=name, video=data, step=step)
@@ -107,6 +109,7 @@ class ImageCallback(TensorBoardPlugin):
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=False)
 
         return [one_shot_callback, repeated_callback]
+
     # endregion
 
     # region Images
@@ -127,13 +130,14 @@ class ImageCallback(TensorBoardPlugin):
     @staticmethod
     def make_image_autoencoder_callbacks(autoencoder: keras.Model,
                                          subset: Union[SubsetLoader],
+                                         modalities_pattern: ModalitiesPattern,
                                          name: str,
                                          is_train_callback: bool,
                                          tensorboard: keras.callbacks.TensorBoard,
                                          update_freq="epoch",
                                          epoch_freq=1,
                                          ) -> List["ImageCallback"]:
-        inputs, outputs = subset.get_batch(batch_size=4, output_labels=False)
+        inputs, outputs = subset.get_batch(batch_size=4, modalities_pattern=modalities_pattern)
 
         def one_shot_function(data, step):
             data = ImageCallback.convert_tensor_uint8(data)

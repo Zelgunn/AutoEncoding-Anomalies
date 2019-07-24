@@ -4,15 +4,15 @@ from tensorflow.python.keras.layers import Input, LeakyReLU, Layer, Concatenate,
 from tensorflow.python.keras.layers import Conv3D, AveragePooling3D, Conv3DTranspose
 from tensorflow.python.keras.layers import Conv2D, AveragePooling2D, Conv2DTranspose
 from tensorflow.python.keras.layers import Conv1D, AveragePooling1D, UpSampling1D
-from tensorflow.python.keras.layers import CuDNNLSTM, RepeatVector
-from tensorflow.python.keras.layers import Dense
-from tensorflow.python.keras.optimizers import Adam, RMSprop
+from tensorflow.python.keras.layers import CuDNNLSTM, RepeatVector, TimeDistributed
+from tensorflow.python.keras.layers import Dense, ZeroPadding1D
+from tensorflow.python.keras.optimizers import Adam
 from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import cv2
-from time import time
+from time import time, sleep
 from typing import Tuple, Union
 
 from callbacks import ImageCallback, AUCCallback, TensorBoardPlugin
@@ -21,8 +21,11 @@ from modalities import ModalityLoadInfo, RawVideo, Landmarks, ModalitiesPattern
 from layers.utility_layers import RawPredictionsLayer
 from utils.summary_utils import image_summary
 from utils.train_utils import save_model_info
+from transformer import Transformer
+from transformer.layers import PositionalEncodingMode
 
 
+# region Utility
 # region Callbacks
 def get_batch(dataset: tf.data.Dataset,
               batch_size: int):
@@ -330,8 +333,10 @@ def eager_to_numpy(data):
 
 
 # endregion
+# endregion
 
 # region Video
+# region Video (autoencoder)
 
 # region Layers
 class VideoEncoderLayer(Layer):
@@ -471,14 +476,14 @@ def train_video_autoencoder():
     channels_count = 3
     video_autoencoder = make_video_autoencoder(channels_count=channels_count)
 
-    # region dataset
+    # region Dataset
     modalities_pattern = (
         ModalityLoadInfo(RawVideo, input_length, (input_length, 128, 128, channels_count)),
         ModalityLoadInfo(RawVideo, output_length, (output_length, 128, 128, channels_count))
     )
     dataset_config = DatasetConfig("C:/datasets/emoly", output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
-    # region train
+    # region Train subset
     train_subset = dataset_loader.train_subset
     dataset = train_subset.make_tf_dataset(modalities_pattern)
 
@@ -491,20 +496,24 @@ def train_video_autoencoder():
     #                                              if "induced" in folder]
     # endregion
 
-    # region callbacks
+    # region Log dir
     log_dir = "../logs/tests/kitchen_sink"
     log_dir = os.path.join(log_dir, "log_{}".format(int(time())))
     os.makedirs(log_dir)
+    # endregion
 
+    # region Callbacks
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
     train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=video_autoencoder,
                                                                            subset=train_subset,
+                                                                           modalities_pattern=modalities_pattern,
                                                                            name="train",
                                                                            is_train_callback=True,
                                                                            tensorboard=tensorboard,
                                                                            epoch_freq=1)
     test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=video_autoencoder,
                                                                           subset=test_subset,
+                                                                          modalities_pattern=modalities_pattern,
                                                                           name="test",
                                                                           is_train_callback=False,
                                                                           tensorboard=tensorboard,
@@ -533,6 +542,257 @@ def train_video_autoencoder():
 
 # endregion
 
+# region Scaling Video Transformer
+def scaling_video_transformer_tentative():
+    from transformer import VideoTransformer
+
+    video_transformer = VideoTransformer(input_shape=(16, 64, 64, 1),
+                                         subscale_stride=(4, 2, 2),
+                                         embedding_size=32,
+                                         hidden_size=128,
+                                         block_sizes=
+                                         [
+                                             (4, 4, 4),
+                                             (4, 4, 8),
+                                             (1, 32, 4),
+                                             (1, 4, 32),
+                                             # (1, 4, 32),
+                                             # (1, 32, 4),
+                                             # (4, 4, 8),
+                                             # (4, 8, 4)
+                                         ],
+                                         attention_head_count=8,
+                                         attention_head_size=32,
+                                         )
+
+    modalities_pattern = (
+        ModalityLoadInfo(RawVideo, 16, (16, 128, 128, 1)),
+    )
+
+    dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
+    dataset_loader = DatasetLoader(config=dataset_config)
+
+    dataset = dataset_loader.train_subset.make_tf_dataset(modalities_pattern)
+    dataset = dataset.map(lambda x: tf.image.resize(x, (64, 64)))
+    dataset = dataset.batch(16)
+
+    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_transformer"
+    log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
+    os.makedirs(log_dir)
+    save_model_info(video_transformer.trainer, log_dir)
+    weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
+
+    # video_transformer.trainer.load_weights(os.path.join(base_log_dir, "weights_063.hdf5"))
+    video_transformer.trainer.summary()
+
+    t0 = time()
+
+    loss_history = []
+    loss_mean_history = []
+
+    epochs = 300
+    steps_per_epoch = 50
+    for j in range(epochs):
+        # for i, batch in zip(range(1), dataset):
+        #     predicted = video_transformer(batch[:1])
+        #     for k in range(16):
+        #         predicted_frame = cv2.resize(predicted.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
+        #         true_frame = cv2.resize(batch.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
+        #         cv2.imshow("predicted", predicted_frame)
+        #         cv2.imshow("frame", true_frame)
+        #         cv2.waitKey(0)
+        #     input()
+        #     exit()
+
+        for i, batch in zip(range(steps_per_epoch), dataset):
+            loss = video_transformer.train_step(batch)
+            t1 = time()
+            step = i + j * steps_per_epoch
+            loss_history.append(loss)
+            loss_mean = sum(loss_history[-i - 1:]) / (i + 1)
+            loss_mean_history.append(loss_mean)
+            print("{}/{}) Loss={:.4f}, t={:.2f}".format(step + 1, epochs * steps_per_epoch, loss_mean, t1 - t0))
+            t0 = t1
+
+        plt.plot(loss_mean_history)
+        plt.savefig(log_dir + "/loss_history.png")
+        plt.clf()
+
+        video_transformer.trainer.save(weights_path.format(epoch=j + 1))
+        sleep(60.0)
+
+
+# endregion
+
+# region Video CNN-Transformer
+class VideoCNNTransformerLoss(tf.losses.Loss):
+    def __init__(self, beta=1e-3, **kwargs):
+        self.beta = beta
+        super(VideoCNNTransformerLoss, self).__init__(**kwargs)
+
+    def call(self, y_true, y_pred):
+        y_true.set_shape(y_pred.shape)
+
+        loss = tf.square(y_true - y_pred)
+        shifted_loss = tf.square(y_true[:, :-1] - y_pred[:, 1:])
+
+        loss = tf.reduce_mean(loss, axis=[1, 2, 3, 4])
+        shifted_loss = tf.reduce_mean(shifted_loss, axis=[1, 2, 3, 4])
+
+        shift_regularization = tf.sigmoid(tf.math.log(loss / (shifted_loss + 1e-7))) * self.beta
+
+        loss = tf.reduce_mean(loss)
+        shift_regularization = tf.reduce_mean(shift_regularization)
+
+        return loss + shift_regularization
+
+
+def make_video_cnn_transformer(input_length: int, output_length: int, height: int, width: int, channels: int) -> Model:
+    input_shape = (output_length, height, width, channels)
+    input_layer = Input(input_shape, name="input_layer")
+
+    common_cnn_params = {"kernel_size": 3,
+                         "padding": "same",
+                         "activation": "elu",
+                         "kernel_initializer": "he_normal"}
+    # region Encoder
+    cnn_encoder_layers = [
+        Conv2D(filters=4, strides=1, **common_cnn_params),
+        Conv2D(filters=4, strides=2, **common_cnn_params),
+
+        Conv2D(filters=8, strides=1, **common_cnn_params),
+        Conv2D(filters=8, strides=2, **common_cnn_params),
+
+        Conv2D(filters=16, strides=1, **common_cnn_params),
+        Conv2D(filters=16, strides=2, **common_cnn_params),
+
+        Conv2D(filters=32, strides=1, **common_cnn_params),
+        Conv2D(filters=32, strides=2, **common_cnn_params),
+
+        Conv2D(filters=64, strides=1, **common_cnn_params),
+        Conv2D(filters=64, strides=2, **common_cnn_params),
+    ]
+    x = input_layer
+    for layer in cnn_encoder_layers:
+        x = TimeDistributed(layer)(x)
+    encoder_output_shape = x.shape[-3:]
+
+    x = TimeDistributed(Flatten())(x)
+    cnn_encoder_output = x
+    units = cnn_encoder_output.shape[-1]
+    # endregion
+
+    # region Transformer
+    frame_per_prediction = 1
+    transformer = Transformer(max_input_length=input_length,
+                              max_output_length=output_length // frame_per_prediction,
+                              input_size=units,
+                              output_size=units * frame_per_prediction,
+                              output_activation="linear",
+                              layers_intermediate_size=32,
+                              layers_count=4,
+                              attention_heads_count=4,
+                              attention_key_size=16,
+                              attention_values_size=16,
+                              dropout_rate=0.0,
+                              # decoder_pre_net=pre_net,
+                              decoder_pre_net=None,
+                              positional_encoding_mode=PositionalEncodingMode.ADD,
+                              positional_encoding_range=0.1,
+                              positional_encoding_size=32,
+                              name="Transformer")
+
+    transformer_encoder_inputs = Lambda(lambda inputs: inputs[:, :input_length], name="transformer_encoder_inputs")(x)
+    shifted_x = Lambda(lambda inputs: inputs[:, :-1], name="shift_predictions")(x)
+    transformer_decoder_inputs = ZeroPadding1D(padding=(1, 0), name="predictions")(shifted_x)
+
+    x = transformer([transformer_encoder_inputs, transformer_decoder_inputs])
+    # endregion
+
+    # region Decoder
+    x = TimeDistributed(Reshape(encoder_output_shape))(x)
+
+    cnn_decoder_layers = [
+        Conv2DTranspose(filters=64, strides=2, **common_cnn_params),
+
+        Conv2DTranspose(filters=32, strides=1, **common_cnn_params),
+        Conv2DTranspose(filters=32, strides=2, **common_cnn_params),
+
+        Conv2DTranspose(filters=16, strides=1, **common_cnn_params),
+        Conv2DTranspose(filters=16, strides=2, **common_cnn_params),
+
+        Conv2DTranspose(filters=8, strides=1, **common_cnn_params),
+        Conv2DTranspose(filters=8, strides=2, **common_cnn_params),
+
+        Conv2DTranspose(filters=4, strides=1, **common_cnn_params),
+        Conv2DTranspose(filters=4, strides=2, **common_cnn_params),
+
+        Conv2DTranspose(filters=channels, strides=1, **common_cnn_params),
+    ]
+
+    for layer in cnn_decoder_layers:
+        x = TimeDistributed(layer)(x)
+    # endregion
+
+    model = Model(inputs=input_layer, outputs=x, name="video_cnn_transformer")
+    model.compile("adam", VideoCNNTransformerLoss())
+
+    return model
+
+
+def train_video_cnn_transformer():
+    model = make_video_cnn_transformer(16, 32, 128, 128, 1)
+    model.summary()
+
+    # region Dataset
+    modalities_pattern = (
+        ModalityLoadInfo(RawVideo, 32, (32, 128, 128, 1)),
+        ModalityLoadInfo(RawVideo, 32, (32, 128, 128, 1)),
+    )
+
+    dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
+    dataset_loader = DatasetLoader(config=dataset_config)
+
+    dataset = dataset_loader.train_subset.make_tf_dataset(modalities_pattern)
+    dataset = dataset.batch(16).prefetch(-1)
+    # endregion
+
+    # region Log dir
+    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_cnn_transformer"
+    log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
+    os.makedirs(log_dir)
+    save_model_info(model, log_dir)
+    weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
+    # endregion
+
+    # region Callbacks
+    tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
+    train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=model,
+                                                                           subset=dataset_loader.train_subset,
+                                                                           modalities_pattern=modalities_pattern,
+                                                                           name="train",
+                                                                           is_train_callback=True,
+                                                                           tensorboard=tensorboard,
+                                                                           epoch_freq=1)
+    test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=model,
+                                                                          subset=dataset_loader.test_subset,
+                                                                          modalities_pattern=modalities_pattern,
+                                                                          name="test",
+                                                                          is_train_callback=False,
+                                                                          tensorboard=tensorboard,
+                                                                          epoch_freq=1)
+    image_callbacks = train_image_callbacks + test_image_callbacks
+    model_checkpoint = TmpModelCheckpoint(weights_path)
+    callbacks = [tensorboard, *image_callbacks, model_checkpoint]
+    # endregion
+
+    model.fit(dataset, steps_per_epoch=50, epochs=5, callbacks=callbacks)
+
+
+# endregion
+# endregion
+
+# region Landmarks
 def get_landmarks_datasets():
     dataset_config = DatasetConfig("../datasets/emoly",
                                    output_range=(0.0, 1.0))
@@ -711,13 +971,10 @@ def add_batch_noise(*args):
 
 
 def train_landmarks_transformer():
-    from transformer import Transformer
-    from transformer.layers import PositionalEncodingMode
-
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks_transformer"
     batch_size = 16
     input_length = 32
-    output_length = input_length * 2
+    output_length = input_length + 16
     frame_per_prediction = 4
 
     landmarks_transformer = Transformer(max_input_length=input_length,
@@ -743,7 +1000,7 @@ def train_landmarks_transformer():
     landmarks_transformer.compile(Adam(lr=2e-4, beta_1=0.9, beta_2=0.98, epsilon=1e-9))
     landmarks_transformer.summary()
 
-    # landmarks_transformer.load_weights(base_log_dir + "/weights_022.hdf5")
+    landmarks_transformer.load_weights(base_log_dir + "/weights_011.hdf5")
 
     autonomous_transformer = landmarks_transformer.make_autonomous_model()
     autonomous_transformer.compile(Adam(lr=2e-4, beta_1=0.9, beta_2=0.98, epsilon=1e-9), loss="mse")
@@ -814,13 +1071,13 @@ def train_landmarks_transformer():
     # region AUC
     labeled_test_subset = test_subset.make_tf_dataset(anomaly_modalities_pattern)
     # region Default (32 frames)
-    raw_predictions = RawPredictionsLayer(output_length=input_length)([landmarks_transformer.output,
-                                                                       landmarks_transformer.decoder_target_layer])
-    raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
-                                  name="raw_predictions_model_{}".format(input_length))
+    # raw_predictions = RawPredictionsLayer(output_length=input_length)([landmarks_transformer.output,
+    #                                                                    landmarks_transformer.decoder_target_layer])
+    # raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
+    #                               name="raw_predictions_model_{}".format(input_length))
 
-    auc_callback_32 = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
-                                        tensorboard=tensorboard, samples_count=512, prefix=str(input_length))
+    # auc_callback_32 = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
+    #                                     tensorboard=tensorboard, samples_count=512, prefix=str(input_length))
     # endregion
     # region Default (128 frames)
     raw_predictions = RawPredictionsLayer(output_length=output_length)([landmarks_transformer.output,
@@ -852,7 +1109,7 @@ def train_landmarks_transformer():
                  test_landmarks_callback,
                  autonomous_train_landmarks_callback,
                  autonomous_test_landmarks_callback,
-                 auc_callback_32,
+                 # auc_callback_32,
                  auc_callback_128,
                  autonomous_auc_callback
                  ]
@@ -865,8 +1122,8 @@ def train_landmarks_transformer():
     # autonomous_train_dataset = train_dataset.map(lambda x: x)
     # autonomous_test_dataset = test_dataset.map(lambda x: x)
 
-    landmarks_transformer.fit(train_dataset, epochs=30, steps_per_epoch=10000,
-                              validation_data=test_dataset, validation_steps=1000,
+    landmarks_transformer.fit(train_dataset, epochs=50, steps_per_epoch=25000,
+                              validation_data=test_dataset, validation_steps=2000,
                               callbacks=callbacks)
 
     # autonomous_transformer.fit(autonomous_train_dataset, epochs=30, steps_per_epoch=2000,
@@ -884,6 +1141,7 @@ def train_landmarks_transformer():
                                           pre_normalize_predictions=True)
 
 
+# endregion
 # endregion
 
 # region Audio
@@ -1060,6 +1318,7 @@ def train_audio_autoencoder():
     audio_autoencoder = make_audio_autoencoder(sequence_length=input_length,
                                                n_mel_filters=n_mel_filters,
                                                add_predictor=False)
+    # region Dataset
     # audio_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_020.hdf5")
     modalities_pattern = (
         ModalityLoadInfo(MelSpectrogram, input_length, (input_length, n_mel_filters)),
@@ -1076,16 +1335,20 @@ def train_audio_autoencoder():
 
     test_subset = dataset_loader.test_subset
     # test_subset.subset_folders = [folder for folder in test_subset.subset_folders if "induced" in folder]
+    # endregion
 
-    # region callbacks
+    # region Log dir
     log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/mfcc"
     log_dir = os.path.join(log_dir, "log_{}".format(int(time())))
     os.makedirs(log_dir)
+    # endregion
 
+    # region Callbacks
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
 
     train_image_callbacks = ImageCallback.make_image_autoencoder_callbacks(autoencoder=audio_autoencoder,
                                                                            subset=train_subset,
+                                                                           modalities_pattern=modalities_pattern,
                                                                            name="train",
                                                                            is_train_callback=True,
                                                                            tensorboard=tensorboard,
@@ -1127,8 +1390,7 @@ def train_audio_autoencoder():
 # endregion
 
 def main():
-    train_landmarks_transformer()
-    # train_landmarks_autoencoder()
+    scaling_video_transformer_tentative()
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import copy
-from typing import Dict, Tuple, Optional, Type, List, Union
+from typing import Dict, Tuple, Optional, List, Union
 
 from datasets.loaders import DatasetConfig
 from modalities import Modality, ModalityCollection, ModalityLoadInfo, ModalitiesPattern
@@ -129,6 +129,9 @@ class SubsetLoader(object):
 
         for modality in self.modalities:
             modality_type = type(modality)
+            if modality_type not in modalities_pattern_dict:
+                continue
+
             modality_id = modality.id()
             modality_shards = shards[modality_id]
             modality_shard_sizes = shard_sizes[modality_id]
@@ -205,7 +208,7 @@ class SubsetLoader(object):
             modality = modalities[modality_id]
             modality = modality[:modalities_pattern.length]
             # modality.set_shape([modalities_pattern.length, *modality.shape[1:]])
-            modality = tf.reshape(modality, modalities_pattern.output_shape)
+            modality = tf.reshape(modality, modalities_pattern.output_shape, name="reshape_to_modality_output_shape")
             return modality
         elif isinstance(modalities_pattern, str) and modalities_pattern == "labels":
             return modalities["labels"]

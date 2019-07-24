@@ -50,6 +50,7 @@
       <w>softmax</w>
       <w>spatio</w>
       <w>spectrograms</w>
+      <w>ssim</w>
       <w>sujet</w>
       <w>tensorflow</w>
       <w>tfrecord</w>

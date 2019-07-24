@@ -11,15 +11,15 @@ class UCSDTFRecordBuilder(TFRecordBuilder):
                  dataset_path: str,
                  shard_duration: float,
                  video_frequency: Optional[Union[int, float]],
-                 audio_frequency: Optional[Union[int, float]],
                  modalities: ModalityCollection,
                  video_frame_size: Tuple[int, int],
                  verbose=1):
         super(UCSDTFRecordBuilder, self).__init__(dataset_path=dataset_path,
                                                   shard_duration=shard_duration,
                                                   video_frequency=video_frequency,
-                                                  audio_frequency=audio_frequency,
+                                                  audio_frequency=None,
                                                   modalities=modalities,
+                                                  labels_frequency=video_frequency,
                                                   verbose=verbose)
         self.video_frame_size = video_frame_size
 
@@ -55,7 +55,6 @@ if __name__ == "__main__":
     ucsd_tf_record_builder = UCSDTFRecordBuilder(dataset_path="../datasets/ucsd/ped2",
                                                  shard_duration=2.0,
                                                  video_frequency=25,
-                                                 audio_frequency=None,
                                                  modalities=ModalityCollection(
                                                      [
                                                          RawVideo(),
