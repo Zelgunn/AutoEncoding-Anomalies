@@ -136,7 +136,7 @@ def main():
         "labels"
     )
     inputs, outputs, labels = dataset_loader.test_subset.get_batch(batch_size=16,
-                                                                   modalities_pattern=anomaly_modalities_pattern)
+                                                                   pattern=anomaly_modalities_pattern)
     labels = SubsetLoader.timestamps_labels_to_frame_labels(labels.numpy(), frame_count=16)
 
     auc_callback = AUCCallback(predictions_model=raw_predictions_model,

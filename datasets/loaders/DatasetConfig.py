@@ -1,9 +1,9 @@
 import json
 import os
-from typing import Dict, List, Any, Tuple, Union, Type
+from typing import Dict, List, Any, Tuple, Union
 
 from datasets.tfrecord_builders import tfrecords_config_filename
-from modalities import Modality, ModalityCollection, ModalityLoadInfo
+from modalities import Modality, ModalityCollection, ModalityLoadInfo, Pattern
 from modalities import RawVideo, OpticalFlow, DoG, Landmarks
 from modalities import RawAudio, MelSpectrogram
 from utils.misc_utils import int_ceil
@@ -70,12 +70,9 @@ class DatasetConfig(object):
     def get_modality_max_shard_size(self, modality: Modality) -> int:
         return int_ceil(self.get_modality_shard_size(modality))
 
-    def compute_shards_per_sample(self,
-                                  modalities_pattern: Tuple[Union[Tuple, ModalityLoadInfo], ...]
-                                  ) -> int:
+    def compute_shards_per_sample(self, pattern: Pattern) -> int:
         shard_counts = []
-        flat_load_info = ModalityLoadInfo.pattern_to_flat_list(modalities_pattern)
-        for modality_load_info in flat_load_info:
+        for modality_load_info in pattern.flattened:
             if isinstance(modality_load_info, str):
                 continue
 

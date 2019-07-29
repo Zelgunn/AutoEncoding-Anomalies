@@ -7,17 +7,17 @@ from tensorflow.python.keras.layers import Conv1D, AveragePooling1D, UpSampling1
 from tensorflow.python.keras.layers import CuDNNLSTM, RepeatVector, TimeDistributed
 from tensorflow.python.keras.layers import Dense, ZeroPadding1D
 from tensorflow.python.keras.optimizers import Adam
-from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN
+from tensorflow.python.keras.callbacks import TensorBoard, TerminateOnNaN, ModelCheckpoint
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import cv2
-from time import time, sleep
+from time import time
 from typing import Tuple, Union
 
 from callbacks import ImageCallback, AUCCallback, TensorBoardPlugin
 from datasets.loaders import DatasetConfig, DatasetLoader, SubsetLoader
-from modalities import ModalityLoadInfo, RawVideo, Landmarks, ModalitiesPattern
+from modalities import ModalityLoadInfo, RawVideo, Landmarks, Pattern
 from layers.utility_layers import RawPredictionsLayer
 from utils.summary_utils import image_summary
 from utils.train_utils import save_model_info
@@ -167,13 +167,13 @@ class AnomalyDetector(Model):
 
     def predict_anomalies_on_sample(self,
                                     subset: SubsetLoader,
-                                    modalities_pattern: ModalitiesPattern,
+                                    pattern: Pattern,
                                     sample_index: int,
                                     stride: int,
                                     normalize_predictions=False,
                                     max_steps_count=100000
                                     ):
-        dataset = subset.get_source_browser(modalities_pattern, sample_index, stride)
+        dataset = subset.get_source_browser(pattern, sample_index, stride)
         predictions, labels = self.predict(dataset, steps=max_steps_count)
         labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
         labels = np.any(labels, axis=-1)
@@ -185,7 +185,7 @@ class AnomalyDetector(Model):
 
     def predict_anomalies_on_subset(self,
                                     subset: SubsetLoader,
-                                    modalities_pattern: ModalitiesPattern,
+                                    pattern: Pattern,
                                     stride: int,
                                     pre_normalize_predictions: bool,
                                     max_samples=10):
@@ -197,7 +197,7 @@ class AnomalyDetector(Model):
         for sample_index in range(sample_count):
             sample_name = subset.subset_folders[sample_index]
             print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name))
-            sample_results = self.predict_anomalies_on_sample(subset, modalities_pattern,
+            sample_results = self.predict_anomalies_on_sample(subset, pattern,
                                                               sample_index, stride,
                                                               normalize_predictions=pre_normalize_predictions)
             sample_predictions, sample_labels = sample_results
@@ -208,12 +208,12 @@ class AnomalyDetector(Model):
 
     def predict_anomalies(self,
                           dataset: DatasetLoader,
-                          modalities_pattern: ModalitiesPattern,
+                          pattern: Pattern,
                           stride=1,
                           pre_normalize_predictions=True,
                           max_samples=10):
         predictions, labels = self.predict_anomalies_on_subset(subset=dataset.test_subset,
-                                                               modalities_pattern=modalities_pattern,
+                                                               pattern=pattern,
                                                                stride=stride,
                                                                pre_normalize_predictions=pre_normalize_predictions,
                                                                max_samples=max_samples)
@@ -272,7 +272,7 @@ class AnomalyDetector(Model):
 
     def predict_and_evaluate(self,
                              dataset: DatasetLoader,
-                             modalities_pattern: ModalitiesPattern,
+                             pattern: Pattern,
                              log_dir: str,
                              stride=1,
                              tensorboard: TensorBoard = None,
@@ -281,7 +281,7 @@ class AnomalyDetector(Model):
                              max_samples=-1,
                              ):
         predictions, labels, lengths = self.predict_anomalies(dataset=dataset,
-                                                              modalities_pattern=modalities_pattern,
+                                                              pattern=pattern,
                                                               stride=stride,
                                                               pre_normalize_predictions=pre_normalize_predictions,
                                                               max_samples=max_samples)
@@ -294,6 +294,9 @@ class AnomalyDetector(Model):
                                             epochs_seen=epochs_seen)
         print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))
         return roc, pr
+
+    def compute_output_signature(self, input_signature):
+        raise NotImplementedError
 
 
 # endregion
@@ -361,7 +364,7 @@ class VideoEncoderLayer(Layer):
             layer = self.down_sampling(layer)
         return layer
 
-    def compute_output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape: tf.TensorShape) -> tf.TensorShape:
         conv_output_shape = self.conv.compute_output_shape(input_shape)
 
         if self.down_sampling is not None:
@@ -370,6 +373,9 @@ class VideoEncoderLayer(Layer):
             output_shape = conv_output_shape
 
         return output_shape
+
+    def compute_output_signature(self, input_signature: tf.TensorSpec) -> tf.TensorSpec:
+        return tf.TensorSpec(self.compute_output_shape(input_signature.shape), input_signature.dtype)
 
 
 class VideoDecoderLayer(Layer):
@@ -396,6 +402,9 @@ class VideoDecoderLayer(Layer):
 
     def compute_output_shape(self, input_shape):
         return self.deconv.compute_output_shape(input_shape)
+
+    def compute_output_signature(self, input_signature: tf.TensorSpec) -> tf.TensorSpec:
+        return tf.TensorSpec(self.compute_output_shape(input_signature.shape), input_signature.dtype)
 
 
 # endregion
@@ -477,7 +486,7 @@ def train_video_autoencoder():
     video_autoencoder = make_video_autoencoder(channels_count=channels_count)
 
     # region Dataset
-    modalities_pattern = (
+    pattern = Pattern(
         ModalityLoadInfo(RawVideo, input_length, (input_length, 128, 128, channels_count)),
         ModalityLoadInfo(RawVideo, output_length, (output_length, 128, 128, channels_count))
     )
@@ -485,7 +494,7 @@ def train_video_autoencoder():
     dataset_loader = DatasetLoader(config=dataset_config)
     # region Train subset
     train_subset = dataset_loader.train_subset
-    dataset = train_subset.make_tf_dataset(modalities_pattern)
+    dataset = train_subset.make_tf_dataset(pattern)
 
     batch_size = 4
     dataset = dataset.batch(batch_size).prefetch(1)
@@ -506,14 +515,14 @@ def train_video_autoencoder():
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
     train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=video_autoencoder,
                                                                            subset=train_subset,
-                                                                           modalities_pattern=modalities_pattern,
+                                                                           pattern=pattern,
                                                                            name="train",
                                                                            is_train_callback=True,
                                                                            tensorboard=tensorboard,
                                                                            epoch_freq=1)
     test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=video_autoencoder,
                                                                           subset=test_subset,
-                                                                          modalities_pattern=modalities_pattern,
+                                                                          pattern=pattern,
                                                                           name="test",
                                                                           is_train_callback=False,
                                                                           tensorboard=tensorboard,
@@ -535,7 +544,7 @@ def train_video_autoencoder():
                                        output=video_autoencoder.output,
                                        ground_truth=video_autoencoder.inputs)
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          modalities_pattern=modalities_pattern,
+                                          pattern=pattern,
                                           log_dir=log_dir,
                                           stride=2)
 
@@ -543,15 +552,14 @@ def train_video_autoencoder():
 # endregion
 
 # region Scaling Video Transformer
-def scaling_video_transformer_tentative():
+def train_scaling_video_transformer():
     from transformer import VideoTransformer
 
     video_transformer = VideoTransformer(input_shape=(16, 64, 64, 1),
                                          subscale_stride=(4, 2, 2),
                                          embedding_size=32,
                                          hidden_size=128,
-                                         block_sizes=
-                                         [
+                                         block_sizes=[
                                              (4, 4, 4),
                                              (4, 4, 8),
                                              (1, 32, 4),
@@ -565,61 +573,55 @@ def scaling_video_transformer_tentative():
                                          attention_head_size=32,
                                          )
 
-    modalities_pattern = (
-        ModalityLoadInfo(RawVideo, 16, (16, 128, 128, 1)),
+    pattern = Pattern(
+        ModalityLoadInfo(RawVideo, 16, (16, 64, 64, 1), lambda x: tf.image.resize(x, (64, 64))),
     )
 
     dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
 
-    dataset = dataset_loader.train_subset.make_tf_dataset(modalities_pattern)
-    dataset = dataset.map(lambda x: tf.image.resize(x, (64, 64)))
+    dataset = dataset_loader.train_subset.make_tf_dataset(pattern)
     dataset = dataset.batch(16)
+    dataset = dataset.map(lambda x: x)
+
+    mode = "train"
 
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_transformer"
     log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
     os.makedirs(log_dir)
     save_model_info(video_transformer.trainer, log_dir)
     weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
+    # video_transformer.trainer.load_weights(os.path.join(base_log_dir, "weights_102.hdf5"))
 
-    # video_transformer.trainer.load_weights(os.path.join(base_log_dir, "weights_063.hdf5"))
-    video_transformer.trainer.summary()
+    if mode == "train":
+        tensorboard = TensorBoard(log_dir=log_dir, profile_batch=0)
+        model_checkpoint = ModelCheckpoint(weights_path, verbose=1)
+        video_transformer.fit(dataset,
+                              batch_size=16,
+                              epochs=300,
+                              steps_per_epoch=50,
+                              callbacks=[tensorboard, model_checkpoint])
+    elif mode == "show":
+        video_transformer.trainer.summary()
 
-    t0 = time()
-
-    loss_history = []
-    loss_mean_history = []
-
-    epochs = 300
-    steps_per_epoch = 50
-    for j in range(epochs):
-        # for i, batch in zip(range(1), dataset):
-        #     predicted = video_transformer(batch[:1])
-        #     for k in range(16):
-        #         predicted_frame = cv2.resize(predicted.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
-        #         true_frame = cv2.resize(batch.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
-        #         cv2.imshow("predicted", predicted_frame)
-        #         cv2.imshow("frame", true_frame)
-        #         cv2.waitKey(0)
-        #     input()
-        #     exit()
-
-        for i, batch in zip(range(steps_per_epoch), dataset):
-            loss = video_transformer.train_step(batch)
-            t1 = time()
-            step = i + j * steps_per_epoch
-            loss_history.append(loss)
-            loss_mean = sum(loss_history[-i - 1:]) / (i + 1)
-            loss_mean_history.append(loss_mean)
-            print("{}/{}) Loss={:.4f}, t={:.2f}".format(step + 1, epochs * steps_per_epoch, loss_mean, t1 - t0))
-            t0 = t1
-
-        plt.plot(loss_mean_history)
-        plt.savefig(log_dir + "/loss_history.png")
-        plt.clf()
-
-        video_transformer.trainer.save(weights_path.format(epoch=j + 1))
-        sleep(60.0)
+        for i, batch in zip(range(4), dataset):
+            predicted = video_transformer(batch[:1])
+            for k in range(16):
+                predicted_frame = cv2.resize(predicted.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
+                true_frame = cv2.resize(batch.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
+                cv2.imshow("predicted", predicted_frame)
+                cv2.imshow("frame", true_frame)
+                cv2.waitKey(0)
+    elif mode == "anomaly":
+        anomaly_modalities_pattern = Pattern((*pattern, "labels"))
+        anomaly_detector = AnomalyDetector(inputs=video_transformer.input,
+                                           output=video_transformer.output,
+                                           ground_truth=video_transformer.input)
+        anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
+                                              pattern=anomaly_modalities_pattern,
+                                              log_dir=log_dir,
+                                              stride=1,
+                                              pre_normalize_predictions=True)
 
 
 # endregion
@@ -745,7 +747,7 @@ def train_video_cnn_transformer():
     model.summary()
 
     # region Dataset
-    modalities_pattern = (
+    pattern = Pattern(
         ModalityLoadInfo(RawVideo, 32, (32, 128, 128, 1)),
         ModalityLoadInfo(RawVideo, 32, (32, 128, 128, 1)),
     )
@@ -753,7 +755,7 @@ def train_video_cnn_transformer():
     dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
 
-    dataset = dataset_loader.train_subset.make_tf_dataset(modalities_pattern)
+    dataset = dataset_loader.train_subset.make_tf_dataset(pattern)
     dataset = dataset.batch(16).prefetch(-1)
     # endregion
 
@@ -769,14 +771,14 @@ def train_video_cnn_transformer():
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
     train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=model,
                                                                            subset=dataset_loader.train_subset,
-                                                                           modalities_pattern=modalities_pattern,
+                                                                           pattern=pattern,
                                                                            name="train",
                                                                            is_train_callback=True,
                                                                            tensorboard=tensorboard,
                                                                            epoch_freq=1)
     test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=model,
                                                                           subset=dataset_loader.test_subset,
-                                                                          modalities_pattern=modalities_pattern,
+                                                                          pattern=pattern,
                                                                           name="test",
                                                                           is_train_callback=False,
                                                                           tensorboard=tensorboard,
@@ -904,15 +906,15 @@ def train_landmarks_autoencoder():
     # landmarks_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_020.hdf5")
 
     dataset_loader, train_subset, test_subset = get_landmarks_datasets()
-    modalities_pattern = (
+    pattern = Pattern(
         ModalityLoadInfo(Landmarks, input_length, (input_length, 136)),
         ModalityLoadInfo(Landmarks, output_length, (output_length, 136))
     )
 
-    train_dataset = train_subset.make_tf_dataset(modalities_pattern)
+    train_dataset = train_subset.make_tf_dataset(pattern)
     train_dataset = train_dataset.batch(batch_size).prefetch(-1)
 
-    test_dataset = test_subset.make_tf_dataset(modalities_pattern)
+    test_dataset = test_subset.make_tf_dataset(pattern)
     test_dataset = test_dataset.batch(batch_size)
 
     # region callbacks
@@ -953,7 +955,7 @@ def train_landmarks_autoencoder():
                                        output=landmarks_autoencoder.output,
                                        ground_truth=landmarks_autoencoder.inputs)
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          modalities_pattern=modalities_pattern,
+                                          pattern=pattern,
                                           log_dir=log_dir,
                                           stride=1)
 
@@ -1008,19 +1010,19 @@ def train_landmarks_transformer():
     # region Datasets
     dataset_loader, train_subset, test_subset = get_landmarks_datasets()
 
-    modalities_pattern = (
+    pattern = Pattern(
         ModalityLoadInfo(Landmarks, input_length, (input_length, 136)),
         ModalityLoadInfo(Landmarks, output_length, (output_length // frame_per_prediction,
                                                     136 * frame_per_prediction))
     )
-    anomaly_modalities_pattern = (
-        *modalities_pattern,
+    anomaly_pattern = Pattern(
+        *pattern,
         "labels"
     )
 
-    train_dataset = train_subset.make_tf_dataset((modalities_pattern,))
+    train_dataset = train_subset.make_tf_dataset(pattern.with_added_depth())
     train_dataset = train_dataset.map(add_batch_noise)
-    test_dataset = test_subset.make_tf_dataset((modalities_pattern,))
+    test_dataset = test_subset.make_tf_dataset(pattern.with_added_depth())
     # endregion
 
     # tmp = Model(inputs=landmarks_transformer.inputs,
@@ -1069,7 +1071,7 @@ def train_landmarks_transformer():
     # endregion
 
     # region AUC
-    labeled_test_subset = test_subset.make_tf_dataset(anomaly_modalities_pattern)
+    labeled_test_subset = test_subset.make_tf_dataset(anomaly_pattern)
     # region Default (32 frames)
     # raw_predictions = RawPredictionsLayer(output_length=input_length)([landmarks_transformer.output,
     #                                                                    landmarks_transformer.decoder_target_layer])
@@ -1130,12 +1132,11 @@ def train_landmarks_transformer():
     #                            validation_data=autonomous_test_dataset, validation_steps=500,
     #                            callbacks=callbacks)
 
-    anomaly_modalities_pattern = (anomaly_modalities_pattern,)
     anomaly_detector = AnomalyDetector(inputs=landmarks_transformer.inputs,
                                        output=landmarks_transformer.output,
                                        ground_truth=landmarks_transformer.inputs[1])
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          modalities_pattern=anomaly_modalities_pattern,
+                                          pattern=anomaly_pattern.with_added_depth(),
                                           log_dir=log_dir,
                                           stride=1,
                                           pre_normalize_predictions=True)
@@ -1179,6 +1180,9 @@ class AudioEncoderLayer(Layer):
 
         return output_shape
 
+    def compute_output_signature(self, input_signature: tf.TensorSpec) -> tf.TensorSpec:
+        return tf.TensorSpec(self.compute_output_shape(input_signature.shape), input_signature.dtype)
+
 
 class AudioDecoderLayer(Layer):
     def __init__(self, filters, kernel_size, strides, padding="same", activation=None, **kwargs):
@@ -1204,6 +1208,9 @@ class AudioDecoderLayer(Layer):
 
     def compute_output_shape(self, input_shape):
         return self.deconv.compute_output_shape(input_shape)
+
+    def compute_output_signature(self, input_signature: tf.TensorSpec) -> tf.TensorSpec:
+        return tf.TensorSpec(self.compute_output_shape(input_signature.shape), input_signature.dtype)
 
 
 # endregion
@@ -1320,7 +1327,7 @@ def train_audio_autoencoder():
                                                add_predictor=False)
     # region Dataset
     # audio_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_020.hdf5")
-    modalities_pattern = (
+    pattern = Pattern(
         ModalityLoadInfo(MelSpectrogram, input_length, (input_length, n_mel_filters)),
         ModalityLoadInfo(MelSpectrogram, output_length, (output_length, n_mel_filters))
     )
@@ -1348,7 +1355,7 @@ def train_audio_autoencoder():
 
     train_image_callbacks = ImageCallback.make_image_autoencoder_callbacks(autoencoder=audio_autoencoder,
                                                                            subset=train_subset,
-                                                                           modalities_pattern=modalities_pattern,
+                                                                           pattern=pattern,
                                                                            name="train",
                                                                            is_train_callback=True,
                                                                            tensorboard=tensorboard,
@@ -1369,10 +1376,10 @@ def train_audio_autoencoder():
         audio_autoencoder.summary(print_fn=lambda summary: file.write(summary + '\n'))
     # endregion
 
-    train_dataset = train_subset.make_tf_dataset(modalities_pattern)
+    train_dataset = train_subset.make_tf_dataset(pattern)
     train_dataset = train_dataset.batch(batch_size).prefetch(-1)
 
-    test_dataset = test_subset.make_tf_dataset(modalities_pattern)
+    test_dataset = test_subset.make_tf_dataset(pattern)
     test_dataset = test_dataset.batch(batch_size)
     audio_autoencoder.fit(train_dataset, epochs=500, steps_per_epoch=10000,
                           validation_data=test_dataset, validation_steps=1000,
@@ -1382,7 +1389,7 @@ def train_audio_autoencoder():
                                        output=audio_autoencoder.output,
                                        ground_truth=audio_autoencoder.inputs)
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          modalities_pattern=modalities_pattern,
+                                          pattern=pattern,
                                           log_dir=log_dir,
                                           stride=1)
 
@@ -1390,7 +1397,7 @@ def train_audio_autoencoder():
 # endregion
 
 def main():
-    scaling_video_transformer_tentative()
+    train_scaling_video_transformer()
 
 
 if __name__ == "__main__":

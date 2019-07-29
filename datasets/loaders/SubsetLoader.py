@@ -2,10 +2,10 @@ import tensorflow as tf
 import numpy as np
 import os
 import copy
-from typing import Dict, Tuple, Optional, List, Union
+from typing import Dict, Tuple, Optional, List
 
 from datasets.loaders import DatasetConfig
-from modalities import Modality, ModalityCollection, ModalityLoadInfo, ModalitiesPattern
+from modalities import Modality, ModalityCollection, Pattern
 from modalities import RawVideo, Landmarks
 from modalities import MelSpectrogram
 from utils.misc_utils import int_ceil, int_floor
@@ -41,13 +41,14 @@ class SubsetLoader(object):
                                  "SubsetLoader doesn't support this case yet.")
 
     # region Loading methods (parsing, decoding, fusing, normalization, splitting, ...)
-    def parse_shard(self, serialized_examples, output_labels: bool):
-        records_count = self.records_per_sample(output_labels)
+    def parse_shard(self, serialized_examples, pattern: Pattern):
+        records_count = self.modalities_per_sample(pattern)
         serialized_examples.set_shape(records_count)
 
         features_decoded, modalities_shard_size = {}, {}
 
-        for i, modality in enumerate(self.modalities):
+        for i, modality_type in enumerate(pattern.modality_types):
+            modality = self.modalities[modality_type]
             modality_id = modality.id()
             modality_features = modality.tfrecord_features()
             modality_example = serialized_examples[i]
@@ -60,7 +61,7 @@ class SubsetLoader(object):
             features_decoded[modality_id] = decoded_modality
             modalities_shard_size[modality_id] = modality_size
 
-        if output_labels:
+        if pattern.contains_labels:
             labels_features = {"labels": tf.io.VarLenFeature(tf.float32)}
             labels_example = serialized_examples[-1]
 
@@ -119,17 +120,16 @@ class SubsetLoader(object):
                     shards: Dict[str, tf.Tensor],
                     shard_sizes: Dict[str, tf.Tensor],
                     offset: tf.Tensor,
-                    modalities_pattern: ModalitiesPattern,
+                    pattern: Pattern,
                     length_map_function=max):
 
         joint_shards = {}
         labels_range = None
         labels_offset = None
-        modalities_pattern_dict = ModalityLoadInfo.pattern_to_dict(modalities_pattern)
 
         for modality in self.modalities:
             modality_type = type(modality)
-            if modality_type not in modalities_pattern_dict:
+            if modality_type not in pattern.as_dict:
                 continue
 
             modality_id = modality.id()
@@ -140,7 +140,7 @@ class SubsetLoader(object):
                 total_size = tf.cast(tf.reduce_sum(modality_shard_sizes), tf.int32, name="total_shard_size")
 
                 # modality_sample_size = self.modalities[modality_type].io_shape.output_length
-                modality_load_infos = modalities_pattern_dict[modality_type]
+                modality_load_infos = pattern.as_dict[modality_type]
                 modality_sample_size = length_map_function([load_info.length for load_info in modality_load_infos])
                 modality_sample_size_op = tf.constant(modality_sample_size, name="modality_sample_size")
 
@@ -200,25 +200,6 @@ class SubsetLoader(object):
             modalities[modality_id] = modality_value
         return modalities
 
-    def apply_pattern(self,
-                      modalities: Dict[str, tf.Tensor],
-                      modalities_pattern: Tuple[Union[Tuple, ModalityLoadInfo], ...]):
-        if isinstance(modalities_pattern, ModalityLoadInfo):
-            modality_id = modalities_pattern.modality.id()
-            modality = modalities[modality_id]
-            modality = modality[:modalities_pattern.length]
-            # modality.set_shape([modalities_pattern.length, *modality.shape[1:]])
-            modality = tf.reshape(modality, modalities_pattern.output_shape, name="reshape_to_modality_output_shape")
-            return modality
-        elif isinstance(modalities_pattern, str) and modalities_pattern == "labels":
-            return modalities["labels"]
-        elif isinstance(modalities_pattern, tuple):
-            return tuple([self.apply_pattern(modalities, x) for x in modalities_pattern])
-        elif isinstance(modalities_pattern, list):
-            return [self.apply_pattern(modalities, x) for x in modalities_pattern]
-        else:
-            raise TypeError("Not supported type : {}".format(type(modalities_pattern)))
-
     def add_gaussian_noise(self, *args):
         if len(args) == 2:
             inputs, outputs = args
@@ -234,18 +215,19 @@ class SubsetLoader(object):
     # endregion
 
     # region Sample dataset
-    def records_per_sample(self, output_labels: bool):
-        count = len(self.modalities)
-        if output_labels:
+    @staticmethod
+    def modalities_per_sample(pattern: Pattern):
+        count = len(pattern.modality_types)
+        if pattern.contains_labels:
             count += 1
         return count
 
-    def shard_filepath_generator(self,
-                                 folders: List[str],
-                                 outputs_labels: bool,
+    @staticmethod
+    def shard_filepath_generator(folders: List[str],
+                                 pattern: Pattern,
                                  shards_per_sample: int):
-        modality_ids = [modality.id() for modality in self.modalities]
-        if outputs_labels:
+        modality_ids = list(pattern.modality_ids)
+        if pattern.contains_labels:
             modality_ids.append("labels")
 
         while True:
@@ -274,12 +256,12 @@ class SubsetLoader(object):
     def join_shards_randomly(self,
                              shards: Dict[str, tf.Tensor],
                              shard_sizes: Dict[str, tf.Tensor],
-                             modalities_pattern: ModalitiesPattern):
+                             pattern: Pattern):
         offset = tf.random.uniform(shape=(), minval=0, maxval=1.0, dtype=tf.float32, name="offset")
-        return self.join_shards(shards, shard_sizes, offset, modalities_pattern)
+        return self.join_shards(shards, shard_sizes, offset, pattern)
 
     def make_tf_dataset(self,
-                        modalities_pattern: ModalitiesPattern,
+                        pattern: Pattern,
                         subset_folder: List[str] = None,
                         ):
         if subset_folder is not None:
@@ -287,33 +269,29 @@ class SubsetLoader(object):
         else:
             subset_folder = copy.copy(self.subset_folders)
 
-        output_labels = "labels" in ModalityLoadInfo.pattern_to_flat_list(modalities_pattern)
-        shards_per_sample = self.config.compute_shards_per_sample(modalities_pattern)
+        shards_per_sample = self.config.compute_shards_per_sample(pattern)
 
         def make_generator():
-            return self.shard_filepath_generator(subset_folder, output_labels, shards_per_sample)
+            return self.shard_filepath_generator(subset_folder, pattern, shards_per_sample)
 
         k = os.cpu_count()
         dataset = tf.data.Dataset.from_generator(make_generator,
                                                  output_types=tf.string,
                                                  output_shapes=())
         dataset = tf.data.TFRecordDataset(dataset, num_parallel_reads=k)
-        dataset = dataset.batch(self.records_per_sample(output_labels)).prefetch(1)
+        dataset = dataset.batch(self.modalities_per_sample(pattern)).prefetch(1)
 
-        dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, output_labels),
+        dataset = dataset.map(lambda serialized_shards: self.parse_shard(serialized_shards, pattern),
                               num_parallel_calls=k)
 
         dataset = dataset.batch(shards_per_sample)
         dataset = dataset.map(lambda shards, shards_sizes: self.join_shards_randomly(shards,
                                                                                      shards_sizes,
-                                                                                     modalities_pattern),
+                                                                                     pattern),
                               num_parallel_calls=k)
 
-        # dataset = dataset.map(self.augment_raw_video)
         dataset = dataset.map(self.normalize_batch, num_parallel_calls=k)
-        dataset = dataset.map(lambda modalities: self.apply_pattern(modalities, modalities_pattern),
-                              num_parallel_calls=k)
-        # dataset = dataset.map(self.add_gaussian_noise)
+        dataset = dataset.map(pattern.apply, num_parallel_calls=k)
 
         return dataset
 
@@ -336,8 +314,8 @@ class SubsetLoader(object):
     # endregion
 
     # region Ordered reading
-    def get_batch(self, batch_size: int, modalities_pattern: ModalitiesPattern):
-        dataset = self.make_tf_dataset(modalities_pattern)
+    def get_batch(self, batch_size: int, pattern: Pattern):
+        dataset = self.make_tf_dataset(pattern)
         dataset = dataset.batch(batch_size)
         results = None
         for results in dataset:
@@ -345,8 +323,11 @@ class SubsetLoader(object):
 
         return results
 
-    def make_source_filepath_generator(self, source_index: int, shards_per_sample: int):
-        modality_ids = [modality.id() for modality in self.modalities] + ["labels"]
+    def make_source_filepath_generator(self,
+                                       source_index: int,
+                                       shards_per_sample: int,
+                                       pattern: Pattern):
+        modality_ids = list(pattern.modality_ids) + ["labels"]
 
         def generator():
             source_folder = self.subset_folders[source_index]
@@ -374,18 +355,18 @@ class SubsetLoader(object):
     def join_shards_ordered(self,
                             shards: Dict[str, tf.Tensor],
                             shard_sizes: Dict[str, tf.Tensor],
-                            modalities_pattern: ModalitiesPattern,
+                            pattern: Pattern,
                             stride: int
                             ):
         with tf.name_scope("join_shards_ordered"):
-            reference_modality_id = ModalityLoadInfo.pattern_to_flat_list(modalities_pattern)[0].modality.id()
+            reference_modality_id = pattern.modality_ids[0]
             size = shard_sizes[reference_modality_id][0]
             stride = tf.constant(stride, tf.int32, name="stride")
             result_count = size // stride
 
             def loop_body(i, step_shards_arrays: Dict[str, tf.TensorArray]):
                 step_offset = tf.cast(i * stride, tf.float32) / tf.cast(size - 1, tf.float32)
-                step_joint_shards = self.join_shards(shards, shard_sizes, step_offset, modalities_pattern,
+                step_joint_shards = self.join_shards(shards, shard_sizes, step_offset, pattern,
                                                      length_map_function=max)
                 for modality_id in step_shards_arrays:
                     modality = step_joint_shards[modality_id]
@@ -406,25 +387,26 @@ class SubsetLoader(object):
             return joint_shard
 
     def get_source_browser(self,
-                           modalities_pattern: ModalitiesPattern,
+                           pattern: Pattern,
                            source_index: int,
                            stride: int) -> tf.data.Dataset:
-        shards_per_sample: int = self.config.compute_shards_per_sample(modalities_pattern)
-        dataset = tf.data.Dataset.from_generator(self.make_source_filepath_generator(source_index, shards_per_sample),
+        shards_per_sample: int = self.config.compute_shards_per_sample(pattern)
+        generator = self.make_source_filepath_generator(source_index, shards_per_sample, pattern)
+        dataset = tf.data.Dataset.from_generator(generator,
                                                  output_types=tf.string,
                                                  output_shapes=())
 
         dataset = tf.data.TFRecordDataset(dataset)
-        dataset = dataset.batch(self.records_per_sample(output_labels=True)).prefetch(1)
-        dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, output_labels=True))
+        dataset = dataset.batch(self.modalities_per_sample(pattern)).prefetch(1)
+        dataset = dataset.map(lambda serialized_shard: self.parse_shard(serialized_shard, pattern))
 
         dataset = dataset.batch(shards_per_sample)
         dataset = dataset.map(lambda shards, shard_sizes:
-                              self.join_shards_ordered(shards, shard_sizes, modalities_pattern, stride))
+                              self.join_shards_ordered(shards, shard_sizes, pattern, stride))
 
         dataset = dataset.unbatch()
         dataset = dataset.map(self.normalize_batch)
-        dataset = dataset.map(lambda modalities: self.apply_pattern(modalities, modalities_pattern))
+        dataset = dataset.map(pattern.apply)
         dataset = dataset.batch(1)
 
         return dataset
@@ -534,14 +516,14 @@ def random_video_flip(video: tf.Tensor,
 # endregion
 
 def main():
-    from modalities import ModalityLoadInfo, ModalitiesPattern
+    from modalities import ModalityLoadInfo, Pattern
     from modalities import RawAudio
     from modalities import MelSpectrogram
 
     audio_length = int(48000 * 1.28)
     nfft = 52
 
-    modalities_pattern: ModalitiesPattern = (
+    pattern = Pattern(
         (
             ModalityLoadInfo(Landmarks, 32, (32, 136)),
             ModalityLoadInfo(MelSpectrogram, nfft, (nfft, 100))
@@ -556,7 +538,7 @@ def main():
                            )
 
     loader = SubsetLoader(config, "Test")
-    dataset = loader.make_tf_dataset(modalities_pattern)
+    dataset = loader.make_tf_dataset(pattern)
     print(dataset)
 
 

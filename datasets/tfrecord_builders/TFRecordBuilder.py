@@ -7,7 +7,7 @@ import json
 from typing import Union, Tuple, List, Dict, Type, Optional
 
 from modalities import Modality, ModalityCollection
-from modalities.modality_utils import float_list_feature
+from modalities.utils import float_list_feature
 from datasets.modality_builders import ModalityBuilder, VideoBuilder, AudioBuilder, BuildersList
 from datasets.data_readers import VideoReader, AudioReader
 from datasets.labels_builders import LabelsBuilder
