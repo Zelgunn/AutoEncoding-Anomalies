@@ -891,7 +891,7 @@ class AutoEncoderBaseModel(ABC):
         fourcc = cv2.VideoWriter_fourcc(*"DIVX")
         video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
 
-        source_browser = subset.get_source_browser(video_index, RawVideo, stride=1)
+        source_browser = subset.make_source_browser(video_index, RawVideo, stride=1)
         predicted = self.autoencoder.predict(source_browser, steps=max_frame_count)
 
         predicted = (predicted * 255).astype(np.uint8)
@@ -983,7 +983,7 @@ class AutoEncoderBaseModel(ABC):
                                    max_iterations=1):
 
         raw_predictions_model = self.get_anomalies_raw_predictions_model(include_labels_io=True)
-        source_browser = subset.get_source_browser(video_index, RawVideo, stride)
+        source_browser = subset.make_source_browser(video_index, RawVideo, stride)
         # TODO : Get steps count
         steps_count = 100000
         predictions, labels = raw_predictions_model.predict(source_browser, steps=steps_count)

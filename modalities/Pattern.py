@@ -56,6 +56,13 @@ class Pattern(object):
             self._contains_labels = "labels" in self.flattened
         return self._contains_labels
 
+    @property
+    def modalities_per_sample(self):
+        count = len(self.modality_types)
+        if self.contains_labels:
+            count += 1
+        return count
+
     # endregion
 
     def with_labels(self) -> "Pattern":

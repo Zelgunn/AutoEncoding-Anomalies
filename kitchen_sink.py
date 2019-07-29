@@ -173,7 +173,7 @@ class AnomalyDetector(Model):
                                     normalize_predictions=False,
                                     max_steps_count=100000
                                     ):
-        dataset = subset.get_source_browser(pattern, sample_index, stride)
+        dataset = subset.make_source_browser(pattern, sample_index, stride)
         predictions, labels = self.predict(dataset, steps=max_steps_count)
         labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
         labels = np.any(labels, axis=-1)
