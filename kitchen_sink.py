@@ -555,15 +555,15 @@ def train_video_autoencoder():
 def train_scaling_video_transformer():
     from transformer import VideoTransformer
 
-    video_transformer = VideoTransformer(input_shape=(16, 64, 64, 1),
+    video_transformer = VideoTransformer(input_shape=(16, 128, 128, 1),
                                          subscale_stride=(4, 2, 2),
                                          embedding_size=32,
                                          hidden_size=128,
                                          block_sizes=[
-                                             (4, 4, 4),
-                                             (4, 4, 8),
-                                             (1, 32, 4),
-                                             (1, 4, 32),
+                                             (4, 8, 8),
+                                             (1, 64, 4),
+                                             (1, 4, 64),
+                                             # (4, 8, 8),
                                              # (1, 4, 32),
                                              # (1, 32, 4),
                                              # (4, 4, 8),
@@ -574,33 +574,62 @@ def train_scaling_video_transformer():
                                          )
 
     pattern = Pattern(
-        ModalityLoadInfo(RawVideo, 16, (16, 64, 64, 1), lambda x: tf.image.resize(x, (64, 64))),
+        ModalityLoadInfo(RawVideo, 16, (16, 128, 128, 1)),  # , lambda x: tf.image.resize(x, (64, 64))
     )
 
     dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
 
+    batch_size = 2
     dataset = dataset_loader.train_subset.make_tf_dataset(pattern)
-    dataset = dataset.batch(16)
-    dataset = dataset.map(lambda x: x)
+    dataset = dataset.batch(batch_size)
 
-    mode = "train"
+    validation_dataset = dataset_loader.test_subset.make_tf_dataset(pattern)
+    validation_dataset = validation_dataset.batch(batch_size)
 
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_transformer"
+    weights_name = "weights_{epoch:03d}.hdf5"
     log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
     os.makedirs(log_dir)
     save_model_info(video_transformer.trainer, log_dir)
-    weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
-    # video_transformer.trainer.load_weights(os.path.join(base_log_dir, "weights_102.hdf5"))
+    weights_path = os.path.join(log_dir, weights_name)
+
+    mode = "train"
+    initial_epoch = 0
+    if initial_epoch > 0:
+        video_transformer.trainer.load_weights(os.path.join(base_log_dir, weights_name.format(epoch=initial_epoch)))
 
     if mode == "train":
+        # region Callbacks
         tensorboard = TensorBoard(log_dir=log_dir, profile_batch=0)
         model_checkpoint = ModelCheckpoint(weights_path, verbose=1)
+        callbacks_pattern = Pattern(*pattern.elements, *pattern.elements)
+        train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=video_transformer,
+                                                                               subset=dataset_loader.train_subset,
+                                                                               pattern=callbacks_pattern,
+                                                                               name="train",
+                                                                               is_train_callback=True,
+                                                                               tensorboard=tensorboard,
+                                                                               epoch_freq=1)
+        test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=video_transformer,
+                                                                              subset=dataset_loader.test_subset,
+                                                                              pattern=callbacks_pattern,
+                                                                              name="test",
+                                                                              is_train_callback=False,
+                                                                              tensorboard=tensorboard,
+                                                                              epoch_freq=1)
+        image_callbacks = train_image_callbacks + test_image_callbacks
+        # image_callbacks = []
+        # endregion
+
         video_transformer.fit(dataset,
-                              batch_size=16,
+                              batch_size=batch_size,
                               epochs=300,
-                              steps_per_epoch=50,
-                              callbacks=[tensorboard, model_checkpoint])
+                              steps_per_epoch=100,
+                              initial_epoch=initial_epoch,
+                              validation_data=validation_dataset,
+                              validation_steps=10,
+                              callbacks=[tensorboard, model_checkpoint, *image_callbacks])
     elif mode == "show":
         video_transformer.trainer.summary()
 
@@ -613,7 +642,7 @@ def train_scaling_video_transformer():
                 cv2.imshow("frame", true_frame)
                 cv2.waitKey(0)
     elif mode == "anomaly":
-        anomaly_modalities_pattern = Pattern((*pattern, "labels"))
+        anomaly_modalities_pattern = Pattern(*pattern, "labels")
         anomaly_detector = AnomalyDetector(inputs=video_transformer.input,
                                            output=video_transformer.output,
                                            ground_truth=video_transformer.input)

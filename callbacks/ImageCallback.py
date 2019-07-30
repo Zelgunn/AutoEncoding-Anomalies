@@ -94,7 +94,7 @@ class ImageCallback(TensorBoardPlugin):
 
         def repeated_function(data, step):
             _inputs, _outputs = data
-            decoded = autoencoder.predict_on_batch(_inputs)
+            decoded = autoencoder(_inputs)
             return ImageCallback.video_autoencoder_summary(name=name,
                                                            true_video=_outputs,
                                                            pred_video=decoded,

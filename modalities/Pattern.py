@@ -72,7 +72,11 @@ class Pattern(object):
         return self.__class__(self.elements)
 
     def apply(self, modalities: Dict[str, tf.Tensor]):
-        return self._apply_pattern(modalities, self.elements)
+        modalities = self._apply_pattern(modalities, self.elements)
+        if len(modalities) == 1:
+            return modalities[0]
+        else:
+            return modalities
 
     @staticmethod
     def _apply_pattern(modalities: Dict[str, tf.Tensor],
