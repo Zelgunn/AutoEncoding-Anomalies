@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 import cv2
+from time import time
 from typing import Tuple, Optional
 
 from callbacks import TensorBoardPlugin
@@ -125,6 +126,7 @@ class AUCCallback(TensorBoardPlugin):
                                  prefix=prefix)
 
     def _write_logs(self, index):
+        start_time = time()
         predictions = self.predictions_model.predict((self.inputs, self.outputs), batch_size=self.batch_size)
         predictions = np.array(predictions)
         predictions = self.reformat_predictions(predictions)
@@ -135,6 +137,7 @@ class AUCCallback(TensorBoardPlugin):
         with self.validation_run_writer.as_default():
             self._write_auc_summary(predictions, index)
             self.roc.write_plot_summary(index)
+        print("AUCCallback took {:.2f} seconds.".format(time() - start_time))
 
     @tf.function
     def _write_auc_summary(self, predictions, step):

@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import os
 import cv2
 from time import time
-from typing import Tuple, Union
+from typing import Tuple, Union, Callable, List
 
 from callbacks import ImageCallback, AUCCallback, TensorBoardPlugin
 from datasets.loaders import DatasetConfig, DatasetLoader, SubsetLoader
@@ -27,26 +27,26 @@ from transformer.layers import PositionalEncodingMode
 
 # region Utility
 # region Callbacks
-def get_batch(dataset: tf.data.Dataset,
-              batch_size: int):
-    if not isinstance(dataset, tf.data.Dataset):
-        raise TypeError("`dataset` must be a tf.data.Dataset, got {}.".format(dataset))
-
-    data = dataset.batch(batch_size=batch_size).take(1)
-    batch = ()
-    for eager_batch in data:
-        batch = eager_to_numpy(eager_batch)
-
-    return batch
-
-
-def make_auc_callback(test_subset,
+def make_auc_callback(test_subset: SubsetLoader,
+                      pattern: Pattern,
                       predictions_model: Model,
                       tensorboard: TensorBoard,
                       samples_count=512,
+                      batch_size=32,
+                      epoch_freq=1,
                       prefix=""
                       ) -> AUCCallback:
-    inputs, outputs, labels = get_batch(test_subset, batch_size=samples_count)
+    if len(pattern) not in [2, 3]:
+        raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(len(pattern)))
+
+    batch = test_subset.get_batch(batch_size=samples_count, pattern=pattern)
+    if len(pattern) == 2:
+        inputs, labels = batch
+        outputs = inputs
+    elif len(pattern) == 3:
+        inputs, outputs, labels = batch
+    else:
+        inputs = outputs = labels = None
 
     labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, predictions_model.output_shape[1])
 
@@ -55,9 +55,9 @@ def make_auc_callback(test_subset,
                                inputs=inputs,
                                outputs=outputs,
                                labels=labels,
-                               epoch_freq=1,
+                               epoch_freq=epoch_freq,
                                plot_size=(128, 128),
-                               batch_size=128,
+                               batch_size=batch_size,
                                prefix=prefix)
     return auc_callback
 
@@ -78,9 +78,10 @@ class TmpModelCheckpoint(tf.keras.callbacks.Callback):
 
 class LandmarksVideoCallback(TensorBoardPlugin):
     def __init__(self,
-                 dataset: Union[SubsetLoader, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
+                 subset: Union[SubsetLoader, tf.data.Dataset],
                  autoencoder: Model,
                  tensorboard: TensorBoard,
+                 pattern: Pattern = None,
                  epoch_freq=1,
                  output_size=(512, 512),
                  line_thickness=1,
@@ -99,7 +100,13 @@ class LandmarksVideoCallback(TensorBoardPlugin):
         self.prefix = prefix if (len(prefix) == 0) else (prefix + "_")
         self.ground_truth_images = None
 
-        self.inputs, self.outputs = get_batch(dataset, batch_size=4)
+        if isinstance(subset, SubsetLoader):
+            self.inputs, self.outputs = subset.get_batch(batch_size=4, pattern=pattern)
+        else:
+            for batch in subset.batch(batch_size=4).take(1):
+                inputs, outputs = batch
+                self.inputs = inputs.numpy()
+                self.outputs = outputs.numpy()
 
     def _write_logs(self, index: int):
         with self._get_writer(self.writer_name).as_default():
@@ -142,15 +149,16 @@ class LandmarksVideoCallback(TensorBoardPlugin):
 # region Super Test
 class AnomalyDetector(Model):
     def __init__(self,
-                 inputs,
-                 output,
-                 ground_truth,
+                 inputs: Union[List[tf.Tensor], tf.Tensor],
+                 output: tf.Tensor,
+                 ground_truth: tf.Tensor,
+                 metric: Union[str, Callable] = "mse",
                  **kwargs
                  ):
 
         super(AnomalyDetector, self).__init__(**kwargs)
 
-        predictions = RawPredictionsLayer()([output, ground_truth])
+        predictions = RawPredictionsLayer(metric=metric)([output, ground_truth])
         outputs = [predictions]
 
         # region Labels
@@ -293,6 +301,8 @@ class AnomalyDetector(Model):
                                             tensorboard=tensorboard,
                                             epochs_seen=epochs_seen)
         print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))
+        with open(os.path.join(log_dir, "anomaly_detection_scores.txt"), 'w') as file:
+            file.write("ROC = {} | PR = {}".format(roc, pr))
         return roc, pr
 
     def compute_output_signature(self, input_signature):
@@ -555,11 +565,12 @@ def train_video_autoencoder():
 def train_scaling_video_transformer():
     from transformer import VideoTransformer
 
+    dataset_name = "ucsd"
     batch_size = 2
     length = 16
     height = 128
     width = 128
-    channel_count = 1
+    channel_count = 1 if dataset_name is "ucsd" else 1
     mode = "train"
     initial_epoch = 0
 
@@ -571,7 +582,7 @@ def train_scaling_video_transformer():
                                              (4, 8, 8),
                                              (1, 64, 4),
                                              (1, 4, 64),
-                                             # (4, 8, 8),
+                                             (4, 8, 8),
                                              # (1, 4, 32),
                                              # (1, 32, 4),
                                              # (4, 4, 8),
@@ -579,31 +590,37 @@ def train_scaling_video_transformer():
                                          ],
                                          attention_head_count=8,
                                          attention_head_size=32,
-                                         copy_regularization_factor=2e-2
+                                         copy_regularization_factor=1.0,
+                                         positional_encoding_range=0.1
                                          )
 
     # region Patterns
-    pattern = Pattern(ModalityLoadInfo(RawVideo, length, (length, height, width, channel_count)))
+    pattern = Pattern(ModalityLoadInfo(RawVideo, length, (length, height, width, channel_count),
+                                       lambda x: tf.reduce_mean(x, axis=-1, keepdims=True)))
     anomaly_pattern = Pattern(*pattern, "labels")
     image_callbacks_pattern = Pattern(*pattern, *pattern)
     # endregion
 
     # region Datasets
-    dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
+    dataset_path = "../datasets/ucsd/ped2" if dataset_name is "ucsd" else "../datasets/emoly"
+    dataset_config = DatasetConfig(dataset_path, output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
 
     dataset = dataset_loader.train_subset.make_tf_dataset(pattern)
     dataset = dataset.batch(batch_size)
 
+    # dataset_loader.test_subset.subset_folders = [folder for folder in dataset_loader.test_subset.subset_folders
+    #                                              if "induced" in folder]
     validation_dataset = dataset_loader.test_subset.make_tf_dataset(pattern)
     validation_dataset = validation_dataset.batch(batch_size)
     # endregion
 
     # region Log dir
-    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_transformer"
+    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_transformer/{}".format(dataset_name)
     weights_name = "weights_{epoch:03d}.hdf5"
     log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
-    os.makedirs(log_dir)
+    if mode is not "show":
+        os.makedirs(log_dir)
     save_model_info(video_transformer.trainer, log_dir)
     weights_path = os.path.join(log_dir, weights_name)
     # endregion
@@ -613,8 +630,14 @@ def train_scaling_video_transformer():
 
     if mode == "train":
         # region Callbacks
+        callbacks: List[tf.keras.callbacks.Callback] = []
+
         tensorboard = TensorBoard(log_dir=log_dir, profile_batch=0)
+        callbacks.append(tensorboard)
+
         model_checkpoint = ModelCheckpoint(weights_path, verbose=1)
+        callbacks.append(model_checkpoint)
+
         # region Image callbacks
         train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=video_transformer,
                                                                                subset=dataset_loader.train_subset,
@@ -630,17 +653,32 @@ def train_scaling_video_transformer():
                                                                               is_train_callback=False,
                                                                               tensorboard=tensorboard,
                                                                               epoch_freq=1)
-        image_callbacks = train_image_callbacks + test_image_callbacks
+        alt_video_transformer = video_transformer.model_using_decoder_outputs
+        alt_test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(autoencoder=alt_video_transformer,
+                                                                                  subset=dataset_loader.test_subset,
+                                                                                  pattern=image_callbacks_pattern,
+                                                                                  name="test_using_decoder_outputs",
+                                                                                  is_train_callback=False,
+                                                                                  tensorboard=tensorboard,
+                                                                                  epoch_freq=1)
+
+        image_callbacks = train_image_callbacks + test_image_callbacks + alt_test_image_callbacks
+        callbacks += image_callbacks
         # endregion
         # region AUC
-        # labeled_test_subset = dataset_loader.test_subset.make_tf_dataset(anomaly_pattern)
         # raw_predictions = RawPredictionsLayer(output_length=length)([video_transformer.output,
         #                                                              video_transformer.input])
         # raw_predictions_model = Model(inputs=video_transformer.inputs, outputs=raw_predictions,
         #                               name="raw_predictions_model")
         #
-        # auc_callback = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
-        #                                  tensorboard=tensorboard, samples_count=512)
+        # auc_callback = make_auc_callback(test_subset=dataset_loader.test_subset,
+        #                                  pattern=anomaly_pattern,
+        #                                  predictions_model=raw_predictions_model,
+        #                                  tensorboard=tensorboard,
+        #                                  samples_count=256,
+        #                                  batch_size=4,
+        #                                  epoch_freq=5)
+        # callbacks.append(auc_callback)
         # endregion
         # endregion
 
@@ -651,26 +689,32 @@ def train_scaling_video_transformer():
                               initial_epoch=initial_epoch,
                               validation_data=validation_dataset,
                               validation_steps=10,
-                              callbacks=[tensorboard, model_checkpoint, *image_callbacks, ])
+                              callbacks=callbacks)
     elif mode == "show":
         video_transformer.trainer.summary()
 
-        for i, batch in zip(range(4), dataset):
-            predicted = video_transformer(batch[:1])
+        for i, batch in zip(range(10), validation_dataset):
+            predicted_easy = video_transformer(batch[:1], use_decoder_outputs=False)
+            predicted_hard = video_transformer(batch[:1], use_decoder_outputs=True)
             for k in range(16):
-                predicted_frame = cv2.resize(predicted.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
+                predicted_frame_easy = predicted_easy.numpy()[0, k]
+                predicted_frame_hard = predicted_hard.numpy()[0, k]
+                predicted_frame_easy = cv2.resize(predicted_frame_easy, (256, 256), interpolation=cv2.INTER_NEAREST)
+                predicted_frame_hard = cv2.resize(predicted_frame_hard, (256, 256), interpolation=cv2.INTER_NEAREST)
                 true_frame = cv2.resize(batch.numpy()[0, k], (256, 256), interpolation=cv2.INTER_NEAREST)
-                cv2.imshow("predicted", predicted_frame)
+                cv2.imshow("predicted_easy", predicted_frame_easy)
+                cv2.imshow("predicted_hard", predicted_frame_hard)
                 cv2.imshow("frame", true_frame)
                 cv2.waitKey(0)
     elif mode == "anomaly":
         anomaly_detector = AnomalyDetector(inputs=video_transformer.input,
-                                           output=video_transformer.output,
-                                           ground_truth=video_transformer.input)
+                                           output=video_transformer.model_using_decoder_outputs.output,
+                                           ground_truth=video_transformer.input,
+                                           metric="mse")
         anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                              pattern=anomaly_pattern,
+                                              pattern=anomaly_pattern.with_added_depth().with_added_depth(),
                                               log_dir=log_dir,
-                                              stride=1,
+                                              stride=4,
                                               pre_normalize_predictions=True)
 
 
@@ -967,7 +1011,7 @@ def train_landmarks_autoencoder():
     test_dataset = test_subset.make_tf_dataset(pattern)
     test_dataset = test_dataset.batch(batch_size)
 
-    # region callbacks
+    # region Callbacks
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/landmarks"
     log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
     os.makedirs(log_dir)
@@ -977,11 +1021,13 @@ def train_landmarks_autoencoder():
     raw_predictions = RawPredictionsLayer()([landmarks_autoencoder.output, landmarks_autoencoder.input])
     raw_predictions_model = Model(inputs=landmarks_autoencoder.input, outputs=raw_predictions,
                                   name="raw_predictions_model")
-    auc_callback = make_auc_callback(test_subset=test_subset, predictions_model=raw_predictions_model,
+    auc_callback = make_auc_callback(test_subset=test_subset,
+                                     pattern=Pattern(*pattern, "labels"),
+                                     predictions_model=raw_predictions_model,
                                      tensorboard=tensorboard)
 
-    train_landmarks_callback = LandmarksVideoCallback(train_dataset, landmarks_autoencoder, tensorboard)
-    test_landmarks_callback = LandmarksVideoCallback(test_dataset, landmarks_autoencoder, tensorboard)
+    train_landmarks_callback = LandmarksVideoCallback(train_subset, landmarks_autoencoder, tensorboard, pattern=pattern)
+    test_landmarks_callback = LandmarksVideoCallback(test_subset, landmarks_autoencoder, tensorboard, pattern=pattern)
 
     model_checkpoint = TmpModelCheckpoint(os.path.join(base_log_dir, "weights_{epoch:03d}.hdf5"))
     callbacks = [tensorboard,
@@ -1121,24 +1167,32 @@ def train_landmarks_transformer():
     # endregion
 
     # region AUC
-    labeled_test_subset = test_subset.make_tf_dataset(anomaly_pattern)
     # region Default (32 frames)
     # raw_predictions = RawPredictionsLayer(output_length=input_length)([landmarks_transformer.output,
     #                                                                    landmarks_transformer.decoder_target_layer])
-    # raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
+    # raw_predictions_model = Model(inputs=landmarks_transformer.inputs,
+    #                               outputs=raw_predictions,
     #                               name="raw_predictions_model_{}".format(input_length))
-
-    # auc_callback_32 = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
-    #                                     tensorboard=tensorboard, samples_count=512, prefix=str(input_length))
+    #
+    # auc_callback_32 = make_auc_callback(test_subset=test_subset,
+    #                                     pattern=anomaly_pattern,
+    #                                     predictions_model=raw_predictions_model,
+    #                                     tensorboard=tensorboard,
+    #                                     samples_count=512,
+    #                                     prefix=str(input_length))
     # endregion
     # region Default (128 frames)
     raw_predictions = RawPredictionsLayer(output_length=output_length)([landmarks_transformer.output,
                                                                         landmarks_transformer.decoder_target_layer])
     raw_predictions_model = Model(inputs=landmarks_transformer.inputs, outputs=raw_predictions,
-                                  name="raw_predictions_model".format(output_length))
+                                  name="raw_predictions_model_{}".format(output_length))
 
-    auc_callback_128 = make_auc_callback(test_subset=labeled_test_subset, predictions_model=raw_predictions_model,
-                                         tensorboard=tensorboard, samples_count=512, prefix=str(output_length))
+    auc_callback_128 = make_auc_callback(test_subset=test_subset,
+                                         pattern=anomaly_pattern,
+                                         predictions_model=raw_predictions_model,
+                                         tensorboard=tensorboard,
+                                         samples_count=512,
+                                         prefix=str(output_length))
     # endregion
     # region Autonomous
     autonomous_ground_truth = Input(batch_shape=autonomous_transformer.output.shape, name="autonomous_ground_truth")
@@ -1146,9 +1200,11 @@ def train_landmarks_transformer():
     autonomous_raw_predictions_model = Model(inputs=[autonomous_transformer.input, autonomous_ground_truth],
                                              outputs=autonomous_raw_predictions,
                                              name="autonomous_raw_predictions_model")
-    autonomous_auc_callback = make_auc_callback(test_subset=labeled_test_subset,
+    autonomous_auc_callback = make_auc_callback(test_subset=test_subset,
+                                                pattern=anomaly_pattern,
                                                 predictions_model=autonomous_raw_predictions_model,
-                                                tensorboard=tensorboard, samples_count=512,
+                                                tensorboard=tensorboard,
+                                                samples_count=512,
                                                 prefix="autonomous")
     # endregion
     # endregion
@@ -1381,6 +1437,10 @@ def train_audio_autoencoder():
         ModalityLoadInfo(MelSpectrogram, input_length, (input_length, n_mel_filters)),
         ModalityLoadInfo(MelSpectrogram, output_length, (output_length, n_mel_filters))
     )
+    anomaly_pattern = Pattern(
+        *pattern,
+        "labels"
+    )
     dataset_config = DatasetConfig("../datasets/emoly",
 
                                    output_range=(-1.0, 1.0))
@@ -1414,7 +1474,9 @@ def train_audio_autoencoder():
     raw_predictions = RawPredictionsLayer()([audio_autoencoder.output, audio_autoencoder.input])
     raw_predictions_model = Model(inputs=audio_autoencoder.input, outputs=raw_predictions,
                                   name="raw_predictions_model")
-    auc_callback = make_auc_callback(test_subset=test_subset, predictions_model=raw_predictions_model,
+    auc_callback = make_auc_callback(test_subset=test_subset,
+                                     pattern=anomaly_pattern,
+                                     predictions_model=raw_predictions_model,
                                      tensorboard=tensorboard)
 
     # model_checkpoint = ModelCheckpoint("../logs/tests/kitchen_sink/mfcc_only/weights.{epoch:03d}.hdf5", )
@@ -1439,7 +1501,7 @@ def train_audio_autoencoder():
                                        output=audio_autoencoder.output,
                                        ground_truth=audio_autoencoder.inputs)
     anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
-                                          pattern=pattern,
+                                          pattern=anomaly_pattern,
                                           log_dir=log_dir,
                                           stride=1)
 

@@ -98,6 +98,9 @@ class Pattern(object):
         else:
             raise TypeError("Not supported type : {}".format(type(pattern)))
 
+    def __len__(self):
+        return len(self.elements)
+
     def __str__(self):
         return str(self.elements)
 

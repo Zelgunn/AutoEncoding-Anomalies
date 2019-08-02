@@ -35,15 +35,6 @@ class ImageCallback(TensorBoardPlugin):
         if self.is_one_shot:
             self.summary_function = None
 
-    @staticmethod
-    def convert_tensor_uint8(tensor) -> tf.Tensor:
-        tensor: tf.Tensor = tf.convert_to_tensor(tensor)
-        tensor_min = tf.reduce_min(tensor)
-        tensor_max = tf.reduce_max(tensor)
-        tensor = (tensor - tensor_min) / (tensor_max - tensor_min)
-        normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
-        return normalized
-
     # region Video
     @staticmethod
     def video_summary(name: str,
@@ -51,7 +42,7 @@ class ImageCallback(TensorBoardPlugin):
                       max_outputs=4,
                       fps=(8, 25),
                       step: int = None):
-        video = ImageCallback.convert_tensor_uint8(video)
+        video = convert_tensor_uint8(video)
         for _fps in fps:
             image_summary(name="{}_{}".format(name, _fps),
                           data=video,
@@ -67,8 +58,8 @@ class ImageCallback(TensorBoardPlugin):
                                   max_outputs=4,
                                   fps=(8, 25),
                                   step: int = None):
-        true_video = ImageCallback.convert_tensor_uint8(true_video)
-        pred_video = ImageCallback.convert_tensor_uint8(pred_video)
+        true_video = convert_tensor_uint8(true_video)
+        pred_video = convert_tensor_uint8(pred_video)
         delta = (pred_video - true_video) * (tf.cast(pred_video < true_video, dtype=tf.uint8) * 254 + 1)
 
         for _fps in fps:
@@ -120,8 +111,8 @@ class ImageCallback(TensorBoardPlugin):
                                   pred_image: tf.Tensor,
                                   max_outputs=4,
                                   step: int = None):
-        true_image = ImageCallback.convert_tensor_uint8(true_image)
-        pred_image = ImageCallback.convert_tensor_uint8(pred_image)
+        true_image = convert_tensor_uint8(true_image)
+        pred_image = convert_tensor_uint8(pred_image)
         delta = (pred_image - true_image) * (tf.cast(pred_image < true_image, dtype=tf.uint8) * 254 + 1)
 
         image_summary(name="{}_pred_outputs".format(name), data=pred_image, step=step, max_outputs=max_outputs)
@@ -140,7 +131,7 @@ class ImageCallback(TensorBoardPlugin):
         inputs, outputs = subset.get_batch(batch_size=4, pattern=pattern)
 
         def one_shot_function(data, step):
-            data = ImageCallback.convert_tensor_uint8(data)
+            data = convert_tensor_uint8(data)
             return image_summary(name=name, data=data, step=step, max_outputs=4)
 
         def repeated_function(data, step):
@@ -161,3 +152,13 @@ class ImageCallback(TensorBoardPlugin):
 
         return [one_shot_callback, repeated_callback]
     # endregion
+
+
+@tf.function
+def convert_tensor_uint8(tensor) -> tf.Tensor:
+    tensor: tf.Tensor = tf.convert_to_tensor(tensor)
+    tensor_min = tf.reduce_min(tensor)
+    tensor_max = tf.reduce_max(tensor)
+    tensor = (tensor - tensor_min) / (tensor_max - tensor_min)
+    normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
+    return normalized
