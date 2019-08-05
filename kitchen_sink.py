@@ -406,8 +406,9 @@ def train_scaling_video_transformer():
     width = 128
     channel_count = 1 if dataset_name is "ucsd" else 1
     mode = "train"
-    initial_epoch = 89
+    initial_epoch = 114
 
+    # tf.summary.trace_on(graph=True, profiler=True)
     video_transformer = VideoTransformer(input_shape=(length, height, width, channel_count),
                                          subscale_stride=(4, 2, 2),
                                          embedding_size=32,
@@ -424,7 +425,7 @@ def train_scaling_video_transformer():
                                          ],
                                          attention_head_count=8,
                                          attention_head_size=32,
-                                         copy_regularization_factor=1e-1,
+                                         copy_regularization_factor=1.0,
                                          positional_encoding_range=0.1
                                          )
 
@@ -460,6 +461,7 @@ def train_scaling_video_transformer():
 
     # region Log dir
     base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_transformer/{}".format(dataset_name)
+    base_log_dir = os.path.normpath(base_log_dir)
     weights_name = "weights_{epoch:03d}.hdf5"
     log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
     if mode is not "show":
@@ -476,6 +478,7 @@ def train_scaling_video_transformer():
         callbacks: List[tf.keras.callbacks.Callback] = []
 
         tensorboard = TensorBoard(log_dir=log_dir, profile_batch=0)
+        # tensorboard._is_tracing = True
         callbacks.append(tensorboard)
 
         model_checkpoint = ModelCheckpoint(weights_path, verbose=1)
