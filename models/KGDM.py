@@ -1,7 +1,7 @@
 from typing import Optional
 
 from models import AutoEncoderBaseModel
-from KanervaMemory import Memory
+from KanervaMachine import KanervaMachine
 
 
 class KGDM(AutoEncoderBaseModel):
@@ -10,7 +10,7 @@ class KGDM(AutoEncoderBaseModel):
     def __init__(self):
         super(KGDM, self).__init__()
 
-        self.memory: Optional[Memory] = None
+        self.machine: Optional[KanervaMachine] = None
 
     def compile(self):
         pass

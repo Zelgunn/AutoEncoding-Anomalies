@@ -9,6 +9,7 @@ from typing import Optional
 from models import AutoEncoderBaseModel, metrics_dict
 from models.VAE import kullback_leibler_divergence_mean0_var1
 from datasets import DatasetLoader
+from modalities import Pattern
 
 
 class AGE(AutoEncoderBaseModel):
@@ -151,15 +152,19 @@ class AGE(AutoEncoderBaseModel):
 
     # region Training
     def train_epoch(self,
-                    dataset: DatasetLoader,
+                    dataset_loader: DatasetLoader,
                     callbacks: CallbackList,
                     batch_size: int,
                     epoch_length: int
                     ):
         callbacks.on_epoch_begin(self.epochs_seen)
-        dataset_iterator = dataset.train_subset.tf_dataset.batch(batch_size)
+        pattern = Pattern()
+        if len(pattern) == 0:
+            raise NotImplementedError
+        dataset = dataset_loader.train_subset.make_tf_dataset(pattern)
+        dataset = dataset.batch(batch_size).prefetch(-1)
 
-        for batch_index in range(epoch_length):
+        for batch_index in zip(range(epoch_length), dataset):
             decoder_steps = self.config["decoder_steps"]
             z = np.random.normal(size=[decoder_steps + 1, batch_size, self.embeddings_size])
 
@@ -167,7 +172,7 @@ class AGE(AutoEncoderBaseModel):
             callbacks.on_batch_begin(batch_index, batch_logs)
 
             # Train Encoder
-            encoder_real_data_loss = self._encoder_real_data_trainer.train_on_batch(dataset_iterator)
+            encoder_real_data_loss = self._encoder_real_data_trainer.train_on_batch(dataset)
             encoder_fake_data_loss = self._encoder_fake_data_trainer.train_on_batch(x=z[0], y=z[0])
 
             # Train Decoder

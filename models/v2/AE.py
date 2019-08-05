@@ -7,9 +7,9 @@ import time
 from typing import Union, List
 
 from datasets import DatasetLoader, DatasetConfig, SubsetLoader
-from modalities import RawVideo, ModalityLoadInfo
+from modalities import Pattern, ModalityLoadInfo, RawVideo
 from callbacks import AUCCallback
-from layers.utility_layers import RawPredictionsLayer
+from anomaly_detection import RawPredictionsLayer
 
 
 class AE(keras.Model):
@@ -61,6 +61,9 @@ class AE(keras.Model):
         self.optimizer.apply_gradients(grads_and_vars)
         return loss
 
+    def compute_output_signature(self, input_signature: tf.TensorSpec) -> tf.TensorSpec:
+        raise NotImplementedError
+
 
 def main():
     input_channels = 1
@@ -109,7 +112,7 @@ def main():
 
     # region Dataset
 
-    modalities_pattern = (
+    modalities_pattern = Pattern(
         ModalityLoadInfo(RawVideo, input_shape[0], input_shape),
         ModalityLoadInfo(RawVideo, input_shape[0], input_shape)
     )
@@ -131,7 +134,7 @@ def main():
     raw_predictions_model = keras.Model(inputs=model.encoder.input, outputs=raw_predictions,
                                         name="raw_predictions_model")
 
-    anomaly_modalities_pattern = (
+    anomaly_modalities_pattern = Pattern(
         *modalities_pattern,
         "labels"
     )

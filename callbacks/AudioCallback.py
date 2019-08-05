@@ -5,6 +5,7 @@ from typing import List, Union
 
 from callbacks import TensorBoardPlugin
 from datasets import SubsetLoader
+from modalities import Pattern
 
 
 class AudioCallback(TensorBoardPlugin):
@@ -36,6 +37,7 @@ class AudioCallback(TensorBoardPlugin):
     @staticmethod
     def make_audio_autoencoder_callbacks(autoencoder: keras.Model,
                                          subset: Union[SubsetLoader],
+                                         pattern: Pattern,
                                          name: str,
                                          is_train_callback: bool,
                                          tensorboard: keras.callbacks.TensorBoard,
@@ -43,7 +45,7 @@ class AudioCallback(TensorBoardPlugin):
                                          epoch_freq=1,
                                          sample_rate=48000,
                                          ) -> List["AudioCallback"]:
-        inputs, outputs = subset.get_batch(batch_size=4, output_labels=False)
+        inputs, outputs = subset.get_batch(batch_size=4, pattern=pattern)
 
         # TODO : Do not use static values for mel spectrogram conversion
         def true_sound_function(data, step):

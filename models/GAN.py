@@ -7,6 +7,7 @@ from typing import List, Optional, Dict
 
 from models import AutoEncoderBaseModel, metrics_dict, LayerStack
 from datasets import DatasetLoader
+from modalities import Pattern
 
 
 class GAN(AutoEncoderBaseModel):
@@ -265,7 +266,12 @@ class GAN(AutoEncoderBaseModel):
 
         self._generator_z_iterator = self.batch_and_prefetch(self.z_dataset, batch_size, prefetch=False)
         self._discriminator_z_iterator = self.batch_and_prefetch(self.z_dataset, batch_size, prefetch=False)
-        real_x_dataset = self.get_real_data_discriminator_dataset(dataset.train_subset.tf_dataset)
+
+        pattern = Pattern()
+        if len(pattern) == 0:
+            raise NotImplementedError
+
+        real_x_dataset = self.get_real_data_discriminator_dataset(dataset.train_subset.make_tf_dataset(pattern))
         self._real_x_iterator = self.batch_and_prefetch(real_x_dataset, batch_size, prefetch=False)
     # endregion
 

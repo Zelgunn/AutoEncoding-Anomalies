@@ -21,9 +21,9 @@ import copy
 from typing import List, Union, Dict, Tuple, Optional
 
 from layers import ResBlock3D, ResBlock3DTranspose, DenseBlock3D, SpectralNormalization
-from layers.utility_layers import RawPredictionsLayer
+from anomaly_detection import RawPredictionsLayer
 from datasets import SubsetLoader, DatasetLoader
-from modalities import RawVideo
+from modalities import Pattern, ModalityLoadInfo, RawVideo
 from callbacks import ImageCallback, MultipleModelsCheckpoint
 from utils.train_utils import get_log_dir
 from utils.misc_utils import to_list
@@ -808,24 +808,24 @@ class AutoEncoderBaseModel(ABC):
         self.on_epoch_end(callbacks)
 
     # region Make dataset iterators
-    def make_dataset_iterators(self, dataset: DatasetLoader, batch_size: int):
+    def make_dataset_iterators(self, dataset_loader: DatasetLoader, batch_size: int):
         if self._train_dataset_iterator is not None:
             return
 
-        self._train_dataset_iterator = self.batch_and_prefetch(dataset.train_subset.tf_dataset, batch_size)
-        self._test_dataset_iterator = self.batch_and_prefetch(dataset.test_subset.tf_dataset, batch_size,
-                                                              prefetch=False)
+        pattern = Pattern()
+        if len(pattern) == 0:
+            raise NotImplementedError
+        train_dataset = dataset_loader.train_subset.make_tf_dataset(pattern)
+        test_dataset = dataset_loader.test_subset.make_tf_dataset(pattern)
+
+        self._train_dataset_iterator = self.batch_and_prefetch(train_dataset, batch_size, prefetch=True)
+        self._test_dataset_iterator = self.batch_and_prefetch(test_dataset, batch_size, prefetch=False)
 
     @staticmethod
     def batch_and_prefetch(dataset: tf.data.Dataset, batch_size: int, prefetch=True):
         dataset = dataset.batch(batch_size)
         if prefetch:
-            dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
-
-        # TODO : Find a better way - this should allow to use several mods but currently we only have one
-        dataset = dataset.map(lambda inputs, outputs: (inputs[0], outputs[0]))
-        # dataset_iterator = MultiDeviceIterator(dataset_iterator, devices=["/gpu:0"])
-        # dataset_iterator = dataset_iterator[0] # Select 1st GPU with [0]
+            dataset = dataset.prefetch(-1)
 
         return dataset
 
@@ -891,7 +891,11 @@ class AutoEncoderBaseModel(ABC):
         fourcc = cv2.VideoWriter_fourcc(*"DIVX")
         video_writer = cv2.VideoWriter(output_video_filepath, fourcc, fps, frame_size)
 
-        source_browser = subset.make_source_browser(video_index, RawVideo, stride=1)
+        video_length = self.input_sequence_length
+        video_shape = self.autoencoder.input_shape[1:]
+        pattern = Pattern(ModalityLoadInfo(RawVideo, video_length, video_shape))
+
+        source_browser = subset.make_source_browser(pattern, video_index, stride=1)
         predicted = self.autoencoder.predict(source_browser, steps=max_frame_count)
 
         predicted = (predicted * 255).astype(np.uint8)
@@ -983,8 +987,14 @@ class AutoEncoderBaseModel(ABC):
                                    max_iterations=1):
 
         raw_predictions_model = self.get_anomalies_raw_predictions_model(include_labels_io=True)
-        source_browser = subset.make_source_browser(video_index, RawVideo, stride)
-        # TODO : Get steps count
+        video_length = self.input_sequence_length
+        video_shape = self.autoencoder.input_shape[1:]
+        pattern = Pattern(
+            ModalityLoadInfo(RawVideo, video_length, video_shape),
+            "labels"
+        )
+        source_browser = subset.make_source_browser(pattern, video_index, stride=1)
+        # TODO : Get steps count ?
         steps_count = 100000
         predictions, labels = raw_predictions_model.predict(source_browser, steps=steps_count)
         labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
@@ -1214,25 +1224,34 @@ class AutoEncoderBaseModel(ABC):
         train_subset = dataset.train_subset
         # endregion
 
+        image_callback_pattern = Pattern()
+        anomaly_pattern = Pattern()
+        if len(anomaly_pattern) == 0 or len(image_callback_pattern) == 0:
+            raise NotImplementedError
+
+        # region Image callbacks
         train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(self.autoencoder,
                                                                                train_subset,
+                                                                               pattern=image_callback_pattern,
                                                                                name="train",
                                                                                is_train_callback=True,
                                                                                tensorboard=self.tensorboard,
                                                                                epoch_freq=1)
         test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(self.autoencoder,
                                                                               train_subset,
+                                                                              pattern=image_callback_pattern,
                                                                               name="test",
                                                                               is_train_callback=False,
                                                                               tensorboard=self.tensorboard,
                                                                               epoch_freq=1)
 
         anomaly_callbacks: List[Callback] = train_image_callbacks + test_image_callbacks
+        # endregion
 
         # region AUC callback
         # TODO : Parameter for batch_size here
         from callbacks import AUCCallback
-        inputs, outputs, labels = test_subset.get_batch(batch_size=1024, output_labels=True)
+        inputs, outputs, labels = test_subset.get_batch(batch_size=1024, pattern=anomaly_pattern)
 
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, inputs.shape[1])
 

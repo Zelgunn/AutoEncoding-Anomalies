@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from models import AutoEncoderBaseModel, conv_type
 from datasets import SubsetLoader
+from modalities import Pattern
 
 
 class VariationalBaseModel(AutoEncoderBaseModel, ABC):
@@ -107,7 +108,10 @@ class VariationalBaseModel(AutoEncoderBaseModel, ABC):
     # region Testing
     def visualize_vae_interpolation(self, subset: SubsetLoader):
         interpolation_count = 16
-        input_video, output_video = subset.get_batch(batch_size=1, output_labels=False)
+        pattern = Pattern()
+        if len(pattern) == 0:
+            raise NotImplementedError
+        input_video, output_video = subset.get_batch(batch_size=1, pattern=pattern)
 
         mean, log_var = self.encoder(input_video)
         stddev = np.sqrt(np.exp(log_var))

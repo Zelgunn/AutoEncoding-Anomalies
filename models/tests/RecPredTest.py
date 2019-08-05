@@ -9,7 +9,6 @@ from time import time
 
 from layers import ResBasicBlock3D, DenseBlock3D, ResBasicBlock3DTranspose
 from datasets import DatasetConfig, DatasetLoader
-from modalities import RawVideo, ModalityShape
 
 
 def build_conv_encoder(input_layer):
@@ -146,11 +145,6 @@ def get_model(mode):
 
 def get_ucsd_dataset():
     config = DatasetConfig(tfrecords_config_folder="../datasets/ucsd/ped2",
-                           modalities_pattern=
-                           {
-                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
-                                                       output_shape=(32, 128, 128, 1)),
-                           },
                            output_range=(0.0, 1.0))
 
     dataset = DatasetLoader(config)
@@ -159,11 +153,6 @@ def get_ucsd_dataset():
 
 def get_subway_dataset():
     config = DatasetConfig(tfrecords_config_folder="../datasets/subway/exit",
-                           modalities_pattern=
-                           {
-                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 3),
-                                                       output_shape=(32, 128, 128, 3)),
-                           },
                            output_range=(0.0, 1.0))
 
     dataset = DatasetLoader(config)

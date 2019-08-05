@@ -7,7 +7,7 @@ import numpy as np
 from typing import Optional, Tuple
 
 from datasets import DatasetLoader, DatasetConfig, SubsetLoader
-from modalities import MelSpectrogram, ModalityShape
+from modalities import Pattern
 from models.VariationalBaseModel import kullback_leibler_divergence_mean0_var1
 
 
@@ -53,8 +53,12 @@ class AnomalyTestLayer(Layer):
 
         return test_results
 
-    def compute_output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape: tf.TensorShape) -> tf.TensorShape:
         return input_shape[0][:1]
+
+    def compute_output_signature(self, input_signature: tf.TensorSpec) -> tf.TensorSpec:
+        return tf.TensorSpec(shape=self.compute_output_shape(input_signature.shape),
+                             dtype=input_signature.dtype)
 
 
 class DetectorInputLayer(Layer):
@@ -79,8 +83,12 @@ class DetectorInputLayer(Layer):
         outputs = tf.concat([normal_outputs, generated_anomalies], axis=0)
         return inputs, outputs
 
-    def compute_output_shape(self, input_shape):
+    def compute_output_shape(self, input_shape: tf.TensorShape) -> tf.TensorShape:
         return input_shape[1:]
+
+    def compute_output_signature(self, input_signature: tf.TensorSpec) -> tf.TensorSpec:
+        return tf.TensorSpec(shape=self.compute_output_shape(input_signature.shape),
+                             dtype=input_signature.dtype)
 
 
 class NPProp(object):
@@ -245,7 +253,10 @@ class NPProp(object):
                                   ) -> tf.data.Dataset:
         subset = dataset_loader.train_subset
         anomalous_samples = [folder for folder in subset.subset_folders if "normal" not in folder]
-        dataset = subset.make_tf_dataset(output_labels=False, subset_folder=anomalous_samples)
+        pattern = Pattern()
+        if len(pattern) == 0:
+            raise NotImplementedError
+        dataset = subset.make_tf_dataset(pattern=pattern, subset_folder=anomalous_samples)
         dataset = dataset.batch(batch_size).prefetch(-1)
         return dataset
 
@@ -253,7 +264,10 @@ class NPProp(object):
     def prepare_base_normal_dataset(dataset_loader: DatasetLoader):
         subset = dataset_loader.train_subset
         normal_samples = [folder for folder in subset.subset_folders if "normal" in folder]
-        dataset = subset.make_tf_dataset(output_labels=False, subset_folder=normal_samples)
+        pattern = Pattern()
+        if len(pattern) == 0:
+            raise NotImplementedError
+        dataset = subset.make_tf_dataset(pattern=pattern, subset_folder=normal_samples)
         return dataset
 
     def prepare_detection_dataset(self,
@@ -326,8 +340,12 @@ class NPProp(object):
     def evaluate(self,
                  dataset_loader: DatasetLoader,
                  batch_size: int):
-        subset = dataset_loader.test_subset
-        dataset = subset.labeled_tf_dataset.batch(batch_size).prefetch(-1)
+        anomaly_pattern = Pattern()
+        if len(anomaly_pattern) == 0:
+            raise NotImplementedError
+
+        dataset = dataset_loader.test_subset.make_tf_dataset(pattern=anomaly_pattern)
+        dataset = dataset.batch(batch_size).prefetch(-1)
         dataset = dataset.map(lambda *x: (x,))
         labels_input_layer = Input(shape=[None, 2], name="labels_input_layer")
         labels_output_layer = Lambda(function=tf.identity)(labels_input_layer)
@@ -350,12 +368,7 @@ def main():
     np_prop = NPProp(gmm_updates_per_cycle=30)
     np_prop.build(input_shape=(sequence_length, mel_filter_count))
 
-    dataset_config = DatasetConfig("E:/datasets/emoly",
-                                   modalities_pattern=
-                                   {
-                                       MelSpectrogram: ModalityShape((sequence_length, mel_filter_count),
-                                                                     (sequence_length, mel_filter_count))
-                                   },
+    dataset_config = DatasetConfig("../datasets/emoly",
                                    output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(dataset_config)
 

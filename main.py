@@ -9,7 +9,7 @@ def main():
 
     from models import BasicAE, VAE, GAN, VAEGAN, AGE
     from datasets import DatasetLoader, DatasetConfig
-    from modalities import ModalityShape, RawVideo  # , OpticalFlow, DoG
+    from modalities import Pattern
     from utils.numpy_utils import NumpySeedContext
     # endregion
 
@@ -82,14 +82,6 @@ def main():
     # TODO : In config => Set ModalityShapes
     # TODO : In config => Set Normalization
     config = DatasetConfig(tfrecords_config_folder=dataset_path,
-                           modalities_pattern=
-                           {
-                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 1),
-                                                       output_shape=(32, 128, 128, 1)),
-                               # OpticalFlow: ModalityShape(input_shape=(32, 128, 128, 2),
-                               #                            output_shape=(32, 128, 128, 2)),
-                               # DoG: video_io_shape
-                           },
                            output_range=auto_encoder.output_range)
     dataset = DatasetLoader(config=config)
 
@@ -97,7 +89,10 @@ def main():
 
     # region Test subset preview
     if preview_test_subset:
-        _, videos = dataset.test_subset.get_batch(8, output_labels=False)
+        preview_pattern = Pattern()
+        if len(preview_pattern) == 0:
+            raise NotImplementedError
+        _, videos = dataset.test_subset.get_batch(8, pattern=preview_pattern)
         for video in videos:
             for frame in video:
                 cv2.imshow("frame", frame)

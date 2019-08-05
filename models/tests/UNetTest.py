@@ -9,7 +9,7 @@ import os
 
 from layers import DenseBlock3D
 from datasets import DatasetLoader, DatasetConfig
-from modalities import RawVideo, ModalityShape
+from modalities import Pattern, ModalityLoadInfo, RawVideo
 
 
 def get_conv_model():
@@ -172,13 +172,8 @@ def get_dense_block_model():
     return dense_block_model
 
 
-def get_dataset():
+def get_dataset_loader():
     config = DatasetConfig(tfrecords_config_folder="../datasets/subway/exit",
-                           modalities_pattern=
-                           {
-                               RawVideo: ModalityShape(input_shape=(16, 128, 128, 3),
-                                                       output_shape=(32, 128, 128, 3)),
-                           },
                            output_range=(0.0, 1.0))
 
     dataset = DatasetLoader(config)
@@ -187,7 +182,16 @@ def get_dataset():
 
 def main():
     model = get_conv_lstm_model()
-    dataset = get_dataset()
+    dataset_loader = get_dataset_loader()
+
+    pattern = Pattern(
+        ModalityLoadInfo(RawVideo, 16, (16, 128, 128, 3)),
+        ModalityLoadInfo(RawVideo, 32, (32, 128, 128, 3))
+    )
+    train_dataset = dataset_loader.train_subset.make_tf_dataset(pattern=pattern)
+    train_dataset = train_dataset.batch(16).prefetch(-1)
+    test_dataset = dataset_loader.test_subset.make_tf_dataset(pattern=pattern)
+    test_dataset = test_dataset.batch(1)
 
     model.compile(optimizer=Adam(lr=1e-4), loss="mae", metrics=["mse"])
     # model.load_weights("../logs/tests/1551101991.9433231/weights.h5")
@@ -196,8 +200,7 @@ def main():
     log_dir = os.path.normpath(log_dir)
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="batch")
 
-    model.fit_generator(dataset.train_subset, epochs=2, validation_data=dataset.test_subset,
-                        callbacks=[tensorboard])
+    model.fit_generator(train_dataset, epochs=2, validation_data=dataset_loader.test_subset, callbacks=[tensorboard])
 
     key = 13
     escape_key = 27
@@ -210,7 +213,10 @@ def main():
         if key != -1:
             seed += 1
 
-            x, y_true = dataset.test_subset.get_batch(batch_size=1, output_labels=False)
+            batch = (None, None)
+            for batch in test_dataset:
+                break
+            x, y_true = batch
             y_pred = model.predict(x)
             i = 0
 

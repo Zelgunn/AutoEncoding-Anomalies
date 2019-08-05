@@ -78,7 +78,8 @@ class ImageCallback(TensorBoardPlugin):
                                          update_freq="epoch",
                                          epoch_freq=1,
                                          ) -> List["ImageCallback"]:
-        inputs, outputs = subset.get_batch(batch_size=4, pattern=pattern)
+        batch = subset.get_batch(batch_size=4, pattern=pattern)
+        inputs, outputs = batch
 
         def one_shot_function(data, step):
             return ImageCallback.video_summary(name=name, video=data, step=step)
