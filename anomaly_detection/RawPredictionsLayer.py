@@ -16,9 +16,10 @@ def negative_ssim(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
     Values of `y_true` and `y_pred` are supposed to be between 0.0 and 1.0.
 
-    :param y_true: A 3D+ tensor with dtype `tf.float32`.
-    :param y_pred: A 3D+ tensor with dtype `tf.float32`.
-    :return: A tensor with the same shape as `y_true` and `y_pred`, minus the last 3 dimensions.
+    :param y_true: A 3D+ tensor with dtype `tf.float16` or `tf.float32`.
+    :param y_pred: A 3D+ tensor with dtype `tf.float16` or `tf.float32`.
+    :return: A tensor with the same shape as `y_true` and `y_pred`, minus the last 3 dimensions, and the same
+        dtype as inputs.
     """
     return 1 - tf.image.ssim(y_true, y_pred, max_val=1.0)
 

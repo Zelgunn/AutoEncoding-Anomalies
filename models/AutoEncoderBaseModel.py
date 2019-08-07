@@ -1230,20 +1230,20 @@ class AutoEncoderBaseModel(ABC):
             raise NotImplementedError
 
         # region Image callbacks
-        train_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(self.autoencoder,
-                                                                               train_subset,
-                                                                               pattern=image_callback_pattern,
-                                                                               name="train",
-                                                                               is_train_callback=True,
-                                                                               tensorboard=self.tensorboard,
-                                                                               epoch_freq=1)
-        test_image_callbacks = ImageCallback.make_video_autoencoder_callbacks(self.autoencoder,
-                                                                              train_subset,
-                                                                              pattern=image_callback_pattern,
-                                                                              name="test",
-                                                                              is_train_callback=False,
-                                                                              tensorboard=self.tensorboard,
-                                                                              epoch_freq=1)
+        train_image_callbacks = ImageCallback.from_model_and_subset(self.autoencoder,
+                                                                    train_subset,
+                                                                    pattern=image_callback_pattern,
+                                                                    name="train",
+                                                                    is_train_callback=True,
+                                                                    tensorboard=self.tensorboard,
+                                                                    epoch_freq=1)
+        test_image_callbacks = ImageCallback.from_model_and_subset(self.autoencoder,
+                                                                   train_subset,
+                                                                   pattern=image_callback_pattern,
+                                                                   name="test",
+                                                                   is_train_callback=False,
+                                                                   tensorboard=self.tensorboard,
+                                                                   epoch_freq=1)
 
         anomaly_callbacks: List[Callback] = train_image_callbacks + test_image_callbacks
         # endregion

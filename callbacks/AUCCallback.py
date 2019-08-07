@@ -1,13 +1,16 @@
+import tensorflow as tf
+from tensorflow.python.keras import Model
+from tensorflow.python.keras import metrics
 from tensorflow.python.keras.callbacks import TensorBoard
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
 import cv2
 from time import time
 from typing import Tuple, Optional
 
 from callbacks import TensorBoardPlugin
 from utils.plot_utils import plot_line2d_to_array
+from datasets import SubsetLoader
+from modalities import Pattern
 
 
 class AUCWrapper(object):
@@ -25,7 +28,7 @@ class AUCWrapper(object):
         self.plot_size = plot_size
         self.prefix = prefix
 
-        self.auc = keras.metrics.AUC(curve=self.curve, name=self.base_name)
+        self.auc = metrics.AUC(curve=self.curve, name=self.base_name)
 
     # region Properties
     @property
@@ -90,7 +93,7 @@ class AUCWrapper(object):
 
 class AUCCallback(TensorBoardPlugin):
     def __init__(self,
-                 predictions_model: keras.Model,
+                 predictions_model: Model,
                  tensorboard: TensorBoard,
                  inputs: np.ndarray,
                  outputs: np.ndarray,
@@ -139,7 +142,6 @@ class AUCCallback(TensorBoardPlugin):
             self.roc.write_plot_summary(index)
         print("AUCCallback took {:.2f} seconds.".format(time() - start_time))
 
-    @tf.function
     def _write_auc_summary(self, predictions, step):
         self.roc.auc_summary(self.labels, predictions, step)
         self.pr.auc_summary(self.labels, predictions, step)
@@ -160,3 +162,37 @@ class AUCCallback(TensorBoardPlugin):
             else:
                 predictions = np.reshape(predictions, self.labels.shape)
         return predictions
+
+    @staticmethod
+    def from_subset(predictions_model: Model,
+                    tensorboard: TensorBoard,
+                    test_subset: SubsetLoader,
+                    pattern: Pattern,
+                    samples_count=512,
+                    epoch_freq=1,
+                    batch_size=32,
+                    prefix="") -> "AUCCallback":
+        if len(pattern) not in [2, 3]:
+            raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(len(pattern)))
+
+        batch = test_subset.get_batch(batch_size=samples_count, pattern=pattern)
+        if len(pattern) == 2:
+            inputs, labels = batch
+            outputs = inputs
+        elif len(pattern) == 3:
+            inputs, outputs, labels = batch
+        else:
+            inputs = outputs = labels = None
+
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, predictions_model.output_shape[1])
+
+        auc_callback = AUCCallback(predictions_model=predictions_model,
+                                   tensorboard=tensorboard,
+                                   inputs=inputs,
+                                   outputs=outputs,
+                                   labels=labels,
+                                   epoch_freq=epoch_freq,
+                                   plot_size=(128, 128),
+                                   batch_size=batch_size,
+                                   prefix=prefix)
+        return auc_callback

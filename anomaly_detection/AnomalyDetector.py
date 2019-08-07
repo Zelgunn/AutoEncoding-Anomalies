@@ -5,7 +5,7 @@ from tensorflow.python.keras.callbacks import TensorBoard
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from typing import Union, List, Callable
+from typing import Union, List, Callable, Dict, Any
 
 from anomaly_detection import RawPredictionsLayer
 from datasets import DatasetLoader, SubsetLoader
@@ -23,6 +23,7 @@ class AnomalyDetector(Model):
 
         super(AnomalyDetector, self).__init__(**kwargs)
 
+        self.metric_name = metric if isinstance(metric, str) else metric.__name__
         predictions = RawPredictionsLayer(metric=metric)([output, ground_truth])
         outputs = [predictions]
 
@@ -152,6 +153,7 @@ class AnomalyDetector(Model):
                              epochs_seen=0,
                              pre_normalize_predictions=True,
                              max_samples=-1,
+                             additional_config: Dict[str, Any] = None,
                              ):
         predictions, labels, lengths = self.predict_anomalies(dataset=dataset,
                                                               pattern=pattern,
@@ -167,7 +169,13 @@ class AnomalyDetector(Model):
                                             epochs_seen=epochs_seen)
         print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))
         with open(os.path.join(log_dir, "anomaly_detection_scores.txt"), 'w') as file:
-            file.write("ROC = {} | PR = {}".format(roc, pr))
+            file.write("ROC = {} | PR = {}\n".format(roc, pr))
+            file.write("Metric used: {}\n".format(self.metric_name))
+            file.write("Stride: {}\n".format(stride))
+            file.write("Pre-normalize predictions: {}\n".format(pre_normalize_predictions))
+            if additional_config is not None:
+                for key, value in additional_config.items():
+                    file.write("{}: {}\n".format(key, value))
         return roc, pr
 
     def compute_output_signature(self, input_signature):

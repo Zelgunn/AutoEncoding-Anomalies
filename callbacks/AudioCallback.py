@@ -35,16 +35,16 @@ class AudioCallback(TensorBoardPlugin):
             self.summary_function = None
 
     @staticmethod
-    def make_audio_autoencoder_callbacks(autoencoder: keras.Model,
-                                         subset: Union[SubsetLoader],
-                                         pattern: Pattern,
-                                         name: str,
-                                         is_train_callback: bool,
-                                         tensorboard: keras.callbacks.TensorBoard,
-                                         update_freq="epoch",
-                                         epoch_freq=1,
-                                         sample_rate=48000,
-                                         ) -> List["AudioCallback"]:
+    def from_model_and_subset(autoencoder: keras.Model,
+                              subset: Union[SubsetLoader],
+                              pattern: Pattern,
+                              name: str,
+                              is_train_callback: bool,
+                              tensorboard: keras.callbacks.TensorBoard,
+                              update_freq="epoch",
+                              epoch_freq=1,
+                              sample_rate=48000,
+                              ) -> List["AudioCallback"]:
         inputs, outputs = subset.get_batch(batch_size=4, pattern=pattern)
 
         # TODO : Do not use static values for mel spectrogram conversion
