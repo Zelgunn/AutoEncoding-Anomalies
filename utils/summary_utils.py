@@ -148,7 +148,10 @@ def image_summary(name: str,
         A scalar `Tensor` of type `string`. The serialized `Summary` protocol buffer.
     """
     rank = data.shape.ndims
-    assert rank in [3, 4, 5]
+    assert rank >= 3
+
+    if rank > 5:
+        data = merge_video_time_dimensions(data)
 
     if rank == 3:
         data = tf.expand_dims(data, axis=-1)
@@ -158,3 +161,10 @@ def image_summary(name: str,
         return tf.summary.image(name, data, step=step, max_outputs=max_outputs)
     else:
         return gif_summary(name, data, fps, step, max_outputs)
+
+
+def merge_video_time_dimensions(video: tf.Tensor) -> tf.Tensor:
+    video_shape = tf.shape(video)
+    batch_size, height, width, channels = video_shape[0], video_shape[-3], video_shape[-2], video_shape[-1]
+    length = tf.reduce_prod(video_shape[1:-3])
+    return tf.reshape(video, [batch_size, length, height, width, channels])

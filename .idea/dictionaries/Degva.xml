@@ -6,12 +6,14 @@
       <w>autoencode</w>
       <w>autoencoder</w>
       <w>blurrer</w>
+      <w>broadcastable</w>
       <w>castable</w>
       <w>chunking</w>
       <w>cmap</w>
       <w>compat</w>
       <w>dataframe</w>
       <w>degva</w>
+      <w>diag</w>
       <w>divx</w>
       <w>dlib</w>
       <w>emoly</w>
@@ -28,15 +30,20 @@
       <w>induit</w>
       <w>iptc</w>
       <w>kanerva</w>
+      <w>keepdims</w>
       <w>kgdm</w>
       <w>lenght</w>
       <w>lerp</w>
       <w>linewidth</w>
       <w>logits</w>
+      <w>lsgan</w>
       <w>lstm</w>
       <w>matplotlib</w>
+      <w>maxval</w>
       <w>mcidas</w>
       <w>mfcc</w>
+      <w>minval</w>
+      <w>mnist</w>
       <w>ndarray</w>
       <w>ndim</w>
       <w>nfft</w>
@@ -51,7 +58,9 @@
       <w>softmax</w>
       <w>spatio</w>
       <w>spectrograms</w>
+      <w>sqrt</w>
       <w>ssim</w>
+      <w>subscale</w>
       <w>sujet</w>
       <w>tensorflow</w>
       <w>tfrecord</w>
@@ -60,6 +69,7 @@
       <w>unflatten</w>
       <w>unshifted</w>
       <w>upsampled</w>
+      <w>wasserstein</w>
       <w>winsize</w>
     </words>
   </dictionary>

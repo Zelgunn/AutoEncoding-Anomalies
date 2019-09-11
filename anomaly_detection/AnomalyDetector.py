@@ -1,43 +1,46 @@
 import tensorflow as tf
 from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.layers import Input, Lambda
-from tensorflow.python.keras.callbacks import TensorBoard
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from typing import Union, List, Callable, Dict, Any
+from typing import Union, List, Callable, Dict, Any, Tuple
 
-from anomaly_detection import RawPredictionsLayer
+from anomaly_detection import RawPredictionsModel
 from datasets import DatasetLoader, SubsetLoader
 from modalities import Pattern
 
 
 class AnomalyDetector(Model):
     def __init__(self,
-                 inputs: Union[List[tf.Tensor], tf.Tensor],
-                 output: tf.Tensor,
-                 ground_truth: tf.Tensor,
-                 metric: Union[str, Callable] = "mse",
+                 autoencoder: Callable,
+                 output_length: int,
+                 metrics: List[Union[str, Callable]] = "mse",
                  **kwargs
                  ):
 
         super(AnomalyDetector, self).__init__(**kwargs)
 
-        self.metric_name = metric if isinstance(metric, str) else metric.__name__
-        predictions = RawPredictionsLayer(metric=metric)([output, ground_truth])
-        outputs = [predictions]
+        self.raw_prediction_model = RawPredictionsModel(autoencoder=autoencoder,
+                                                        output_length=output_length,
+                                                        metrics=metrics)
 
-        # region Labels
-        if not isinstance(inputs, list):
-            inputs = [inputs]
+        if not (isinstance(metrics, list) or isinstance(metrics, tuple)):
+            metrics = [metrics]
 
-        labels_input_layer = Input(shape=[None, 2], dtype=tf.float32, name="labels_input_layer")
-        labels_output_layer = Lambda(tf.identity, name="labels_identity")(labels_input_layer)
-        inputs.append(labels_input_layer)
-        outputs.append(labels_output_layer)
-        # endregion
+        self.anomaly_metrics_names = []
+        for metric in metrics:
+            metric_name = metric if isinstance(metric, str) else metric.__name__
+            self.anomaly_metrics_names.append(metric_name)
 
-        self._init_graph_network(inputs=inputs, outputs=outputs)
+    def call(self, inputs, training=None, mask=None):
+        if len(inputs) == 3:
+            inputs, outputs, labels = inputs
+        else:
+            inputs, labels = inputs
+            outputs = inputs
+
+        raw_predictions = self.raw_prediction_model([inputs, outputs])
+        return raw_predictions, labels
 
     def predict_anomalies_on_sample(self,
                                     subset: SubsetLoader,
@@ -48,12 +51,15 @@ class AnomalyDetector(Model):
                                     max_steps_count=100000
                                     ):
         dataset = subset.make_source_browser(pattern, sample_index, stride)
-        predictions, labels = self.predict(dataset, steps=max_steps_count)
+        *predictions, labels = self.predict(dataset, steps=max_steps_count)
         labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
         labels = np.any(labels, axis=-1)
 
         if normalize_predictions:
-            predictions = (predictions - predictions.min()) / predictions.max()
+            for i in range(len(predictions)):
+                metric_pred = predictions[i]
+                metric_pred = (metric_pred - metric_pred.min()) / (metric_pred.max() - metric_pred.min())
+                predictions[i] = metric_pred
 
         return predictions, labels
 
@@ -62,8 +68,10 @@ class AnomalyDetector(Model):
                                     pattern: Pattern,
                                     stride: int,
                                     pre_normalize_predictions: bool,
-                                    max_samples=10):
-        predictions, labels = [], []
+                                    max_samples=10
+                                    ) -> Tuple[List[List[np.ndarray]], List[np.ndarray]]:
+        labels = []
+        predictions = [[] for _ in range(self.metrics_count)]
 
         sample_count = min(max_samples, len(subset.subset_folders)) if max_samples > 0 else len(subset.subset_folders)
         print("Making predictions for {} videos".format(sample_count))
@@ -75,7 +83,8 @@ class AnomalyDetector(Model):
                                                               sample_index, stride,
                                                               normalize_predictions=pre_normalize_predictions)
             sample_predictions, sample_labels = sample_results
-            predictions.append(sample_predictions)
+            for i in range(self.metrics_count):
+                predictions[i].append(sample_predictions[i])
             labels.append(sample_labels)
 
         return predictions, labels
@@ -85,7 +94,8 @@ class AnomalyDetector(Model):
                           pattern: Pattern,
                           stride=1,
                           pre_normalize_predictions=True,
-                          max_samples=10):
+                          max_samples=10
+                          ) -> Tuple[List[np.ndarray], np.ndarray, np.ndarray]:
         predictions, labels = self.predict_anomalies_on_subset(subset=dataset.test_subset,
                                                                pattern=pattern,
                                                                stride=stride,
@@ -98,32 +108,33 @@ class AnomalyDetector(Model):
             if i > 0:
                 lengths[i] += lengths[i - 1]
 
-        predictions = np.concatenate(predictions)
+        final_predictions = []
+        for i in range(self.metrics_count):
+            metric_pred = np.concatenate(predictions[i])
+            metric_pred_min = metric_pred.min()
+            metric_pred = (metric_pred - metric_pred_min) / (metric_pred.max() - metric_pred_min)
+            final_predictions.append(metric_pred)
+
         labels = np.concatenate(labels)
 
-        predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
-
-        return predictions, labels, lengths
+        return final_predictions, labels, lengths
 
     @staticmethod
-    def evaluate_predictions(predictions: np.ndarray,
-                             labels: np.ndarray,
-                             lengths: np.ndarray = None,
-                             output_figure_filepath: str = None,
-                             tensorboard: TensorBoard = None,
-                             epochs_seen=0):
-        if output_figure_filepath is not None:
-            plt.plot(np.mean(predictions, axis=1), linewidth=0.2)
-            plt.savefig(output_figure_filepath, dpi=1000)
-            plt.gca().fill_between(np.arange(len(labels)), 0, labels, alpha=0.5)
-            # plt.plot(labels, alpha=0.75, linewidth=0.2)
-            if lengths is not None:
-                lengths_splits = np.zeros(shape=predictions.shape, dtype=np.float32)
-                lengths_splits[lengths - 1] = 1.0
-                plt.plot(lengths_splits, alpha=0.5, linewidth=0.05)
-            plt.savefig(output_figure_filepath[:-4] + "_labeled.png", dpi=1000)
-            plt.clf()  # clf = clear figure
+    def evaluate_predictions(predictions: List[np.ndarray],
+                             labels: np.ndarray):
 
+        roc_results, pr_results = [], []
+        for i in range(len(predictions)):
+            metric_roc_result, metric_pr_result = AnomalyDetector.evaluate_metric_predictions(predictions[i], labels)
+            roc_results.append(metric_roc_result)
+            pr_results.append(metric_pr_result)
+
+        return roc_results, pr_results
+
+    @staticmethod
+    def evaluate_metric_predictions(predictions: np.ndarray,
+                                    labels: np.ndarray
+                                    ):
         roc = tf.metrics.AUC(curve="ROC")
         pr = tf.metrics.AUC(curve="PR")
 
@@ -135,22 +146,48 @@ class AnomalyDetector(Model):
 
         roc_result = roc.result()
         pr_result = pr.result()
-
-        if tensorboard is not None:
-            # noinspection PyProtectedMember
-            with tensorboard._get_writer(tensorboard._train_run_name).as_default():
-                tf.summary.scalar(name="ROC_AUC", data=roc_result, step=epochs_seen)
-                tf.summary.scalar(name="PR_AUC", data=pr_result, step=epochs_seen)
-
         return roc_result, pr_result
+
+    def plot_predictions(self,
+                         predictions: List[np.ndarray],
+                         labels: np.ndarray,
+                         output_figure_filepath: str,
+                         lengths: np.ndarray = None):
+
+        for i in range(len(predictions)):
+            plt.plot(np.mean(predictions[i], axis=1), linewidth=0.2)
+        plt.legend(self.anomaly_metrics_names)
+
+        plt.savefig(output_figure_filepath, dpi=1000)
+        plt.gca().fill_between(np.arange(len(labels)), 0, labels, alpha=0.5)
+
+        if lengths is not None:
+            lengths_splits = np.zeros(shape=predictions[0].shape, dtype=np.float32)
+            lengths_splits[lengths - 1] = 1.0
+            plt.plot(lengths_splits, alpha=0.5, linewidth=0.05)
+
+        plt.savefig(output_figure_filepath[:-4] + "_labeled.png", dpi=1000)
+        plt.clf()  # clf = clear figure
+
+    def save_evaluation_results(self,
+                                log_dir: str,
+                                roc_results: List[float],
+                                pr_results: List[float],
+                                additional_config: Dict[str, any] = None):
+        with open(os.path.join(log_dir, "anomaly_detection_scores.txt"), 'w') as file:
+            for i in range(self.metrics_count):
+                file.write("{metric}) ROC = {roc} | PR = {pr}\n".format(metric=self.anomaly_metrics_names[i],
+                                                                        roc=roc_results[i],
+                                                                        pr=pr_results[i]))
+            if additional_config is not None:
+                for key, value in additional_config.items():
+                    file.write("{}: {}\n".format(key, value))
 
     def predict_and_evaluate(self,
                              dataset: DatasetLoader,
                              pattern: Pattern,
                              log_dir: str,
                              stride=1,
-                             tensorboard: TensorBoard = None,
-                             epochs_seen=0,
                              pre_normalize_predictions=True,
                              max_samples=-1,
                              additional_config: Dict[str, Any] = None,
@@ -160,23 +197,29 @@ class AnomalyDetector(Model):
                                                               stride=stride,
                                                               pre_normalize_predictions=pre_normalize_predictions,
                                                               max_samples=max_samples)
-        graph_filepath = os.path.join(log_dir, "Anomaly_score.png")
-        roc, pr = self.evaluate_predictions(predictions=predictions,
-                                            labels=labels,
-                                            lengths=lengths,
-                                            output_figure_filepath=graph_filepath,
-                                            tensorboard=tensorboard,
-                                            epochs_seen=epochs_seen)
-        print("Anomaly_score : ROC = {} | PR = {}".format(roc, pr))
-        with open(os.path.join(log_dir, "anomaly_detection_scores.txt"), 'w') as file:
-            file.write("ROC = {} | PR = {}\n".format(roc, pr))
-            file.write("Metric used: {}\n".format(self.metric_name))
-            file.write("Stride: {}\n".format(stride))
-            file.write("Pre-normalize predictions: {}\n".format(pre_normalize_predictions))
-            if additional_config is not None:
-                for key, value in additional_config.items():
-                    file.write("{}: {}\n".format(key, value))
+
+        roc, pr = self.evaluate_predictions(predictions=predictions, labels=labels)
+
+        figures_filepath = os.path.join(log_dir, "anomaly_score.png")
+        self.plot_predictions(predictions=predictions,
+                              labels=labels,
+                              output_figure_filepath=figures_filepath,
+                              lengths=lengths)
+
+        for i in range(self.metrics_count):
+            print("Anomaly_score ({}): ROC = {} | PR = {}".format(self.anomaly_metrics_names[i], roc[i], pr[i]))
+
+        additional_config["stride"] = stride
+        additional_config["pre-normalize predictions"] = pre_normalize_predictions
+        self.save_evaluation_results(log_dir=log_dir,
+                                     roc_results=roc,
+                                     pr_results=pr,
+                                     additional_config=additional_config)
         return roc, pr
 
     def compute_output_signature(self, input_signature):
         raise NotImplementedError
+
+    @property
+    def metrics_count(self) -> int:
+        return len(self.anomaly_metrics_names)

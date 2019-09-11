@@ -7,6 +7,7 @@ import cv2
 from time import time
 from typing import Tuple, Optional
 
+from anomaly_detection import RawPredictionsModel
 from callbacks import TensorBoardPlugin
 from utils.plot_utils import plot_line2d_to_array
 from datasets import SubsetLoader
@@ -139,8 +140,8 @@ class AUCCallback(TensorBoardPlugin):
 
         with self.validation_run_writer.as_default():
             self._write_auc_summary(predictions, index)
-            self.roc.write_plot_summary(index)
-        print("AUCCallback took {:.2f} seconds.".format(time() - start_time))
+            # self.roc.write_plot_summary(index)
+        print("AUCCallback `{}` took {:.2f} seconds.".format(self.name, time() - start_time))
 
     def _write_auc_summary(self, predictions, step):
         self.roc.auc_summary(self.labels, predictions, step)
@@ -164,7 +165,7 @@ class AUCCallback(TensorBoardPlugin):
         return predictions
 
     @staticmethod
-    def from_subset(predictions_model: Model,
+    def from_subset(predictions_model: RawPredictionsModel,
                     tensorboard: TensorBoard,
                     test_subset: SubsetLoader,
                     pattern: Pattern,
@@ -184,7 +185,7 @@ class AUCCallback(TensorBoardPlugin):
         else:
             inputs = outputs = labels = None
 
-        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, predictions_model.output_shape[1])
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, predictions_model.output_length)
 
         auc_callback = AUCCallback(predictions_model=predictions_model,
                                    tensorboard=tensorboard,

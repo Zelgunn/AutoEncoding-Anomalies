@@ -52,7 +52,7 @@ class ImageCallback(TensorBoardPlugin):
         else:
             inputs = outputs = batch
 
-        if len(inputs.shape) == 5:
+        if len(inputs.shape) >= 5:
             one_shot_base_function = video_summary
             repeated_base_function = video_autoencoder_summary
         else:
@@ -105,13 +105,16 @@ def video_autoencoder_summary(name: str,
                               max_outputs=4):
     true_data = convert_tensor_uint8(true_data)
     pred_data = convert_tensor_uint8(pred_data)
-    delta = (pred_data - true_data) * (tf.cast(pred_data < true_data, dtype=tf.uint8) * 254 + 1)
 
     for _fps in fps:
         image_summary(name="{}_pred_outputs_{}".format(name, _fps), data=pred_data,
                       step=step, max_outputs=max_outputs, fps=_fps)
-        image_summary(name="{}_delta_{}".format(name, _fps), data=delta,
-                      step=step, max_outputs=max_outputs, fps=_fps)
+
+    if pred_data.shape.is_compatible_with(true_data.shape):
+        delta = (pred_data - true_data) * (tf.cast(pred_data < true_data, dtype=tf.uint8) * 254 + 1)
+        for _fps in fps:
+            image_summary(name="{}_delta_{}".format(name, _fps), data=delta,
+                          step=step, max_outputs=max_outputs, fps=_fps)
 
 
 def image_autoencoder_summary(name: str,
@@ -121,10 +124,12 @@ def image_autoencoder_summary(name: str,
                               max_outputs=4):
     true_data = convert_tensor_uint8(true_data)
     pred_data = convert_tensor_uint8(pred_data)
-    delta = (pred_data - true_data) * (tf.cast(pred_data < true_data, dtype=tf.uint8) * 254 + 1)
 
     image_summary(name="{}_pred_outputs".format(name), data=pred_data, step=step, max_outputs=max_outputs)
-    image_summary(name="{}_delta".format(name), data=delta, step=step, max_outputs=max_outputs)
+
+    if pred_data.shape.is_compatible_with(true_data.shape):
+        delta = (pred_data - true_data) * (tf.cast(pred_data < true_data, dtype=tf.uint8) * 254 + 1)
+        image_summary(name="{}_delta".format(name), data=delta, step=step, max_outputs=max_outputs)
 
 
 def convert_tensor_uint8(tensor) -> tf.Tensor:
@@ -134,5 +139,4 @@ def convert_tensor_uint8(tensor) -> tf.Tensor:
     tensor = (tensor - tensor_min) / (tensor_max - tensor_min)
     normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
     return normalized
-
 # endregion

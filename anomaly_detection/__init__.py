@@ -1,2 +1,3 @@
 from anomaly_detection.RawPredictionsLayer import RawPredictionsLayer
+from anomaly_detection.RawPredictionsModel import RawPredictionsModel
 from anomaly_detection.AnomalyDetector import AnomalyDetector
