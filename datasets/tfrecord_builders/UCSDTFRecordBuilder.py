@@ -58,8 +58,6 @@ if __name__ == "__main__":
                                                  modalities=ModalityCollection(
                                                      [
                                                          RawVideo(),
-                                                         OpticalFlow(use_polar=True),
-                                                         DoG(),
                                                      ]
                                                  ),
                                                  video_frame_size=(128, 128)

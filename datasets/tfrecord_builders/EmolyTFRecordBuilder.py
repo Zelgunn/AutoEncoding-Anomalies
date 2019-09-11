@@ -132,12 +132,12 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
 
 def main():
-    # from modalities import RawVideo
+    from modalities import RawVideo
     # from modalities import OpticalFlow
     # from modalities import DoG
     # from modalities import RawAudio
-    # from modalities import MelSpectrogram
-    from modalities import Landmarks
+    from modalities import MelSpectrogram
+    # from modalities import Landmarks
 
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
                                                    shard_duration=1.28,
@@ -145,14 +145,11 @@ def main():
                                                    audio_frequency=48000,
                                                    modalities=ModalityCollection(
                                                        [
-                                                           # RawVideo(),
-                                                           # OpticalFlow(use_polar=False),
-                                                           # DoG(),
-                                                           # RawAudio(),
-                                                           # MelSpectrogram(window_width=0.03,
-                                                           #                window_step=0.015,
-                                                           #                mel_filters_count=40),
-                                                           Landmarks("../shape_predictor_68_face_landmarks.dat")
+                                                           RawVideo(),
+                                                           MelSpectrogram(window_width=0.03,
+                                                                          window_step=0.015,
+                                                                          mel_filters_count=40),
+                                                           # Landmarks("../shape_predictor_68_face_landmarks.dat")
                                                        ]
                                                    ),
                                                    video_frame_size=(1080//4, 1920//4))

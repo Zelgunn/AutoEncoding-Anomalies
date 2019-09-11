@@ -71,7 +71,10 @@ class VideoReader(object):
         else:
             self.start = min(start, max_frame_count)
 
-        assert self.end > self.start
+        if self.end <= self.start:
+            raise ValueError("End frame index ({}) is less or equal than"
+                             " the start frame index ({}). Max frame count is {}. Mode is {}."
+                             .format(self.end, self.start, max_frame_count, self.mode))
         # endregion
 
     def __iter__(self) -> Iterator[np.ndarray]:
