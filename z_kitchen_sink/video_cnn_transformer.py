@@ -14,8 +14,10 @@ from utils.train_utils import save_model_info
 from transformers import Transformer
 from transformers.Transformer import TransformerMode
 from models import AE, AEP, VAE, CNNTransformer, IAE
-from anomaly_detection import RawPredictionsModel, AnomalyDetector
-from z_kitchen_sink.utils import TmpModelCheckpoint
+from anomaly_detection import RawPredictionsModel, AnomalyDetector, known_metrics
+from callbacks import EagerModelCheckpoint
+from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
+from protocols import ImageCallbackConfig, AUCCallbackConfig
 
 
 def make_encoder(input_layer, code_size: int, common_cnn_params, name="Encoder") -> Model:
@@ -151,12 +153,12 @@ def make_video_cnn_transformer(input_length: int,
     transformer = Transformer(input_size=code_size,
                               output_size=code_size,
                               output_activation="linear",
-                              layers_intermediate_size=code_size // 2,
+                              layers_intermediate_size=code_size // 4,
                               layers_count=4,
-                              attention_key_size=code_size // 2,
+                              attention_key_size=code_size // 4,
                               attention_heads_count=4,
-                              attention_values_size=code_size // 2,
-                              dropout_rate=0.0,
+                              attention_values_size=code_size // 4,
+                              dropout_rate=0.1,
                               positional_encoding_range=0.1,
                               mode=TransformerMode.CONTINUOUS,
                               copy_regularization_factor=0.0,
@@ -167,6 +169,7 @@ def make_video_cnn_transformer(input_length: int,
                                      autoencoder=ae,
                                      transformer=transformer,
                                      learning_rate=1e-4,
+                                     train_only_embeddings=False,
                                      name="CNNTransformer")
 
     # endregion
@@ -211,6 +214,52 @@ def make_transformer_auc_callback(transformer: CNNTransformer,
                                    samples_count=128, epoch_freq=1, batch_size=4, prefix=auc_mode)
 
 
+def get_dataset_folder(dataset_name) -> str:
+    if dataset_name is "ped2":
+        return "../datasets/ucsd/ped2"
+    elif dataset_name is "ped1":
+        return "../datasets/ucsd/ped1"
+    elif dataset_name is "emoly":
+        return "../datasets/emoly"
+    else:
+        raise ValueError(dataset_name)
+
+
+def make_augment_video_function(video_length, height, width, channels):
+    def augment_video(video: tf.Tensor):
+        crop_ratio = tf.random.uniform(shape=(), minval=0.8, maxval=1.0)
+        original_shape = tf.cast(tf.shape(video), tf.float32)
+        original_height, original_width = original_shape[1], original_shape[2]
+        crop_size = [video_length, crop_ratio * original_height, crop_ratio * original_width, channels]
+        video = tf.image.random_crop(video, crop_size)
+        # video = tf.image.random_brightness(video, max_delta=0.05)
+        video = tf.image.resize(video, (height, width))
+
+        return video
+
+    return augment_video
+
+
+def get_video_length(model: Model, input_length: int, output_length: int, time_step: int) -> int:
+    if isinstance(model, CNNTransformer):
+        video_length = time_step * (input_length + output_length)
+    elif isinstance(model, AEP):
+        video_length = time_step * 2
+    elif isinstance(model, IAE):
+        video_length = time_step * input_length
+    else:
+        video_length = time_step
+    return video_length
+
+
+def make_preprocess_video_function(height, width):
+    def preprocess_video(video: tf.Tensor):
+        video = tf.image.resize(video, (height, width))
+        return video
+
+    return preprocess_video
+
+
 def train_video_cnn_transformer(input_length=4,
                                 output_length=4,
                                 time_step=4,
@@ -220,7 +269,85 @@ def train_video_cnn_transformer(input_length=4,
                                 code_size=256,
                                 initial_epoch=0,
                                 use_transformer=False,
-                                batch_size=8):
+                                batch_size=8,
+                                dataset_name="ped2"):
+    ae, transformer = make_video_cnn_transformer(input_length=input_length,
+                                                 output_length=output_length,
+                                                 time_step=time_step,
+                                                 height=height,
+                                                 width=width,
+                                                 channels=channels,
+                                                 code_size=code_size,
+                                                 mode="IAE")
+    model = transformer if use_transformer else ae
+
+    video_length = get_video_length(model, input_length, output_length, time_step)
+
+    # region Pattern
+    augment_video = make_augment_video_function(video_length, height, width, channels)
+    preprocess_video = make_preprocess_video_function(height, width)
+
+    video_shape = (video_length, height, width, channels)
+    train_pattern = Pattern(
+        ModalityLoadInfo(RawVideo, video_length, video_shape, augment_video)
+    )
+    test_pattern = Pattern(
+        ModalityLoadInfo(RawVideo, video_length, video_shape, preprocess_video)
+    )
+    anomaly_pattern = Pattern(*test_pattern, "labels")
+    # endregion
+
+    protocol = Protocol(model=model,
+                        dataset_name=dataset_name,
+                        protocol_name="video_cnn_transformer")
+
+    # region Image callbacks configs
+    image_callbacks_configs = [
+        ImageCallbackConfig(model, test_pattern, True, "train"),
+        ImageCallbackConfig(model, test_pattern, False, "test"),
+    ]
+    if use_transformer:
+        image_callbacks_configs += [ImageCallbackConfig(transformer.evaluator, test_pattern, False, "evaluator_test")]
+    elif isinstance(ae, IAE):
+        image_callbacks_configs += [ImageCallbackConfig(ae.interpolate, test_pattern, False, "interpolate_test")]
+    # endregion
+
+    # region AUC callbacks configs
+    if use_transformer:
+        auc_callbacks_configs = [
+            AUCCallbackConfig(transformer, anomaly_pattern, output_length, prefix="trainer"),
+            AUCCallbackConfig(transformer.evaluator, anomaly_pattern, output_length, prefix="evaluator"),
+        ]
+    else:
+        auc_callbacks_configs = [
+            AUCCallbackConfig(model, anomaly_pattern, video_length, prefix="")
+        ]
+        if isinstance(ae, IAE):
+            auc_callbacks_configs += [AUCCallbackConfig(model.interpolate, anomaly_pattern, video_length, prefix="iae")]
+    # endregion
+
+    config = ProtocolTrainConfig(batch_size=batch_size,
+                                 pattern=train_pattern,
+                                 epochs=100,
+                                 initial_epoch=initial_epoch,
+                                 image_callbacks_configs=image_callbacks_configs,
+                                 auc_callbacks_configs=auc_callbacks_configs,
+                                 early_stopping_metric=model.metrics_names[0])
+
+    protocol.train_model(config=config)
+
+
+def _train_video_cnn_transformer(input_length=4,
+                                 output_length=4,
+                                 time_step=4,
+                                 height=128,
+                                 width=128,
+                                 channels=1,
+                                 code_size=256,
+                                 initial_epoch=0,
+                                 use_transformer=False,
+                                 batch_size=8,
+                                 dataset_name="ped2"):
     ae, transformer = make_video_cnn_transformer(input_length=input_length,
                                                  output_length=output_length,
                                                  time_step=time_step,
@@ -233,7 +360,7 @@ def train_video_cnn_transformer(input_length=4,
     model = transformer if use_transformer else ae
 
     # region Log dir
-    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_cnn_transformer"
+    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_cnn_transformer/{}".format(dataset_name)
     log_dir = os.path.join(base_log_dir, "log_{}".format(int(time())))
     os.makedirs(log_dir)
     save_model_info(model, log_dir)
@@ -241,38 +368,13 @@ def train_video_cnn_transformer(input_length=4,
     # endregion
 
     if initial_epoch > 0:
-        ae.load_weights(os.path.join(base_log_dir, "weights_{:03d}.hdf5").format(initial_epoch))
+        model.load_weights(os.path.join(base_log_dir, "weights_{:03d}.hdf5").format(initial_epoch))
 
-    ae.trainable = model is ae
-    # region Video length
-    if model is transformer:
-        video_length = time_step * (input_length + output_length)
-    elif isinstance(ae, AEP):
-        video_length = time_step * 2
-    elif isinstance(ae, IAE):
-        video_length = time_step * input_length
-    else:
-        video_length = time_step
-
-    # endregion
-
-    # tmp = transformer(tf.random.normal([16, 8, 4, 128, 128, 1]))
+    video_length = get_video_length(model, input_length, output_length, time_step)
 
     # region Dataset
-    def augment_video(video: tf.Tensor):
-        crop_ratio = tf.random.uniform(shape=(), minval=0.8, maxval=1.0)
-        original_shape = tf.cast(tf.shape(video), tf.float32)
-        original_height, original_width = original_shape[1], original_shape[2]
-        crop_size = [video_length, crop_ratio * original_height, crop_ratio * original_width, channels]
-        video = tf.image.random_crop(video, crop_size)
-        # video = tf.image.random_brightness(video, max_delta=0.05)
-        video = preprocess_video(video)
-
-        return video
-
-    def preprocess_video(video: tf.Tensor):
-        video = tf.image.resize(video, (height, width))
-        return video
+    augment_video = make_augment_video_function(video_length, height, width, channels)
+    preprocess_video = make_preprocess_video_function(height, width)
 
     video_shape = (video_length, height, width, channels)
     train_pattern = Pattern(
@@ -283,7 +385,7 @@ def train_video_cnn_transformer(input_length=4,
     )
     anomaly_pattern = Pattern(*test_pattern, "labels")
 
-    dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
+    dataset_config = DatasetConfig(get_dataset_folder(dataset_name), output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
 
     dataset = dataset_loader.train_subset.make_tf_dataset(train_pattern)
@@ -326,12 +428,12 @@ def train_video_cnn_transformer(input_length=4,
         callbacks += evaluator_image_callbacks
     # endregion
     # region Checkpoint
-    model_checkpoint = TmpModelCheckpoint(weights_path)
+    model_checkpoint = EagerModelCheckpoint(weights_path)
     callbacks.append(model_checkpoint)
     # endregion
     # region Early stopping
     early_stopping = EarlyStopping(monitor=model.metrics_names[0], mode="min", restore_best_weights=True,
-                                   patience=1)
+                                   patience=3)
     callbacks.append(early_stopping)
     # endregion
     # region AUC
@@ -367,7 +469,69 @@ def test_video_cnn_transformer(input_length=4,
                                channels=1,
                                code_size=256,
                                initial_epoch=15,
-                               use_transformer=False):
+                               use_transformer=False,
+                               dataset_name="ped2"):
+    ae, transformer = make_video_cnn_transformer(input_length=input_length,
+                                                 output_length=output_length,
+                                                 time_step=time_step,
+                                                 height=height,
+                                                 width=width,
+                                                 channels=channels,
+                                                 code_size=code_size,
+                                                 mode="IAE")
+    model = transformer if use_transformer else ae
+
+    video_length = get_video_length(model, input_length, output_length, time_step)
+
+    # region Pattern
+    preprocess_video = make_preprocess_video_function(height, width)
+
+    video_shape = (video_length, height, width, channels)
+    pattern = Pattern(
+        ModalityLoadInfo(RawVideo, video_length, video_shape, preprocess_video),
+        "labels"
+    )
+    # endregion
+
+    use_default_model = True
+    model_used = model.name
+    autoencoder = model
+    if not use_default_model:
+        if use_transformer:
+            autoencoder = transformer.evaluator
+            model_used = "transformer.evaluator"
+        elif isinstance(ae, IAE):
+            autoencoder = ae.interpolate
+            model_used = "ae.interpolate"
+
+    protocol = Protocol(model=model,
+                        dataset_name=dataset_name,
+                        protocol_name="video_cnn_transformer",
+                        autoencoder=autoencoder,
+                        model_name=model_used,
+                        )
+
+    total_output_length = output_length * time_step if use_transformer else video_length
+    config = ProtocolTestConfig(pattern=pattern,
+                                epoch=initial_epoch,
+                                output_length=total_output_length,
+                                detector_stride=1,
+                                pre_normalize_predictions=True,
+                                )
+
+    protocol.test_model(config=config)
+
+
+def _test_video_cnn_transformer(input_length=4,
+                                output_length=4,
+                                time_step=4,
+                                height=128,
+                                width=128,
+                                channels=1,
+                                code_size=256,
+                                initial_epoch=15,
+                                use_transformer=False,
+                                dataset_name="ped2"):
     ae, transformer = make_video_cnn_transformer(input_length=input_length,
                                                  output_length=output_length,
                                                  time_step=time_step,
@@ -380,7 +544,7 @@ def test_video_cnn_transformer(input_length=4,
     model = transformer if use_transformer else ae
 
     # region Log dir
-    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_cnn_transformer"
+    base_log_dir = "../logs/AutoEncoding-Anomalies/kitchen_sink/video_cnn_transformer/{}".format(dataset_name)
     log_dir = os.path.join(base_log_dir, "test_log_{}".format(int(time())))
     os.makedirs(log_dir)
     save_model_info(model, log_dir)
@@ -401,9 +565,7 @@ def test_video_cnn_transformer(input_length=4,
 
     # endregion
 
-    def preprocess_video(video: tf.Tensor):
-        video = tf.image.resize(video, (height, width))
-        return video
+    preprocess_video = make_preprocess_video_function(height, width)
 
     video_shape = (video_length, height, width, channels)
     anomaly_pattern = Pattern(
@@ -411,16 +573,25 @@ def test_video_cnn_transformer(input_length=4,
         "labels"
     )
 
-    dataset_config = DatasetConfig("../datasets/ucsd/ped2", output_range=(0.0, 1.0))
+    dataset_config = DatasetConfig(get_dataset_folder(dataset_name), output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)
 
-    detector_metrics = ["mse", "ssim", "mae"]
-    detector_stride = 2
+    detector_metrics = list(known_metrics.keys())
+    detector_stride = 1
     pre_normalize_predictions = True
-    use_evaluator = False
+    use_default_model = True
 
-    if model is transformer and use_evaluator:
-        model = transformer.evaluator
+    if not use_default_model:
+        if use_transformer:
+            model = transformer.evaluator
+            model_used = "transformer.evaluator"
+        elif isinstance(ae, IAE):
+            model = ae.interpolate
+            model_used = "ae.interpolate"
+        else:
+            model_used = "default"
+    else:
+        model_used = "default"
 
     total_output_length = output_length * time_step if use_transformer else video_length
     anomaly_detector = AnomalyDetector(autoencoder=model,
@@ -434,6 +605,6 @@ def test_video_cnn_transformer(input_length=4,
                                           pre_normalize_predictions=pre_normalize_predictions,
                                           additional_config={
                                               "initial_epoch": initial_epoch,
-                                              "use_evaluator": use_evaluator,
+                                              "model_used": model_used,
                                           }
                                           )

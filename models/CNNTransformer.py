@@ -15,6 +15,7 @@ class CNNTransformer(CustomModel):
                  transformer: Transformer,
                  autoencoder_input_shape: Union[tf.TensorShape, List[int]] = None,
                  learning_rate=1e-3,
+                 train_only_embeddings=True,
                  **kwargs):
         super(CNNTransformer, self).__init__(**kwargs)
 
@@ -31,6 +32,9 @@ class CNNTransformer(CustomModel):
         self.autoencoder = autoencoder
         self.transformer = transformer
         self.learning_rate = learning_rate
+        self.train_only_embeddings = train_only_embeddings
+        if train_only_embeddings:
+            autoencoder.trainable = False
 
         # region Layers
         self.split_inputs = Lambda(lambda x: self.split_steps(x, True), name="SplitInputs")
@@ -98,8 +102,14 @@ class CNNTransformer(CustomModel):
 
         return loss
 
-    @tf.function
     def compute_loss(self, inputs, *args, **kwargs):
+        if self.train_only_embeddings:
+            return self.compute_embeddings_loss(inputs)
+        else:
+            return self.compute_reconstruction_loss(inputs)
+
+    @tf.function
+    def compute_embeddings_loss(self, inputs):
         encoder_embedding_input = self.split_inputs(inputs)
         decoder_embedding_input = self.split_outputs(inputs)
 
@@ -112,9 +122,31 @@ class CNNTransformer(CustomModel):
         transformer_loss = self.transformer.compute_loss(encoder_latent_code, decoder_latent_code)
         return transformer_loss
 
+    @tf.function
+    def compute_reconstruction_loss(self, inputs):
+        encoder_embedding_input = self.split_inputs(inputs)
+        decoder_embedding_input = self.split_outputs(inputs)
+
+        encoder_latent_code = self.step_encoder(encoder_embedding_input)
+        decoder_latent_code = self.step_encoder(decoder_embedding_input)
+
+        encoder_latent_code = self.parts_to_batch(encoder_latent_code)
+        decoder_latent_code = self.parts_to_batch(decoder_latent_code)
+
+        transformed = self.transformer([encoder_latent_code, decoder_latent_code])
+
+        decoded = self.batch_to_parts(transformed)
+        decoded = self.step_decoder(decoded)
+
+        reconstruction_loss = tf.reduce_mean(tf.square(decoder_embedding_input - decoded))
+        return reconstruction_loss
+
     @property
     def metrics_names(self):
-        return self.transformer.metrics_names
+        if self.train_only_embeddings:
+            return self.transformer.metrics_names
+        else:
+            return ["reconstruction"]
 
     def get_config(self):
         config = {
@@ -145,7 +177,7 @@ class CNNTransformer(CustomModel):
         if is_inputs:
             tensor = tensor[:, :self.input_length]
         else:
-            tensor = tensor[:, self.output_length:]
+            tensor = tensor[:, -self.output_length:]
 
         return tensor
 

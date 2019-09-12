@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.python.eager import def_function
-from typing import List, Union
+from typing import List, Union, Callable
 
 from callbacks import TensorBoardPlugin
 from utils.summary_utils import image_summary
@@ -36,7 +36,7 @@ class ImageCallback(TensorBoardPlugin):
             self.summary_function = None
 
     @staticmethod
-    def from_model_and_subset(autoencoder: keras.Model,
+    def from_model_and_subset(autoencoder: Callable,
                               subset: Union[SubsetLoader],
                               pattern: Pattern,
                               name: str,
