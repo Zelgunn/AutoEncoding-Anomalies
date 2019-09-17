@@ -133,6 +133,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
 def main():
     from modalities import RawVideo
+    from modalities import Faces
     # from modalities import OpticalFlow
     # from modalities import DoG
     # from modalities import RawAudio
@@ -145,10 +146,11 @@ def main():
                                                    audio_frequency=48000,
                                                    modalities=ModalityCollection(
                                                        [
-                                                           RawVideo(),
-                                                           MelSpectrogram(window_width=0.03,
-                                                                          window_step=0.015,
-                                                                          mel_filters_count=40),
+                                                           # RawVideo(),
+                                                           Faces(),
+                                                           # MelSpectrogram(window_width=0.03,
+                                                           #                window_step=0.015,
+                                                           #                mel_filters_count=40),
                                                            # Landmarks("../shape_predictor_68_face_landmarks.dat")
                                                        ]
                                                    ),

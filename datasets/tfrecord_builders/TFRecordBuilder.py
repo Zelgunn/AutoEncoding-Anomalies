@@ -4,6 +4,8 @@ import cv2
 import os
 import sys
 import json
+import time
+import datetime
 from typing import Union, Tuple, List, Dict, Type, Optional
 
 from modalities import Modality, ModalityCollection
@@ -66,9 +68,17 @@ class TFRecordBuilder(object):
         max_values = None
         max_labels_sizes = []
 
+        data_sources_count = len(data_sources)
+        start_time = time.time()
         for i, data_source in enumerate(data_sources):
             if self.verbose > 0:
-                print("Building {}/{} - {}".format(i + 1, len(data_sources), data_source.target_path))
+                if i > 0:
+                    elapsed_time = time.time() - start_time
+                    eta = elapsed_time * (data_sources_count / (i + 1) - 1)
+                    eta = datetime.timedelta(seconds=np.round(eta))
+                else:
+                    eta = "Unknown"
+                print("Building {}/{} - ETA: {} - {}".format(i + 1, data_sources_count, eta, data_source.target_path))
 
             # region Fill subsets_dict with folders containing shards
             target_path = os.path.relpath(data_source.target_path, self.dataset_path)
