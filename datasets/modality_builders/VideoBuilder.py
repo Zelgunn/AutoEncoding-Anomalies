@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 from typing import Union, List, Tuple, Any, Dict, Type
 
-from modalities import Modality, ModalityCollection, RawVideo, OpticalFlow, DoG, Landmarks
+from modalities import Modality, ModalityCollection, RawVideo, Faces, OpticalFlow, DoG, Landmarks
 from datasets.modality_builders import ModalityBuilder
 from datasets.data_readers import VideoReader
 
@@ -36,7 +36,7 @@ class VideoBuilder(ModalityBuilder):
 
     @classmethod
     def supported_modalities(cls):
-        return [RawVideo, OpticalFlow, DoG, Landmarks]
+        return [RawVideo, Faces, OpticalFlow, DoG, Landmarks]
 
     # region Frame/Shard processing
     def process_frame(self, frame: np.ndarray) -> np.ndarray:
@@ -56,6 +56,10 @@ class VideoBuilder(ModalityBuilder):
 
         if RawVideo in self.modalities:
             shard[RawVideo] = frames
+
+        if Faces in self.modalities:
+            faces: Faces = self.modalities[Faces]
+            shard[Faces] = faces.compute_face(frame, self.default_frame_size)
 
         if OpticalFlow in self.modalities:
             optical_flow: OpticalFlow = self.modalities[OpticalFlow]
