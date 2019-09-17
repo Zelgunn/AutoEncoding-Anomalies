@@ -133,10 +133,9 @@ class Protocol(object):
             .format(protocol_name=protocol_name, dataset_name=dataset_name)
 
     def train_model(self, config: ProtocolTrainConfig):
-        log_dir = self.make_log_dir(True)
-        if config.initial_epoch > 0:
-            self.model.load_weights(self.weights_path.format(config.initial_epoch))
+        self.load_weights(epoch=config.initial_epoch)
 
+        log_dir = self.make_log_dir(True)
         callbacks = self.make_callback(log_dir, config)
 
         dataset = self.dataset_loader.train_subset.make_tf_dataset(config.pattern)
@@ -161,7 +160,8 @@ class Protocol(object):
                 callbacks += icc.to_callbacks(tensorboard, self.dataset_loader)
         # endregion
         # region Checkpoint
-        model_checkpoint = EagerModelCheckpoint(self.weights_path)
+        weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
+        model_checkpoint = EagerModelCheckpoint(weights_path)
         callbacks.append(model_checkpoint)
         # endregion
         # region Early stopping
@@ -181,8 +181,7 @@ class Protocol(object):
         return callbacks
 
     def test_model(self, config: ProtocolTestConfig):
-        if config.epoch > 0:
-            self.model.load_weights(self.weights_path.format(config.epoch))
+        self.load_weights(epoch=config.epoch)
 
         metrics = list(known_metrics.keys())
         anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
@@ -191,6 +190,12 @@ class Protocol(object):
 
         log_dir = self.make_log_dir(False)
         pattern = config.pattern.with_added_depth().with_added_depth()
+
+        if self.dataset_name is "emoly":
+            folders = self.dataset_loader.test_subset.subset_folders
+            folders = [folder for folder in folders if "acted" in folder]
+            self.dataset_loader.test_subset.subset_folders = folders
+
         anomaly_detector.predict_and_evaluate(dataset=self.dataset_loader,
                                               pattern=pattern,
                                               log_dir=log_dir,
@@ -215,9 +220,10 @@ class Protocol(object):
         save_model_info(self.autoencoder, log_dir)
         return log_dir
 
-    @property
-    def weights_path(self) -> str:
-        return os.path.join(self.base_log_dir, "weights_{:03d}.hdf5")
+    def load_weights(self, epoch: int):
+        if epoch > 0:
+            weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}.hdf5")
+            self.model.load_weights(weights_path.format(epoch=epoch))
 
 
 def get_dataset_folder(dataset_name) -> str:
