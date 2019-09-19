@@ -173,14 +173,15 @@ class AUCCallback(TensorBoardPlugin):
                     epoch_freq=1,
                     batch_size=32,
                     prefix="") -> "AUCCallback":
-        if len(pattern) not in [2, 3]:
-            raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(len(pattern)))
-
         batch = test_subset.get_batch(batch_size=samples_count, pattern=pattern)
-        if len(pattern) == 2:
+
+        if pattern.output_count not in [2, 3]:
+            raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(pattern.output_count))
+
+        if pattern.output_count == 2:
             inputs, labels = batch
             outputs = inputs
-        elif len(pattern) == 3:
+        elif pattern.output_count == 3:
             inputs, outputs, labels = batch
         else:
             inputs = outputs = labels = None

@@ -1,14 +1,13 @@
 import tensorflow as tf
 import numpy as np
 from abc import ABC, abstractmethod
-from typing import Union, Tuple, Dict, Any, NamedTuple, Type, Callable
+from typing import Union, Dict, Any, NamedTuple, Type
 
 from modalities import int64_list_feature, bytes_list_feature
 
 
 class Modality(ABC):
     def __init__(self, **kwargs):
-        # self.io_shape: Optional[ModalityShape] = None
         pass
 
     def get_config(self) -> Dict[str, Any]:
@@ -83,9 +82,9 @@ class Modality(ABC):
 class ModalityLoadInfo(NamedTuple):
     modality: Type[Modality]
     length: int
-    output_shape: Tuple[int, ...]
-    output_map: Callable = None
+    # output_shape: Tuple[int, ...]
+    # output_map: Callable[[tf.Tensor, Dict[str, tf.Tensor]], tf.Tensor] = None
 
-    @property
-    def rank(self) -> int:
-        return len(self.output_shape)
+    # @property
+    # def rank(self) -> int:
+    #     return len(self.output_shape)

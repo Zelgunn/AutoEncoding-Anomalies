@@ -161,8 +161,8 @@ def train_video_autoencoder():
 
     # region Dataset
     pattern = Pattern(
-        ModalityLoadInfo(RawVideo, input_length, (input_length, 128, 128, channels_count)),
-        ModalityLoadInfo(RawVideo, output_length, (output_length, 128, 128, channels_count))
+        ModalityLoadInfo(RawVideo, input_length),
+        ModalityLoadInfo(RawVideo, output_length)
     )
     dataset_config = DatasetConfig("../datasets/emoly", output_range=(0.0, 1.0))
     dataset_loader = DatasetLoader(config=dataset_config)

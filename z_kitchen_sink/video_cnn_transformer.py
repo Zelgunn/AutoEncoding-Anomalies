@@ -4,7 +4,7 @@ from tensorflow.python.keras.layers import Input
 from tensorflow.python.keras.layers import Conv3D, Conv3DTranspose, BatchNormalization, Flatten, Dense, Add
 from typing import Tuple
 
-from modalities import ModalityLoadInfo, RawVideo, Pattern
+from modalities import ModalityLoadInfo, RawVideo, Faces, Pattern
 from transformers import Transformer
 from transformers.Transformer import TransformerMode
 from models import AE, AEP, VAE, CNNTransformer, IAE
@@ -116,7 +116,7 @@ def make_video_cnn_transformer(input_length: int,
     }
 
     input_layer = Input(video_shape, name="InputLayer")
-    decoder_input_layer = Input(shape=[1, 8, 8, code_size], name="DecoderInputLayer")
+    decoder_input_layer = Input(shape=[1, height // 16, width // 16, code_size], name="DecoderInputLayer")
 
     encoder_code_size = code_size if mode != "VAE" else code_size * 2
     # encoder = make_encoder(input_layer, encoder_code_size, common_cnn_params)
@@ -198,16 +198,28 @@ def make_video_cnn_transformer(input_length: int,
     return ae, cnn_transformer
 
 
-def make_augment_video_function(video_length, height, width, channels):
-    preprocess_video = make_preprocess_video_function(height, width, channels)
+def make_augment_video_function(video_length: int,
+                                height: int,
+                                width: int,
+                                channels: int,
+                                extract_face: bool
+                                ):
+    preprocess_video = make_preprocess_video_function(height, width, channels, extract_face)
 
-    def augment_video(video: tf.Tensor):
+    def augment_video(video: tf.Tensor,
+                      bounding_boxes: tf.Tensor,
+                      ) -> tf.Tensor:
+        if extract_face:
+            video = preprocess_video(video, bounding_boxes)
+
         crop_ratio = tf.random.uniform(shape=(), minval=0.8, maxval=1.0)
         original_shape = tf.cast(tf.shape(video), tf.float32)
         original_height, original_width = original_shape[1], original_shape[2]
         crop_size = [video_length, crop_ratio * original_height, crop_ratio * original_width, channels]
         video = tf.image.random_crop(video, crop_size)
-        video = preprocess_video(video)
+
+        if not extract_face:
+            video = preprocess_video(video, bounding_boxes)
 
         return video
 
@@ -226,14 +238,47 @@ def get_video_length(model: Model, input_length: int, output_length: int, time_s
     return video_length
 
 
-def make_preprocess_video_function(height, width, channels):
-    def preprocess_video(video: tf.Tensor):
+def make_preprocess_video_function(height: int,
+                                   width: int,
+                                   channels: int,
+                                   extract_face: bool,
+                                   ):
+    def preprocess_video(video: tf.Tensor,
+                         bounding_boxes: tf.Tensor,
+                         labels: tf.Tensor = None
+                         ):
+        if extract_face:
+            video_shape = tf.shape(video)
+            source_height = tf.cast(video_shape[1], tf.float32)
+            source_width = tf.cast(video_shape[2], tf.float32)
+
+            boxes = bounding_boxes[0]
+
+            def _extract_face():
+                start_y, end_y = boxes[0] * source_height, boxes[1] * source_height
+                start_x, end_x = boxes[2] * source_width, boxes[3] * source_width
+
+                start_y, end_y = tf.cast(start_y, tf.int32), tf.cast(end_y, tf.int32)
+                start_x, end_x = tf.cast(start_x, tf.int32), tf.cast(end_x, tf.int32)
+
+                _video = video[:, start_y:end_y, start_x:end_x]
+
+                return _video
+
+            video = tf.cond(pred=tf.reduce_any(tf.math.is_nan(boxes)),
+                            true_fn=lambda: video,
+                            false_fn=_extract_face)
+
         video = tf.image.resize(video, (height, width))
+
         if video.shape[-1] != channels:
             if channels == 1:
                 video = tf.image.rgb_to_grayscale(video)
             else:
                 video = tf.image.grayscale_to_rgb(video)
+
+        if labels is not None:
+            return video, labels
         return video
 
     return preprocess_video
@@ -268,17 +313,20 @@ def train_video_cnn_transformer(input_length=4,
     video_length = get_video_length(model, input_length, output_length, time_step)
 
     # region Pattern
-    augment_video = make_augment_video_function(video_length, height, width, channels)
-    preprocess_video = make_preprocess_video_function(height, width, channels)
+    # augment_video = make_augment_video_function(video_length, height, width, channels)
+    preprocess_video = make_preprocess_video_function(height, width, channels, True)
 
-    video_shape = (video_length, height, width, channels)
     train_pattern = Pattern(
-        ModalityLoadInfo(RawVideo, video_length, video_shape, augment_video)
+        ModalityLoadInfo(RawVideo, video_length),
+        ModalityLoadInfo(Faces, video_length),
+        output_map=preprocess_video
     )
     test_pattern = Pattern(
-        ModalityLoadInfo(RawVideo, video_length, video_shape, preprocess_video)
+        ModalityLoadInfo(RawVideo, video_length),
+        ModalityLoadInfo(Faces, video_length),
+        output_map=preprocess_video
     )
-    anomaly_pattern = Pattern(*test_pattern, "labels")
+    anomaly_pattern = Pattern(*test_pattern, "labels", output_map=preprocess_video)
     # endregion
 
     protocol = Protocol(model=model,
@@ -347,12 +395,13 @@ def test_video_cnn_transformer(input_length=4,
     video_length = get_video_length(model, input_length, output_length, time_step)
 
     # region Pattern
-    preprocess_video = make_preprocess_video_function(height, width, channels)
+    preprocess_video = make_preprocess_video_function(height, width, channels, True)
 
-    video_shape = (video_length, height, width, channels)
     pattern = Pattern(
-        ModalityLoadInfo(RawVideo, video_length, video_shape, preprocess_video),
-        "labels"
+        ModalityLoadInfo(RawVideo, video_length),
+        ModalityLoadInfo(Faces, video_length),
+        "labels",
+        output_map=preprocess_video
     )
     # endregion
 

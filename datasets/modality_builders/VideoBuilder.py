@@ -59,7 +59,7 @@ class VideoBuilder(ModalityBuilder):
 
         if Faces in self.modalities:
             faces: Faces = self.modalities[Faces]
-            shard[Faces] = faces.compute_faces(frames, self.default_frame_size)
+            shard[Faces] = faces.compute_faces(frames)
 
         if OpticalFlow in self.modalities:
             optical_flow: OpticalFlow = self.modalities[OpticalFlow]

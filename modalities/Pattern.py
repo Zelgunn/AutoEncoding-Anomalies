@@ -1,12 +1,16 @@
 import tensorflow as tf
-from typing import Union, Tuple, List, Type, Dict, Optional
+from typing import Union, Tuple, List, Type, Dict, Optional, Callable
 
 from modalities import Modality, ModalityLoadInfo
 
 
 class Pattern(object):
-    def __init__(self, *elements: Union[Tuple, ModalityLoadInfo, str]):
+    def __init__(self,
+                 *elements: Union[Tuple, ModalityLoadInfo, str],
+                 output_map: Callable = None):
         self.elements = elements
+        self.output_map = output_map
+        self._output_count = len(elements) if not output_map else None
         self._modality_types: Optional[Tuple[Type[Modality]]] = None
         self._modality_ids: Optional[Tuple[str]] = None
         self._flattened: Optional[Tuple[ModalityLoadInfo]] = None
@@ -14,6 +18,10 @@ class Pattern(object):
         self._contains_labels: Optional[bool] = None
 
     # region Properties
+    @property
+    def required_modality_types(self) -> Tuple[Type[Modality]]:
+        return self.modality_types
+
     @property
     def modality_types(self) -> Tuple[Type[Modality]]:
         if self._modality_types is None:
@@ -63,6 +71,12 @@ class Pattern(object):
             count += 1
         return count
 
+    @property
+    def output_count(self) -> int:
+        if not self._output_count:
+            raise AttributeError("You must use this pattern at least once to determine the number of outputs.")
+        return self._output_count
+
     # endregion
 
     def with_labels(self) -> "Pattern":
@@ -73,10 +87,21 @@ class Pattern(object):
 
     def apply(self, modalities: Dict[str, tf.Tensor]):
         modalities = self._apply_pattern(modalities, self.elements)
-        if len(modalities) == 1:
-            return modalities[0]
-        else:
-            return modalities
+
+        if self.output_map is not None:
+            modalities = self.output_map(*modalities)
+
+        if not isinstance(modalities, tf.Tensor):
+            if len(modalities) == 1:
+                modalities = modalities[0]
+
+        if self._output_count is None:
+            if isinstance(modalities, tf.Tensor):
+                self._output_count = 1
+            else:
+                self._output_count = len(modalities)
+
+        return modalities
 
     @staticmethod
     def _apply_pattern(modalities: Dict[str, tf.Tensor],
@@ -85,9 +110,9 @@ class Pattern(object):
             modality_id = pattern.modality.id()
             modality = modalities[modality_id]
             modality = modality[:pattern.length]
-            if pattern.output_map is not None:
-                modality = pattern.output_map(modality)
-            modality = tf.reshape(modality, pattern.output_shape, name="reshape_to_modality_output_shape")
+            # if pattern.output_map is not None:
+            #     modality = pattern.output_map(modality, modalities)
+            # modality = tf.reshape(modality, pattern.output_shape, name="reshape_to_modality_output_shape")
             return modality
         elif isinstance(pattern, str) and pattern == "labels":
             return modalities["labels"]

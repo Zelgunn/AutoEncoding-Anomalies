@@ -6,7 +6,7 @@ from typing import Dict, Tuple, Optional, List
 
 from datasets.loaders import DatasetConfig
 from modalities import Modality, ModalityCollection, Pattern
-from modalities import RawVideo, Landmarks
+from modalities import RawVideo, Faces, Landmarks
 from modalities import MelSpectrogram
 from utils.misc_utils import int_ceil, int_floor
 
@@ -175,7 +175,7 @@ class SubsetLoader(object):
 
         features_decoded, modalities_shard_size = {}, {}
 
-        for i, modality_type in enumerate(pattern.modality_types):
+        for i, modality_type in enumerate(pattern.required_modality_types):
             modality = self.modalities[modality_type]
             modality_id = modality.id()
             modality_features = modality.tfrecord_features()
@@ -302,7 +302,7 @@ class SubsetLoader(object):
         # region for each modality : join shards and extract needed length
         for modality in self.modalities:
             modality_type = type(modality)
-            if modality_type not in pattern.as_dict:
+            if modality_type not in pattern.required_modality_types:
                 continue
 
             modality_id = modality.id()
@@ -372,7 +372,7 @@ class SubsetLoader(object):
                 modality_value = modality_value / tf.constant(255.0, modality_value.dtype)
             elif modality_id == MelSpectrogram.id():
                 modality_value = tf.clip_by_value(modality_value, 0.0, 1.0, name="clip_mel_spectrogram")
-            elif modality_id == Landmarks.id():
+            elif modality_id in (Landmarks.id(), Faces.id()):
                 modality_value = modality_value
             else:
                 modality_min, modality_max = self.config.modalities_ranges[modality_id]
@@ -446,12 +446,12 @@ def main():
 
     pattern = Pattern(
         (
-            ModalityLoadInfo(Landmarks, 32, (32, 136)),
-            ModalityLoadInfo(MelSpectrogram, nfft, (nfft, 100))
+            ModalityLoadInfo(Landmarks, 32),
+            ModalityLoadInfo(MelSpectrogram, nfft)
         ),
         (
-            ModalityLoadInfo(Landmarks, 128, (128, 136)),
-            ModalityLoadInfo(RawAudio, audio_length, (audio_length, 2))
+            ModalityLoadInfo(Landmarks, 128),
+            ModalityLoadInfo(RawAudio, audio_length)
         )
     )
     config = DatasetConfig(tfrecords_config_folder="C:/datasets/emoly_split",

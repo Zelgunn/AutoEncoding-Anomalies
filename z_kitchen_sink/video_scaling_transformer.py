@@ -78,7 +78,7 @@ def train_scaling_video_transformer():
     # def reduce_channels(video: tf.Tensor):
     #     return tf.reduce_mean(video, axis=-1, keepdims=True)
 
-    def preprocess_video(video: tf.Tensor):
+    def preprocess_video(video: tf.Tensor, labels: tf.Tensor = None):
         # video = reduce_channels(video)
 
         if what_to_do == "train":
@@ -92,12 +92,16 @@ def train_scaling_video_transformer():
         else:
             video = tf.image.resize(video, (height, width))
 
+        if labels is not None:
+            return video, labels
+
         return video
 
     pattern = Pattern(
-        ModalityLoadInfo(RawVideo, length, (length, height, width, channel_count), preprocess_video)
+        ModalityLoadInfo(RawVideo, length),
+        output_map=preprocess_video
     )
-    anomaly_pattern = Pattern(*pattern, "labels")
+    anomaly_pattern = Pattern(*pattern, "labels", output_map=preprocess_video)
     # endregion
 
     # region Datasets
@@ -239,4 +243,3 @@ def train_scaling_video_transformer():
                                               )
     elif what_to_do == "generate":
         pass
-

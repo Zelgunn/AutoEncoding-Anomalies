@@ -197,8 +197,8 @@ def train_audio_autoencoder():
     # region Dataset
     # audio_autoencoder.load_weights("../logs/tests/kitchen_sink/mfcc_only/weights_020.hdf5")
     pattern = Pattern(
-        ModalityLoadInfo(MelSpectrogram, input_length, (input_length, n_mel_filters)),
-        ModalityLoadInfo(MelSpectrogram, output_length, (output_length, n_mel_filters))
+        ModalityLoadInfo(MelSpectrogram, input_length),
+        ModalityLoadInfo(MelSpectrogram, output_length)
     )
     anomaly_pattern = Pattern(
         *pattern,

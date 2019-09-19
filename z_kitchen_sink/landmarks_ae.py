@@ -111,8 +111,8 @@ def train_landmarks_autoencoder():
 
     dataset_loader, train_subset, test_subset = get_landmarks_datasets()
     pattern = Pattern(
-        ModalityLoadInfo(Landmarks, input_length, (input_length, 136)),
-        ModalityLoadInfo(Landmarks, output_length, (output_length, 136))
+        ModalityLoadInfo(Landmarks, input_length),
+        ModalityLoadInfo(Landmarks, output_length)
     )
 
     train_dataset = train_subset.make_tf_dataset(pattern)

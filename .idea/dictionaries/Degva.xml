@@ -39,9 +39,11 @@
       <w>lsgan</w>
       <w>lstm</w>
       <w>matplotlib</w>
+      <w>maxs</w>
       <w>maxval</w>
       <w>mcidas</w>
       <w>mfcc</w>
+      <w>mins</w>
       <w>minval</w>
       <w>mnist</w>
       <w>ndarray</w>

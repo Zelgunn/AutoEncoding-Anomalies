@@ -1,17 +1,59 @@
+import tensorflow as tf
 import numpy as np
 import dlib
-from typing import Tuple, Union
+from typing import Tuple, Union, Dict
 
-from modalities import RawVideo
+from modalities import Modality, RawVideo
 
 
-class Faces(RawVideo):
+class Faces(Modality):
     def __init__(self):
         super(Faces, self).__init__()
 
         self.dlib_face_detector = dlib.get_frontal_face_detector()
 
+    @classmethod
+    def encode_to_tfrecord_feature(cls, modality_value) -> Dict[str, tf.train.Feature]:
+        return cls.encode_raw(modality_value, np.float32)
+
+    @classmethod
+    def decode_from_tfrecord_feature(cls, parsed_features):
+        return cls.decode_raw(parsed_features, tf.float32)
+
+    @classmethod
+    def tfrecord_features(cls) -> Dict[str, tuple]:
+        return {cls.id(): tf.io.VarLenFeature(tf.string),
+                cls.shape_id(): cls.tfrecord_shape_parse_function()}
+
+    @classmethod
+    def rank(cls) -> int:
+        return 2
+
     def compute_faces(self,
+                      frames: np.ndarray,
+                      compute_bounding_box_per_face=True,
+                      ) -> np.ndarray:
+        length, height, width, _ = frames.shape
+        bounding_boxes = np.zeros(shape=(length, 4), dtype=np.float32)
+        previous_bounding_box = None
+        for i in range(length):
+            bounding_box = self.get_frame_bounding_box(frames[i])
+            if bounding_box is None:
+                if previous_bounding_box is None:
+                    previous_bounding_box = self.get_video_bounding_box(frames)
+                bounding_box = previous_bounding_box
+            bounding_boxes[i] = bounding_box
+            previous_bounding_box = bounding_box
+
+        if not compute_bounding_box_per_face:
+            mins = bounding_boxes.min(axis=0)
+            maxs = bounding_boxes.max(axis=0)
+            bounding_boxes[:] = (mins[0], maxs[1], mins[2], maxs[3])
+
+        bounding_boxes /= (height, height, width, width)
+        return bounding_boxes
+
+    def extract_faces(self,
                       frames: np.ndarray,
                       frame_size: Tuple[int, int],
                       compute_bounding_box_per_face=True,
@@ -40,7 +82,7 @@ class Faces(RawVideo):
 
         return faces
 
-    def compute_face(self,
+    def extract_face(self,
                      frame: np.ndarray,
                      frame_size: Tuple[int, int]
                      ) -> np.ndarray:

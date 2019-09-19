@@ -1,6 +1,4 @@
 import tensorflow as tf
-from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.layers import Input
 from tensorflow.python.keras.callbacks import TensorBoard, ModelCheckpoint
 import os
 from time import time
@@ -62,10 +60,18 @@ def train_landmarks_transformer():
     # region Datasets
     dataset_loader, train_subset, test_subset = get_landmarks_datasets()
 
+    def batch_landmarks(inputs: tf.Tensor, outputs: tf.Tensor, labels: tf.Tensor = None):
+        inputs = tf.reshape(inputs, [input_length, 136])
+        outputs = tf.reshape(outputs, [output_length // frame_per_prediction, 136 * frame_per_prediction])
+
+        if labels is not None:
+            return inputs, outputs, labels
+        return inputs, outputs
+
     pattern = Pattern(
-        ModalityLoadInfo(Landmarks, input_length, (input_length, 136)),
-        ModalityLoadInfo(Landmarks, output_length, (output_length // frame_per_prediction,
-                                                    136 * frame_per_prediction))
+        ModalityLoadInfo(Landmarks, input_length),
+        ModalityLoadInfo(Landmarks, output_length),
+        output_map=batch_landmarks
     )
     anomaly_pattern = Pattern(
         *pattern,
