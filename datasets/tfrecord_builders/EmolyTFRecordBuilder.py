@@ -1,6 +1,7 @@
 import os
 import csv
 from tqdm import tqdm
+import argparse
 from typing import Dict, Tuple, List, Union, Optional
 
 from modalities import ModalityCollection
@@ -15,12 +16,14 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
                  audio_frequency: Optional[Union[int, float]],
                  modalities: ModalityCollection,
                  video_frame_size: Tuple[int, int],
+                 video_buffer_frame_size: Tuple[int, int],
                  verbose=1):
         super(EmolyTFRecordBuilder, self).__init__(dataset_path=dataset_path,
                                                    shard_duration=shard_duration,
                                                    video_frequency=video_frequency,
                                                    audio_frequency=audio_frequency,
                                                    modalities=modalities,
+                                                   video_buffer_frame_size=video_buffer_frame_size,
                                                    verbose=verbose)
         self.video_frame_size = video_frame_size
 
@@ -58,6 +61,12 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
         for video_filename in elements:
             if video_filename.endswith(".mp4") and os.path.isfile(os.path.join(self.videos_folder, video_filename)):
                 videos_filenames.append(video_filename)
+
+        broken_files = ["Sujet33.Segment2.acted.mp4", "Sujet37.Segment6.normal.mp4", "Sujet39.Segment2.normal.mp4"]
+        for broken_file in broken_files:
+            if broken_file in videos_filenames:
+                videos_filenames.remove(broken_file)
+
         return videos_filenames
 
     def rename_videos(self):
@@ -132,7 +141,7 @@ class EmolyTFRecordBuilder(TFRecordBuilder):
 
 
 def main():
-    # from modalities import RawVideo
+    from modalities import RawVideo
     from modalities import Faces
     # from modalities import OpticalFlow
     # from modalities import DoG
@@ -140,13 +149,17 @@ def main():
     # from modalities import MelSpectrogram
     # from modalities import Landmarks
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--core_count", default=6, type=int)
+    args = parser.parse_args()
+
     emoly_tf_record_builder = EmolyTFRecordBuilder(dataset_path="../datasets/emoly",
                                                    shard_duration=1.28,
                                                    video_frequency=25,
                                                    audio_frequency=48000,
                                                    modalities=ModalityCollection(
                                                        [
-                                                           # RawVideo(),
+                                                           RawVideo(),
                                                            Faces(),
                                                            # MelSpectrogram(window_width=0.03,
                                                            #                window_step=0.015,
@@ -154,8 +167,10 @@ def main():
                                                            # Landmarks("../shape_predictor_68_face_landmarks.dat")
                                                        ]
                                                    ),
-                                                   video_frame_size=(128, 128))
-    emoly_tf_record_builder.build()
+                                                   video_frame_size=(256, 256),
+                                                   video_buffer_frame_size=(1080//4, 1920//4),
+                                                   )
+    emoly_tf_record_builder.build(core_count=args.core_count)
 
 
 if __name__ == "__main__":

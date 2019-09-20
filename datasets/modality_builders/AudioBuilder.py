@@ -42,7 +42,7 @@ class AudioBuilder(ModalityBuilder):
 
         return shard
 
-    def get_buffer_shape(self) -> List[int]:
+    def get_buffer_shape(self, frame: np.ndarray = None) -> List[int]:
         max_shard_size = self.get_source_max_shard_size()
         return [max_shard_size, self.reader.channels_count]
 

@@ -58,6 +58,9 @@ class ModalityBuilder(ABC):
             raise ValueError("You must provide a reader for the builder")
 
         for frame in self.reader:
+            if shard_buffer is None:
+                shard_buffer = self.get_shard_buffer(frame)
+
             shard_buffer[i] = self.process_frame(frame)
 
             i += 1
@@ -87,11 +90,14 @@ class ModalityBuilder(ABC):
     # endregion
 
     # region Buffer
-    def get_shard_buffer(self) -> np.ndarray:
-        return np.zeros(self.get_buffer_shape(), dtype="float32")
+    def get_shard_buffer(self, frame: np.ndarray = None) -> Optional[np.ndarray]:
+        buffer_shape = self.get_buffer_shape(frame)
+        if buffer_shape is None:
+            return None
+        return np.zeros(buffer_shape, dtype="float32")
 
     @abstractmethod
-    def get_buffer_shape(self):
+    def get_buffer_shape(self, frame: np.ndarray = None):
         raise NotImplementedError
 
     # endregion

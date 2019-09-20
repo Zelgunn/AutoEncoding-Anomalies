@@ -36,14 +36,22 @@ class Faces(Modality):
         length, height, width, _ = frames.shape
         bounding_boxes = np.zeros(shape=(length, 4), dtype=np.float32)
         previous_bounding_box = None
+        upsampling_values = (1, 2, 3)
         for i in range(length):
-            bounding_box = self.get_frame_bounding_box(frames[i])
+            bounding_box = self.get_frame_bounding_box(frames[i], upsampling_values)
+            
             if bounding_box is None:
                 if previous_bounding_box is None:
-                    previous_bounding_box = self.get_video_bounding_box(frames)
+                    previous_bounding_box = self.get_video_bounding_box(frames, upsampling_values)
+                    if None in previous_bounding_box:
+                        print(" Warning : Could not detect a face on this video.")
+                        bounding_boxes[:] = (0, height, 0, width)
+                        break
+
                 bounding_box = previous_bounding_box
             bounding_boxes[i] = bounding_box
             previous_bounding_box = bounding_box
+            upsampling_values = (1, )
 
         if not compute_bounding_box_per_face:
             mins = bounding_boxes.min(axis=0)
@@ -92,12 +100,15 @@ class Faces(Modality):
 
         return RawVideo.compute_raw_frame(face, frame_size)
 
-    def get_video_bounding_box(self, frames: np.ndarray) -> Tuple[int, int, int, int]:
+    def get_video_bounding_box(self,
+                               frames: np.ndarray,
+                               upsampling_values=(1, 2, 3),
+                               ) -> Tuple[int, int, int, int]:
         frames = self.convert_frames_for_detector(frames)
 
         min_y, max_y, min_x, max_x = None, None, None, None
         for i in range(len(frames)):
-            frame_bounding_box = self.get_frame_bounding_box(frames[i])
+            frame_bounding_box = self.get_frame_bounding_box(frames[i], upsampling_values)
             if frame_bounding_box is not None:
                 if min_y is None:
                     min_y, max_y, min_x, max_x = frame_bounding_box
@@ -109,10 +120,14 @@ class Faces(Modality):
 
         return min_y, max_y, min_x, max_x
 
-    def get_frame_bounding_box(self, frame: np.ndarray) -> Union[Tuple[int, int, int, int], None]:
+    def get_frame_bounding_box(self,
+                               frame: np.ndarray,
+                               upsampling_values=(1, 2, 3),
+                               ) -> Union[Tuple[int, int, int, int], None]:
         frame = self.convert_frames_for_detector(frame)
 
-        for upsampling_value in (1, 2):
+        bounding_box = ()
+        for upsampling_value in upsampling_values:
             bounding_box = self.dlib_face_detector(frame, upsampling_value)
             if len(bounding_box) != 0:
                 break

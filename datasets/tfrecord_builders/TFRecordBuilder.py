@@ -6,6 +6,7 @@ import sys
 import json
 import time
 import datetime
+from multiprocessing import Pool
 from typing import Union, Tuple, List, Dict, Type, Optional
 
 from modalities import Modality, ModalityCollection
@@ -44,6 +45,7 @@ class TFRecordBuilder(object):
                  audio_frequency: Optional[Union[int, float]],
                  modalities: ModalityCollection,
                  labels_frequency: Union[int, float] = None,
+                 video_buffer_frame_size: Tuple[int, int] = None,
                  verbose=1):
 
         self.dataset_path = dataset_path
@@ -54,12 +56,13 @@ class TFRecordBuilder(object):
         self.audio_frequency = audio_frequency
         self.labels_frequency = labels_frequency
         self.modalities = modalities
+        self.video_buffer_frame_size = video_buffer_frame_size
         self.verbose = verbose
 
     def get_dataset_sources(self) -> List[DataSource]:
         raise NotImplementedError("`get_dataset_sources` should be defined for subclasses.")
 
-    def build(self):
+    def build(self, core_count=6):
         data_sources = self.get_dataset_sources()
 
         subsets_dict: Dict[str, Union[List[str], Dict]] = {}
@@ -70,16 +73,11 @@ class TFRecordBuilder(object):
 
         data_sources_count = len(data_sources)
         start_time = time.time()
-        for i, data_source in enumerate(data_sources):
-            if self.verbose > 0:
-                if i > 0:
-                    elapsed_time = time.time() - start_time
-                    eta = elapsed_time * (data_sources_count / (i + 1) - 1)
-                    eta = datetime.timedelta(seconds=np.round(eta))
-                else:
-                    eta = "Unknown"
-                print("Building {}/{} - ETA: {} - {}".format(i + 1, data_sources_count, eta, data_source.target_path))
 
+        builder_pool = Pool(core_count)
+        builders = []
+
+        for data_source in data_sources:
             # region Fill subsets_dict with folders containing shards
             target_path = os.path.relpath(data_source.target_path, self.dataset_path)
             if data_source.subset_name in subsets_dict:
@@ -88,19 +86,41 @@ class TFRecordBuilder(object):
                 subsets_dict[data_source.subset_name] = [target_path]
             # endregion
 
-            source_min_values, source_max_values, max_labels_size = self.build_one(data_source)
+            builder = builder_pool.apply_async(self.build_one, (data_source,))
+            builders.append(builder)
 
-            # region Modalities min/max for normalization (step 1 : get)
-            if min_values is None:
-                min_values = source_min_values
-                max_values = source_max_values
-            else:
-                for modality_type in source_min_values:
-                    min_values[modality_type] += source_min_values[modality_type]
-                    max_values[modality_type] += source_max_values[modality_type]
+        working_builders = builders
+        while len(working_builders) > 0:
+            remaining_builders = []
+
+            for builder in working_builders:
+                if builder.ready():
+                    source_min_values, source_max_values, max_labels_size = builder.get()
+                    # region Modalities min/max for normalization (step 1 : get)
+                    if min_values is None:
+                        min_values = source_min_values
+                        max_values = source_max_values
+                    else:
+                        for modality_type in source_min_values:
+                            min_values[modality_type] += source_min_values[modality_type]
+                            max_values[modality_type] += source_max_values[modality_type]
+                    # endregion
+                    max_labels_sizes.append(max_labels_size)
+                else:
+                    remaining_builders.append(builder)
+
+            # region Print ETA
+            if self.verbose > 0 and len(working_builders) != len(remaining_builders):
+                i = len(builders) - len(remaining_builders)
+                elapsed_time = time.time() - start_time
+                eta = elapsed_time * (data_sources_count / (i + 1) - 1)
+                eta = datetime.timedelta(seconds=np.round(eta))
+                print("Building {}/{} - ETA: {}".format(i + 1, data_sources_count, eta))
             # endregion
 
-            max_labels_sizes.append(max_labels_size)
+            time.sleep(10.0)
+
+            working_builders = remaining_builders
 
         # region Modalities min/max for normalization (step 2 : compute)
         modalities_ranges = {
@@ -128,6 +148,7 @@ class TFRecordBuilder(object):
     def build_one(self, data_source: Union[DataSource, List[DataSource]]):
         builders = self.make_builders(video_source=data_source.video_source,
                                       video_frame_size=data_source.video_frame_size,
+                                      video_buffer_frame_size=self.video_buffer_frame_size,
                                       audio_source=data_source.audio_source)
 
         modality_builder = BuildersList(builders=builders)
@@ -147,9 +168,9 @@ class TFRecordBuilder(object):
 
         for i, shard in enumerate(source_iterator):
             # region Verbose
-            if self.verbose > 0:
-                print("\r{} : {}/{}".format(data_source.target_path, i + 1, shard_count), end='')
-            sys.stdout.flush()
+            # if self.verbose > 0:
+            #     print("\r{} : {}/{}".format(data_source.target_path, i + 1, shard_count), end='')
+            # sys.stdout.flush()
             # endregion
 
             modalities, labels = shard
@@ -194,6 +215,7 @@ class TFRecordBuilder(object):
                       video_source: Union[VideoReader, str, cv2.VideoCapture, np.ndarray, List[str]],
                       video_frame_size: Tuple[int, int],
                       audio_source: Union[AudioReader, str, np.ndarray],
+                      video_buffer_frame_size: Tuple[int, int],
                       ):
 
         builders: List[ModalityBuilder] = []
@@ -203,7 +225,8 @@ class TFRecordBuilder(object):
                                          source_frequency=self.video_frequency,
                                          modalities=self.modalities,
                                          video_reader=video_source,
-                                         default_frame_size=video_frame_size)
+                                         default_frame_size=video_frame_size,
+                                         buffer_frame_size=video_buffer_frame_size)
             builders.append(video_builder)
 
         if AudioBuilder.supports_any(self.modalities):

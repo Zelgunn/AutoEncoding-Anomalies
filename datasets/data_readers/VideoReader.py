@@ -34,6 +34,9 @@ class VideoReader(object):
         if self.mode == VideoReaderMode.CV_VIDEO_CAPTURE:
             if isinstance(video_source, str):
                 self.video_capture = cv2.VideoCapture(video_source)
+
+                if not self.video_capture.isOpened():
+                    raise RuntimeError("Could not open {}.".format(self.video_source))
             else:
                 self.video_capture = video_source
             max_frame_count = int(self.video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
