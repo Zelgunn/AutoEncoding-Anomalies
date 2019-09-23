@@ -33,8 +33,8 @@ class CustomModel(Model):
                                                       samples=steps_per_epoch,
                                                       verbose=verbose,
                                                       mode=ModeKeys.TRAIN)
-        train_aggregator = MetricsAggregator(use_steps=True, num_samples_or_steps=steps_per_epoch)
-        val_aggregator = MetricsAggregator(use_steps=True, num_samples_or_steps=validation_steps)
+        train_aggregator = MetricsAggregator(use_steps=True, num_samples=steps_per_epoch)
+        val_aggregator = MetricsAggregator(use_steps=True, num_samples=validation_steps)
 
         callbacks.on_train_begin()
 
@@ -117,12 +117,16 @@ class CustomModel(Model):
              filepath: str,
              overwrite=True,
              include_optimizer=True,
-             save_format=None):
+             save_format=None,
+             signatures=None,
+             options=None
+             ):
         last_point_index = filepath.rindex(".")
         filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
         for model, model_id in self.models_ids.items():
             model.save(filepath.format(model_id), overwrite=overwrite,
-                       include_optimizer=include_optimizer, save_format=save_format)
+                       include_optimizer=include_optimizer, save_format=save_format,
+                       signatures=signatures, options=options)
 
     def load_weights(self,
                      filepath: str,

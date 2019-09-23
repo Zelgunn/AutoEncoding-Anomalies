@@ -426,6 +426,7 @@ class SubsetLoader(object):
             end_in = np.all([end_time >= starts, end_time <= ends], axis=0)
 
             frame_in = np.any([start_in, end_in], axis=0)
+            # noinspection PyUnresolvedReferences
             frame_in = np.logical_and(frame_in, labels_are_not_equal)
             frame_in = np.any(frame_in, axis=1)
 

@@ -79,10 +79,10 @@ class Pattern(object):
 
     # endregion
 
-    def with_labels(self) -> "Pattern":
+    def with_labels(self) -> Optional["Pattern"]:
         return self.__class__(*self.elements, "labels")
 
-    def with_added_depth(self) -> "Pattern":
+    def with_added_depth(self) -> Optional["Pattern"]:
         return self.__class__(self.elements)
 
     def apply(self, modalities: Dict[str, tf.Tensor]):

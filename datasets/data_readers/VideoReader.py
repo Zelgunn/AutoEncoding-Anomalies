@@ -44,8 +44,10 @@ class VideoReader(object):
         elif self.mode == VideoReaderMode.NP_ARRAY:
             if isinstance(video_source, str):
                 self.video_array = np.load(video_source, mmap_mode="r")
-            else:
+            elif isinstance(video_source, np.ndarray):
                 self.video_array = video_source
+            else:
+                self.video_array = np.asarray(video_source)
             max_frame_count = len(self.video_array)
 
         else:
