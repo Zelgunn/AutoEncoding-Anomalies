@@ -2,9 +2,10 @@ import tensorflow as tf
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input
 from tensorflow.python.keras.layers import Conv3D, Conv3DTranspose, BatchNormalization, Flatten, Dense, Add
+from tensorflow.python.keras.layers import LeakyReLU
 from typing import Tuple
 
-from modalities import ModalityLoadInfo, RawVideo, Faces, Pattern
+from modalities import ModalityLoadInfo, RawVideo, Pattern
 from transformers import Transformer
 from transformers.Transformer import TransformerMode
 from models import AE, AEP, VAE, CNNTransformer, IAE
@@ -51,12 +52,15 @@ def make_decoder(input_layer, channels: int, common_cnn_params, name="Decoder") 
 
 
 def make_residual_encoder(input_layer, code_size: int, name="ResidualEncoder") -> Model:
+    leaky_relu = LeakyReLU(alpha=1e-2)
+
     x = input_layer
-    x = ResBlock3D(filters=32, strides=(1, 2, 2), kernel_size=3, basic_block_count=1)(x)
-    x = ResBlock3D(filters=64, strides=(2, 2, 2), kernel_size=3, basic_block_count=1)(x)
-    x = ResBlock3D(filters=128, strides=(2, 2, 2), kernel_size=3, basic_block_count=1)(x)
-    x = ResBlock3D(filters=256, strides=(2, 2, 2), kernel_size=(2, 3, 3), basic_block_count=1)(x)
-    x = ResBlock3D(filters=code_size, strides=1, kernel_size=(1, 3, 3), basic_block_count=1)(x)
+    x = ResBlock3D(filters=8, strides=(1, 2, 2), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3D(filters=12, strides=(2, 1, 1), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3D(filters=18, strides=(1, 2, 2), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3D(filters=27, strides=(2, 1, 1), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3D(filters=40, strides=(1, 2, 2), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3D(filters=code_size, strides=1, kernel_size=3, activation="sigmoid")(x)
 
     encoder_output = x
     encoder = Model(inputs=input_layer, outputs=encoder_output, name=name)
@@ -64,13 +68,16 @@ def make_residual_encoder(input_layer, code_size: int, name="ResidualEncoder") -
 
 
 def make_residual_decoder(input_layer, channels: int, name="ResidualDecoder") -> Model:
-    x = input_layer
+    leaky_relu = LeakyReLU(alpha=1e-2)
 
-    x = ResBlock3DTranspose(filters=256, strides=(2, 2, 2), kernel_size=(1, 3, 3), basic_block_count=1)(x)
-    x = ResBlock3DTranspose(filters=128, strides=(2, 2, 2), kernel_size=(2, 3, 3), basic_block_count=1)(x)
-    x = ResBlock3DTranspose(filters=64, strides=(2, 2, 2), kernel_size=3, basic_block_count=1)(x)
-    x = ResBlock3DTranspose(filters=32, strides=(1, 2, 2), kernel_size=3, basic_block_count=1)(x)
-    x = Conv3D(filters=channels, strides=1, kernel_size=3, padding="same", activation="sigmoid")(x)
+    x = input_layer
+    x = ResBlock3DTranspose(filters=64, strides=1, kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3DTranspose(filters=40, strides=(1, 2, 2), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3DTranspose(filters=27, strides=(1, 2, 2), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3DTranspose(filters=18, strides=(2, 1, 1), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3DTranspose(filters=12, strides=(1, 2, 2), kernel_size=3, activation=leaky_relu)(x)
+    x = ResBlock3DTranspose(filters=8, strides=(2, 1, 1), kernel_size=3, activation=leaky_relu)(x)
+    x = Conv3D(filters=channels, strides=1, kernel_size=1, padding="same", activation="linear", use_bias=False)(x)
 
     decoder_output = x
     decoder = Model(inputs=input_layer, outputs=decoder_output, name=name)
@@ -105,6 +112,7 @@ def make_video_cnn_transformer(input_length: int,
                                train_only_embeddings: bool,
                                copy_regularization_factor: float,
                                mode="AE",
+                               use_residual=False,
                                ) -> Tuple[Model, CNNTransformer]:
     mode = mode.upper()
     video_shape = (time_step, height, width, channels)
@@ -116,14 +124,16 @@ def make_video_cnn_transformer(input_length: int,
     }
 
     input_layer = Input(video_shape, name="InputLayer")
-    decoder_input_layer = Input(shape=[1, height // 16, width // 16, code_size], name="DecoderInputLayer")
+    decoder_input_layer = Input(shape=[time_step // 4, height // 8, width // 8, code_size], name="DecoderInputLayer")
 
     encoder_code_size = code_size if mode != "VAE" else code_size * 2
-    # encoder = make_encoder(input_layer, encoder_code_size, common_cnn_params)
-    # decoder = make_decoder(decoder_input_layer, channels, common_cnn_params)
 
-    encoder = make_residual_encoder(input_layer, encoder_code_size)
-    decoder = make_residual_decoder(decoder_input_layer, channels)
+    if use_residual:
+        encoder = make_residual_encoder(input_layer, encoder_code_size)
+        decoder = make_residual_decoder(decoder_input_layer, channels)
+    else:
+        encoder = make_encoder(input_layer, encoder_code_size, common_cnn_params)
+        decoder = make_decoder(decoder_input_layer, channels, common_cnn_params)
 
     # region VAEGAN
 
@@ -173,13 +183,13 @@ def make_video_cnn_transformer(input_length: int,
 
     transformer = Transformer(input_size=code_size,
                               output_size=code_size,
-                              output_activation="linear",
-                              layers_intermediate_size=code_size // 4,
+                              output_activation="sigmoid",
+                              layers_intermediate_size=code_size,
                               layers_count=4,
                               attention_key_size=code_size // 4,
                               attention_heads_count=4,
                               attention_values_size=code_size // 4,
-                              dropout_rate=0.1,
+                              dropout_rate=0.0,
                               positional_encoding_range=0.1,
                               mode=TransformerMode.CONTINUOUS,
                               copy_regularization_factor=copy_regularization_factor,
@@ -202,12 +212,14 @@ def make_augment_video_function(video_length: int,
                                 height: int,
                                 width: int,
                                 channels: int,
+                                to_grayscale: bool,
                                 extract_face: bool
                                 ):
-    preprocess_video = make_preprocess_video_function(height, width, channels, extract_face)
+    preprocess_video = make_preprocess_video_function(height, width, to_grayscale, extract_face)
 
+    # noinspection DuplicatedCode
     def augment_video(video: tf.Tensor,
-                      bounding_boxes: tf.Tensor,
+                      bounding_boxes: tf.Tensor = None,
                       ) -> tf.Tensor:
         if extract_face:
             video = preprocess_video(video, bounding_boxes)
@@ -219,7 +231,7 @@ def make_augment_video_function(video_length: int,
         video = tf.image.random_crop(video, crop_size)
 
         if not extract_face:
-            video = preprocess_video(video, bounding_boxes)
+            video = preprocess_video(video)
 
         return video
 
@@ -240,46 +252,46 @@ def get_video_length(model: Model, input_length: int, output_length: int, time_s
 
 def make_preprocess_video_function(height: int,
                                    width: int,
-                                   channels: int,
+                                   to_grayscale: bool,
                                    extract_face: bool,
                                    ):
-    def preprocess_video(video: tf.Tensor,
-                         bounding_boxes: tf.Tensor,
-                         labels: tf.Tensor = None
-                         ):
-        if extract_face:
-            video_shape = tf.shape(video)
-            source_height = tf.cast(video_shape[1], tf.float32)
-            source_width = tf.cast(video_shape[2], tf.float32)
-
-            boxes = bounding_boxes[0]
-
-            def _extract_face():
-                start_y, end_y = boxes[0] * source_height, boxes[1] * source_height
-                start_x, end_x = boxes[2] * source_width, boxes[3] * source_width
-
-                start_y, end_y = tf.cast(start_y, tf.int32), tf.cast(end_y, tf.int32)
-                start_x, end_x = tf.cast(start_x, tf.int32), tf.cast(end_x, tf.int32)
-
-                _video = video[:, start_y:end_y, start_x:end_x]
-
-                return _video
-
-            video = tf.cond(pred=tf.reduce_any(tf.math.is_nan(boxes)),
-                            true_fn=lambda: video,
-                            false_fn=_extract_face)
-
+    def resize_video(video: tf.Tensor,
+                     labels: tf.Tensor = None):
         video = tf.image.resize(video, (height, width))
 
-        if video.shape[-1] != channels:
-            if channels == 1:
-                video = tf.image.rgb_to_grayscale(video)
-            else:
-                video = tf.image.grayscale_to_rgb(video)
+        if to_grayscale:
+            rgb_weights = [0.2989, 0.5870, 0.1140]
+            rgb_weights = tf.reshape(rgb_weights, [1, 1, 1, 3])
+            video *= rgb_weights
+            video = tf.reduce_sum(video, axis=-1, keepdims=True)
 
         if labels is not None:
             return video, labels
         return video
+
+    def full_preprocess(video: tf.Tensor,
+                        bounding_boxes: tf.Tensor,
+                        labels: tf.Tensor = None
+                        ):
+        video_shape = tf.shape(video)
+        source_height = tf.cast(video_shape[1], tf.float32)
+        source_width = tf.cast(video_shape[2], tf.float32)
+
+        boxes = bounding_boxes[0]
+
+        start_y, end_y = boxes[0] * source_height, boxes[1] * source_height
+        start_x, end_x = boxes[2] * source_width, boxes[3] * source_width
+
+        start_y, end_y = tf.cast(start_y, tf.int32), tf.cast(end_y, tf.int32)
+        start_x, end_x = tf.cast(start_x, tf.int32), tf.cast(end_x, tf.int32)
+
+        video = video[:, start_y:end_y, start_x:end_x]
+
+        tf.assert_equal(tf.reduce_any(tf.math.is_nan(boxes)), False)
+
+        return resize_video(video, labels)
+
+    preprocess_video = full_preprocess if extract_face else resize_video
 
     return preprocess_video
 
@@ -294,6 +306,7 @@ def train_video_cnn_transformer(input_length=4,
                                 initial_epoch=0,
                                 use_transformer=False,
                                 autoencoder_mode="iae",
+                                use_residual=False,
                                 train_only_embeddings=True,
                                 copy_regularization_factor=1.0,
                                 batch_size=8,
@@ -307,23 +320,27 @@ def train_video_cnn_transformer(input_length=4,
                                                  code_size=code_size,
                                                  train_only_embeddings=train_only_embeddings,
                                                  copy_regularization_factor=copy_regularization_factor,
-                                                 mode=autoencoder_mode)
+                                                 mode=autoencoder_mode,
+                                                 use_residual=use_residual)
     model = transformer if use_transformer else ae
 
     video_length = get_video_length(model, input_length, output_length, time_step)
 
     # region Pattern
-    # augment_video = make_augment_video_function(video_length, height, width, channels)
-    preprocess_video = make_preprocess_video_function(height, width, channels, True)
+    extract_face = dataset_name in ["emoly"]
+    to_grayscale = dataset_name not in ["ucsd"]
+    preprocess_video = make_preprocess_video_function(height, width, to_grayscale, extract_face)
+    augment_video = make_augment_video_function(video_length, height, width, channels, to_grayscale, extract_face)
+    # augment_video = preprocess_video
 
     train_pattern = Pattern(
         ModalityLoadInfo(RawVideo, video_length),
-        ModalityLoadInfo(Faces, video_length),
-        output_map=preprocess_video
+        # ModalityLoadInfo(Faces, video_length),
+        output_map=augment_video
     )
     test_pattern = Pattern(
         ModalityLoadInfo(RawVideo, video_length),
-        ModalityLoadInfo(Faces, video_length),
+        # ModalityLoadInfo(Faces, video_length),
         output_map=preprocess_video
     )
     anomaly_pattern = Pattern(*test_pattern, "labels", output_map=preprocess_video)
@@ -366,7 +383,20 @@ def train_video_cnn_transformer(input_length=4,
                                  auc_callbacks_configs=auc_callbacks_configs,
                                  early_stopping_metric=model.metrics_names[0])
 
-    protocol.train_model(config=config)
+    try:
+        protocol.train_model(config=config)
+    except KeyboardInterrupt:
+        pass
+
+    total_output_length = output_length * time_step if use_transformer else video_length
+    test_config = ProtocolTestConfig(pattern=anomaly_pattern,
+                                     epoch=initial_epoch,
+                                     output_length=total_output_length,
+                                     detector_stride=1,
+                                     pre_normalize_predictions=True,
+                                     )
+
+    protocol.test_model(config=test_config)
 
 
 def test_video_cnn_transformer(input_length=4,
@@ -379,6 +409,7 @@ def test_video_cnn_transformer(input_length=4,
                                initial_epoch=15,
                                use_transformer=False,
                                autoencoder_mode="iae",
+                               use_residual=False,
                                dataset_name="ped2"):
     ae, transformer = make_video_cnn_transformer(input_length=input_length,
                                                  output_length=output_length,
@@ -389,17 +420,20 @@ def test_video_cnn_transformer(input_length=4,
                                                  code_size=code_size,
                                                  train_only_embeddings=False,
                                                  copy_regularization_factor=1.0,
-                                                 mode=autoencoder_mode)
+                                                 mode=autoencoder_mode,
+                                                 use_residual=use_residual)
     model = transformer if use_transformer else ae
 
     video_length = get_video_length(model, input_length, output_length, time_step)
 
     # region Pattern
-    preprocess_video = make_preprocess_video_function(height, width, channels, True)
+    extract_face = dataset_name in ["emoly"]
+    to_grayscale = dataset_name not in ["ucsd"]
+    preprocess_video = make_preprocess_video_function(height, width, to_grayscale, extract_face)
 
     pattern = Pattern(
         ModalityLoadInfo(RawVideo, video_length),
-        ModalityLoadInfo(Faces, video_length),
+        # ModalityLoadInfo(Faces, video_length),
         "labels",
         output_map=preprocess_video
     )
@@ -427,7 +461,7 @@ def test_video_cnn_transformer(input_length=4,
     config = ProtocolTestConfig(pattern=pattern,
                                 epoch=initial_epoch,
                                 output_length=total_output_length,
-                                detector_stride=4,
+                                detector_stride=32,
                                 pre_normalize_predictions=True,
                                 )
 

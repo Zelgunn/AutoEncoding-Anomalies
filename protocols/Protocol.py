@@ -6,7 +6,7 @@ from typing import List, Callable
 
 from anomaly_detection import AnomalyDetector, known_metrics, RawPredictionsModel
 from datasets import DatasetLoader, DatasetConfig
-from utils.train_utils import save_model_info
+from misc_utils.train_utils import save_model_info
 from callbacks import ImageCallback, EagerModelCheckpoint, AUCCallback
 from modalities import Pattern
 
@@ -129,7 +129,7 @@ class Protocol(object):
         self.dataset_config = DatasetConfig(self.dataset_folder, output_range=(0.0, 1.0))
         self.dataset_loader = DatasetLoader(self.dataset_config)
 
-        self.base_log_dir = "../logs/AutoEncoding-Anomalies/protocols/{protocol_name}/{dataset_name}" \
+        self.base_log_dir = "../logs/AEA/protocols/{protocol_name}/{dataset_name}" \
             .format(protocol_name=protocol_name, dataset_name=dataset_name)
 
     def train_model(self, config: ProtocolTrainConfig):
@@ -184,12 +184,15 @@ class Protocol(object):
         self.load_weights(epoch=config.epoch)
 
         metrics = list(known_metrics.keys())
+        if hasattr(self.autoencoder, "anomaly_metrics"):
+            metrics += getattr(self.autoencoder, "anomaly_metrics")
+
         anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
                                            output_length=config.output_length,
                                            metrics=metrics)
 
         log_dir = self.make_log_dir(False)
-        pattern = config.pattern.with_added_depth().with_added_depth()
+        pattern = config.pattern  # .with_added_depth().with_added_depth()
 
         if self.dataset_name is "emoly":
             folders = self.dataset_loader.test_subset.subset_folders
@@ -215,7 +218,7 @@ class Protocol(object):
     def make_log_dir(self, is_train: bool) -> str:
         timestamp = int(time.time())
         sub_folder = "train" if is_train else "anomaly_detection"
-        log_dir = os.path.join(self.base_log_dir, sub_folder, "{}".format(timestamp))
+        log_dir = os.path.join(self.base_log_dir, sub_folder, "{}_{}".format(timestamp, self.model_name))
         os.makedirs(log_dir)
         save_model_info(self.autoencoder, log_dir)
         return log_dir
@@ -226,12 +229,17 @@ class Protocol(object):
             self.model.load_weights(weights_path.format(epoch=epoch))
 
 
-def get_dataset_folder(dataset_name) -> str:
-    if dataset_name is "ped2":
-        return "../datasets/ucsd/ped2"
-    elif dataset_name is "ped1":
-        return "../datasets/ucsd/ped1"
-    elif dataset_name is "emoly":
-        return "../datasets/emoly"
+def get_dataset_folder(dataset_name: str) -> str:
+    known_datasets = {
+        "ped2": "../datasets/ucsd/ped2",
+        "ped1": "../datasets/ucsd/ped1",
+        "emoly": "E:/datasets/emoly",
+        "avenue": "../datasets/avenue",
+        "subway": "../datasets/subway/exit",
+        "shanghaitech": "../datasets/shanghaitech",
+    }
+
+    if dataset_name in known_datasets:
+        return known_datasets[dataset_name]
     else:
-        raise ValueError(dataset_name)
+        raise ValueError("Unknown dataset : {}".format(dataset_name))

@@ -6,7 +6,7 @@ from time import time
 from callbacks import AUCCallback, LandmarksVideoCallback
 from modalities import ModalityLoadInfo, Landmarks, Pattern
 from anomaly_detection import RawPredictionsModel, AnomalyDetector
-from utils.train_utils import save_model_info
+from misc_utils.train_utils import save_model_info
 from transformers import Transformer
 from transformers.core import PositionalEncodingMode
 from z_kitchen_sink.utils import get_landmarks_datasets

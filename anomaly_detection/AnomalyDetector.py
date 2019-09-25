@@ -33,14 +33,8 @@ class AnomalyDetector(Model):
             self.anomaly_metrics_names.append(metric_name)
 
     def call(self, inputs, training=None, mask=None):
-        if len(inputs) == 3:
-            inputs, outputs, labels = inputs
-        else:
-            inputs, labels = inputs
-            outputs = inputs
-
-        raw_predictions = self.raw_prediction_model([inputs, outputs])
-        return raw_predictions, labels
+        raw_predictions = self.raw_prediction_model(inputs)
+        return raw_predictions
 
     def predict_anomalies_on_sample(self,
                                     subset: SubsetLoader,
@@ -48,10 +42,32 @@ class AnomalyDetector(Model):
                                     sample_index: int,
                                     stride: int,
                                     normalize_predictions=False,
-                                    max_steps_count=100000
                                     ):
         dataset = subset.make_source_browser(pattern, sample_index, stride)
-        *predictions, labels = self.predict(dataset, steps=max_steps_count)
+
+        get_outputs_from_inputs = len(dataset.element_spec) == 2
+
+        predictions, labels = None, []
+        for sample in dataset:
+            if get_outputs_from_inputs:
+                sample_inputs, sample_labels = sample
+                sample_outputs = sample_inputs
+            else:
+                sample_inputs, sample_outputs, sample_labels = sample
+
+            sample_predictions = self([sample_inputs, sample_outputs])
+
+            labels.append(sample_labels)
+            if predictions is None:
+                predictions = [[metric_prediction] for metric_prediction in sample_predictions]
+            else:
+                for i in range(len(predictions)):
+                    predictions[i].append(sample_predictions[i])
+
+        predictions = [np.concatenate(metric_prediction, axis=0) for metric_prediction in predictions]
+        labels = np.concatenate(labels, axis=0)
+
+        # *predictions, labels = self.predict(dataset, steps=max_steps_count)
         labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
         labels = np.any(labels, axis=-1)
 

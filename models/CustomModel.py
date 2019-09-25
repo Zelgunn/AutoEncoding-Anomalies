@@ -133,10 +133,12 @@ class CustomModel(Model):
                      by_name=False):
         last_point_index = filepath.rindex(".")
         filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
+        result = None
         for model, model_id in self.models_ids.items():
             model_filepath = filepath.format(model_id)
             if os.path.isfile(model_filepath):
-                model.load_weights(model_filepath, by_name=by_name)
+                result = model.load_weights(model_filepath, by_name=by_name)
             else:
                 print("Could not load {} - {} is not a valid filepath".format(model_id, model_filepath))
+        return result
     # endregion

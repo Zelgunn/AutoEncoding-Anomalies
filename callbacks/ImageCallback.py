@@ -4,7 +4,7 @@ from tensorflow.python.eager import def_function
 from typing import List, Union, Callable
 
 from callbacks import TensorBoardPlugin
-from utils.summary_utils import image_summary
+from misc_utils.summary_utils import image_summary
 from datasets import SubsetLoader
 from modalities import Pattern
 

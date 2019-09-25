@@ -51,6 +51,7 @@ class VideoEncoderLayer(Layer):
         return tf.TensorSpec(self.compute_output_shape(input_signature.shape), input_signature.dtype)
 
 
+# noinspection DuplicatedCode
 class VideoDecoderLayer(Layer):
     def __init__(self, filters, kernel_size, strides, activation=None, **kwargs):
         super(VideoDecoderLayer, self).__init__(**kwargs)

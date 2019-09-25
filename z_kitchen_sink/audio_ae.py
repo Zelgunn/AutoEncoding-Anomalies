@@ -52,6 +52,7 @@ class AudioEncoderLayer(Layer):
         return tf.TensorSpec(self.compute_output_shape(input_signature.shape), input_signature.dtype)
 
 
+# noinspection DuplicatedCode
 class AudioDecoderLayer(Layer):
     def __init__(self, filters, kernel_size, strides, padding="same", activation=None, **kwargs):
         super(AudioDecoderLayer, self).__init__(**kwargs)
@@ -84,6 +85,7 @@ class AudioDecoderLayer(Layer):
 # endregion
 
 # region Encoder/Decoder
+# noinspection DuplicatedCode
 def make_audio_encoder(input_shape: Tuple[int, ...]):
     sequence_length = input_shape[0]
     input_layer = Input(input_shape)
@@ -104,6 +106,7 @@ def make_audio_encoder(input_shape: Tuple[int, ...]):
     return encoder
 
 
+# noinspection DuplicatedCode
 def make_audio_decoder(input_shape: Tuple[int, ...], name, _, n_mel_filters):
     input_layer = Input(input_shape)
     layer = input_layer

@@ -9,7 +9,7 @@ from typing import Tuple, Optional
 
 from anomaly_detection import RawPredictionsModel
 from callbacks import TensorBoardPlugin
-from utils.plot_utils import plot_line2d_to_array
+from misc_utils.plot_utils import plot_line2d_to_array
 from datasets import SubsetLoader
 from modalities import Pattern
 

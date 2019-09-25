@@ -4,6 +4,7 @@ import tensorflow_datasets as tfd
 from models.VAEGAN import VAEGAN
 
 
+# noinspection DuplicatedCode
 def make_encoder(input_shape, code_size: int):
     input_layer = tf.keras.layers.Input(input_shape)
     x = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=(2, 2), activation="relu")(input_layer)
@@ -24,6 +25,7 @@ def make_decoder(z_shape):
     return tf.keras.Model(inputs=input_layer, outputs=output_layer)
 
 
+# noinspection DuplicatedCode
 def make_discriminator(input_shape):
     input_layer = tf.keras.layers.Input(input_shape)
     x = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=(2, 2), activation="relu")(input_layer)
@@ -41,6 +43,7 @@ def extract_and_convert_image(inputs):
     return image
 
 
+# noinspection DuplicatedCode,DuplicatedCode
 def main():
     input_shape = (28, 28, 1)
     code_size = 128

@@ -56,6 +56,7 @@ class CNNTransformer(CustomModel):
         self.transformer_evaluator = transformer.make_evaluator(output_length)
         self._evaluator: Optional[tf.keras.models.Sequential] = None
 
+    # noinspection DuplicatedCode
     def call(self, inputs, training=None, mask=None):
         encoder_embedding_input = self.split_inputs(inputs)
         decoder_embedding_input = self.split_outputs(inputs)
@@ -95,7 +96,7 @@ class CNNTransformer(CustomModel):
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        if self.transformer.add_copy_regularization:
+        if self.transformer.add_copy_regularization and self.train_only_embeddings:
             loss, copy_regularization = loss
             copy_regularization /= self.transformer.copy_regularization_factor
             loss = (loss, copy_regularization)
@@ -122,6 +123,7 @@ class CNNTransformer(CustomModel):
         transformer_loss = self.transformer.compute_loss(encoder_latent_code, decoder_latent_code)
         return transformer_loss
 
+    # noinspection DuplicatedCode
     @tf.function
     def compute_reconstruction_loss(self, inputs):
         encoder_embedding_input = self.split_inputs(inputs)
@@ -140,6 +142,21 @@ class CNNTransformer(CustomModel):
 
         reconstruction_loss = tf.reduce_mean(tf.square(decoder_embedding_input - decoded))
         return reconstruction_loss
+
+    # @property
+    # def anomaly_metrics(self) -> List:
+    #     @tf.function
+    #     def embeddings_loss(_, inputs):
+    #         transformer_loss = self.compute_embeddings_loss(inputs)
+    #         if self.transformer.add_copy_regularization:
+    #             transformer_loss = transformer_loss[0]
+    #         return transformer_loss
+    #
+    #     @tf.function
+    #     def combined_loss(_, inputs):
+    #         return self.compute_reconstruction_loss(inputs) + embeddings_loss(_, inputs)
+    #
+    #     return [embeddings_loss, combined_loss]
 
     @property
     def metrics_names(self):

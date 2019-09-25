@@ -10,7 +10,7 @@ from callbacks import ImageCallback, AUCCallback
 from datasets.loaders import DatasetConfig, DatasetLoader
 from modalities import ModalityLoadInfo, RawVideo, Pattern
 from anomaly_detection import RawPredictionsLayer, AnomalyDetector
-from utils.train_utils import save_model_info
+from misc_utils.train_utils import save_model_info
 from transformers import VideoTransformer
 
 
@@ -81,6 +81,7 @@ def train_scaling_video_transformer():
     def preprocess_video(video: tf.Tensor, labels: tf.Tensor = None):
         # video = reduce_channels(video)
 
+        # noinspection DuplicatedCode
         if what_to_do == "train":
             crop_ratio = tf.random.uniform(shape=(), minval=0.75, maxval=1.0)
             original_shape = tf.cast(tf.shape(video), tf.float32)

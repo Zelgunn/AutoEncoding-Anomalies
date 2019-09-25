@@ -5,6 +5,7 @@
       <w>astype</w>
       <w>autoencode</w>
       <w>autoencoder</w>
+      <w>autoregressive</w>
       <w>blurrer</w>
       <w>broadcastable</w>
       <w>castable</w>
@@ -57,6 +58,8 @@
       <w>pwet</w>
       <w>pyplot</w>
       <w>resampling</w>
+      <w>saam</w>
+      <w>shanghaitech</w>
       <w>softmax</w>
       <w>spatio</w>
       <w>spectrograms</w>
