@@ -1,5 +1,4 @@
 import tensorflow as tf
-from abc import abstractmethod
 
 from protocols import DatasetProtocol
 from protocols import ImageCallbackConfig
@@ -7,6 +6,7 @@ from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import IAE
 
 
+# noinspection PyAbstractClass
 class VideoProtocol(DatasetProtocol):
     def __init__(self,
                  dataset_name: str,

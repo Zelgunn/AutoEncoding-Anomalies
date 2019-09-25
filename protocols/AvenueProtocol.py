@@ -6,18 +6,11 @@ from protocols.utils import make_residual_encoder, make_residual_decoder
 from models import IAE
 
 
-class UCSDProtocol(VideoProtocol):
+class AvenueProtocol(VideoProtocol):
     def __init__(self,
-                 dataset_version=2,
                  initial_epoch=0,
                  model_name=None
                  ):
-        if dataset_version not in [1, 2]:
-            raise ValueError("`dataset_version` must either be 1 (ped1) or 2 (ped2). Received {}."
-                             .format(dataset_version))
-
-        dataset_name = "ped1" if dataset_version == 1 else "ped2"
-
         self.initial_epoch = initial_epoch
 
         self.step_size = 8
@@ -41,11 +34,11 @@ class UCSDProtocol(VideoProtocol):
                                 (2, 1, 1)]
         self.output_activation = "linear"
 
-        super(UCSDProtocol, self).__init__(dataset_name=dataset_name,
-                                           protocol_name="video",
-                                           height=128,
-                                           width=128,
-                                           model_name=model_name)
+        super(AvenueProtocol, self).__init__(dataset_name="avenue",
+                                             protocol_name="video",
+                                             height=128,
+                                             width=128,
+                                             model_name=model_name)
 
     def make_model(self) -> Model:
         input_shape = (None, self.step_size, self.height, self.width, 1)
@@ -102,7 +95,6 @@ class UCSDProtocol(VideoProtocol):
 
     def get_config(self) -> Dict:
         config = {
-            "dataset_version": self.dataset_name,
             "step_size": self.step_size,
             "step_count": self.step_count,
             "code_size": self.code_size,
@@ -115,5 +107,5 @@ class UCSDProtocol(VideoProtocol):
             "decoder_strides": self.decoder_strides,
             "output_activation": self.output_activation,
         }
-        base_config = super(UCSDProtocol, self).get_config()
+        base_config = super(AvenueProtocol, self).get_config()
         return {**base_config, **config}

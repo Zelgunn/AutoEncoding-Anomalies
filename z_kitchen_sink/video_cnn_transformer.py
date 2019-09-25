@@ -217,7 +217,6 @@ def make_augment_video_function(video_length: int,
                                 ):
     preprocess_video = make_preprocess_video_function(height, width, to_grayscale, extract_face)
 
-    # noinspection DuplicatedCode
     def augment_video(video: tf.Tensor,
                       bounding_boxes: tf.Tensor = None,
                       ) -> tf.Tensor:

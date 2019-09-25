@@ -56,7 +56,6 @@ class CNNTransformer(CustomModel):
         self.transformer_evaluator = transformer.make_evaluator(output_length)
         self._evaluator: Optional[tf.keras.models.Sequential] = None
 
-    # noinspection DuplicatedCode
     def call(self, inputs, training=None, mask=None):
         encoder_embedding_input = self.split_inputs(inputs)
         decoder_embedding_input = self.split_outputs(inputs)
@@ -123,7 +122,6 @@ class CNNTransformer(CustomModel):
         transformer_loss = self.transformer.compute_loss(encoder_latent_code, decoder_latent_code)
         return transformer_loss
 
-    # noinspection DuplicatedCode
     @tf.function
     def compute_reconstruction_loss(self, inputs):
         encoder_embedding_input = self.split_inputs(inputs)
