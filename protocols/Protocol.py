@@ -2,7 +2,7 @@ from tensorflow.python.keras import Model
 from tensorflow.python.keras.callbacks import Callback, TensorBoard, EarlyStopping
 import time
 import os
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 from anomaly_detection import AnomalyDetector, known_metrics, RawPredictionsModel
 from datasets import DatasetLoader, DatasetConfig
@@ -123,6 +123,7 @@ class Protocol(object):
         if model_name is None:
             model_name = model.name
         self.model_name = model_name
+        self.protocol_name = protocol_name
 
         self.dataset_name = dataset_name
         self.dataset_folder = get_dataset_folder(dataset_name)

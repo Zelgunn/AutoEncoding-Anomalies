@@ -10,7 +10,7 @@ def main():
     code_size = 64
     input_length, output_length, time_step = 4, 4, 8
     height = width = 128
-    initial_epoch = 7
+    initial_epoch = 0
     train = 1
     train_only_embeddings = True and use_transformer
     if train:

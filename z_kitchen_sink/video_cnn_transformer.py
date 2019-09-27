@@ -391,7 +391,7 @@ def train_video_cnn_transformer(input_length=4,
     test_config = ProtocolTestConfig(pattern=anomaly_pattern,
                                      epoch=initial_epoch,
                                      output_length=total_output_length,
-                                     detector_stride=1,
+                                     detector_stride=total_output_length,
                                      pre_normalize_predictions=True,
                                      )
 
@@ -460,7 +460,7 @@ def test_video_cnn_transformer(input_length=4,
     config = ProtocolTestConfig(pattern=pattern,
                                 epoch=initial_epoch,
                                 output_length=total_output_length,
-                                detector_stride=32,
+                                detector_stride=1,
                                 pre_normalize_predictions=True,
                                 )
 
