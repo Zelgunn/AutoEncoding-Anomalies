@@ -5,7 +5,7 @@ from time import time
 
 from callbacks import AUCCallback, LandmarksVideoCallback
 from modalities import ModalityLoadInfo, Landmarks, Pattern
-from anomaly_detection import RawPredictionsModel, AnomalyDetector
+from anomaly_detection import IOCompareModel, AnomalyDetector
 from misc_utils.train_utils import save_model_info
 from transformers import Transformer
 from transformers.core import PositionalEncodingMode
@@ -144,7 +144,7 @@ def train_landmarks_transformer():
     #                                     prefix=str(input_length))
     # endregion
     # region Default (128 frames)
-    raw_predictions_model = RawPredictionsModel(landmarks_transformer, output_length)
+    raw_predictions_model = IOCompareModel(landmarks_transformer, output_length)
 
     auc_callback_128 = AUCCallback.from_subset(predictions_model=raw_predictions_model, tensorboard=tensorboard,
                                                test_subset=test_subset, pattern=anomaly_pattern, samples_count=512,
@@ -153,7 +153,7 @@ def train_landmarks_transformer():
     # region Evaluator
     # evaluator_ground_truth = Input(batch_shape=evaluator.output.shape, name="EvaluatorGroundTruth")
     # evaluator_raw_predictions = RawPredictionsLayer()([evaluator.output, evaluator_ground_truth])
-    evaluator_raw_predictions_model = RawPredictionsModel(landmarks_transformer, output_length)
+    evaluator_raw_predictions_model = IOCompareModel(landmarks_transformer, output_length)
     evaluator_auc_callback = AUCCallback.from_subset(predictions_model=evaluator_raw_predictions_model,
                                                      tensorboard=tensorboard, test_subset=test_subset,
                                                      pattern=anomaly_pattern, samples_count=512, prefix="Evaluator")

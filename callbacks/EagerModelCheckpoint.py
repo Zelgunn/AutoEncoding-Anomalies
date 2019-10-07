@@ -12,4 +12,5 @@ class EagerModelCheckpoint(tf.keras.callbacks.Callback):
         if self.verbose > 0:
             print("\nEpoch {epoch:05d}: saving model to {path}".format(epoch=epoch + 1, path=target_path))
         self.model.save(target_path,
-                        include_optimizer=not tf.executing_eagerly())
+                        include_optimizer=True)
+        exit()

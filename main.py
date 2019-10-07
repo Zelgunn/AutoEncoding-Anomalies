@@ -1,21 +1,25 @@
-from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTechProtocol
+from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTechProtocol, SubwayProtocol
 
 
 def main():
     train = 1
     initial_epoch = 0
-    dataset = "shanghaitech"
+    dataset = "ped1"
 
-    if dataset is "ped2":
+    if dataset == "ped2":
         protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=2)
-    elif dataset is "ped1":
+    elif dataset == "ped1":
         protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=1)
-    elif dataset is "avenue":
+    elif dataset == "avenue":
         protocol = AvenueProtocol(initial_epoch=initial_epoch)
-    elif dataset is "shanghaitech":
+    elif dataset == "shanghaitech":
         protocol = ShanghaiTechProtocol(initial_epoch=initial_epoch)
+    elif dataset == "subway":
+        protocol = SubwayProtocol(initial_epoch=initial_epoch)
     else:
         raise ValueError
+
+    # protocol.autoencode_video(r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped1\Test\Test003")
 
     if train:
         protocol.train_model()

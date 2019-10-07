@@ -3,14 +3,14 @@ from tensorflow.python.keras import Model
 from protocols import VideoProtocol, ProtocolTrainConfig, ProtocolTestConfig
 
 
-class ShanghaiTechProtocol(VideoProtocol):
+class EmolyProtocol(VideoProtocol):
     def __init__(self,
                  initial_epoch=0,
                  model_name=None
                  ):
-        super(ShanghaiTechProtocol, self).__init__(dataset_name="shanghaitech",
-                                                   initial_epoch=initial_epoch,
-                                                   model_name=model_name)
+        super(EmolyProtocol, self).__init__(dataset_name="emoly",
+                                            initial_epoch=initial_epoch,
+                                            model_name=model_name)
 
     def get_train_config(self) -> ProtocolTrainConfig:
         train_pattern = self.get_train_pattern()
@@ -39,8 +39,8 @@ class ShanghaiTechProtocol(VideoProtocol):
 
     @property
     def use_cropping(self) -> bool:
-        return True
+        return False
 
     @property
     def use_face(self) -> bool:
-        return False
+        return True

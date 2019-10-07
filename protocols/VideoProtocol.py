@@ -1,13 +1,16 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.layers import LeakyReLU
 from abc import abstractmethod
 from typing import List
 
+from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
 from protocols import ImageCallbackConfig
 from protocols.utils import make_residual_encoder, make_residual_decoder
 from modalities import Pattern, ModalityLoadInfo, RawVideo
-from models import IAE
+from models import AE, IAE
+from models.autoregressive import SAAM, AND
 
 
 class VideoProtocol(DatasetProtocol):
@@ -22,38 +25,89 @@ class VideoProtocol(DatasetProtocol):
                                             model_name=model_name)
 
     def make_model(self) -> Model:
-        if self.model_architecture is "iae":
+        if self.model_architecture == "ae":
+            return self.make_ae()
+        elif self.model_architecture == "iae":
             return self.make_iae()
+        elif self.model_architecture == "and":
+            return self.make_and()
         else:
             raise ValueError("Unknown architecture : {}.".format(self.model_architecture))
 
-    def make_iae(self) -> IAE:
-        encoder_input_shape = (None, self.step_size, self.height, self.width, 1)
-        encoder = self.make_encoder(encoder_input_shape[1:])
+    def make_ae(self) -> AE:
+        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
 
-        decoder_input_shape = encoder.compute_output_shape(encoder_input_shape)
-        decoder = self.make_decoder(decoder_input_shape[1:])
+        model = AE(encoder=encoder,
+                   decoder=decoder)
+        return model
+
+    def make_iae(self) -> IAE:
+        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
 
         model = IAE(encoder=encoder,
                     decoder=decoder,
                     step_size=self.step_size)
         return model
 
-    def make_encoder(self, input_shape):
+    def make_and(self) -> AND:
+        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
+        conv_am = self.make_conv_am(self.get_saam_input_shape()[1:])
+
+        model = AND(encoder=encoder,
+                    decoder=decoder,
+                    am=conv_am,
+                    step_size=self.step_size)
+
+        return model
+
+    def get_encoder_input_shape(self):
+        shape = (None, self.step_size, self.height, self.width, 1)
+        return shape
+
+    def get_latent_code_shape(self, encoder: Model):
+        shape = encoder.compute_output_shape(self.get_encoder_input_shape())
+        return shape
+
+    def get_saam_input_shape(self):
+        shape = (None, self.step_count, self.code_size)
+        return shape
+
+    def make_encoder(self, input_shape) -> Model:
         encoder = make_residual_encoder(input_shape=input_shape,
                                         filters=self.encoder_filters,
                                         strides=self.encoder_strides,
                                         code_size=self.code_size,
-                                        code_activation=self.code_activation,)
+                                        code_activation=self.code_activation, )
         return encoder
 
-    def make_decoder(self, input_shape):
+    def make_decoder(self, input_shape) -> Model:
         decoder = make_residual_decoder(input_shape=input_shape,
                                         filters=self.decoder_filters,
                                         strides=self.decoder_strides,
                                         channels=1,
                                         output_activation=self.output_activation)
         return decoder
+
+    def make_saam(self, input_shape) -> SAAM:
+        saam = SAAM(layer_count=4,
+                    head_count=4,
+                    head_size=8,
+                    intermediate_size=4,
+                    output_size=100,
+                    output_activation="softmax",
+                    input_shape=input_shape)
+        return saam
+
+    def make_conv_am(self, input_shape):
+        conv_am = ConvAM(rank=2,
+                         filters=[4, 4, 4, 20],
+                         intermediate_activation="relu",
+                         output_activation="linear",
+                         input_shape=input_shape)
+        return conv_am
 
     # region Patterns
     def get_train_pattern(self) -> Pattern:
@@ -145,6 +199,7 @@ class VideoProtocol(DatasetProtocol):
     @abstractmethod
     def use_face(self) -> bool:
         raise NotImplementedError
+
     # endregion
     # region Config properties
     @property
@@ -194,12 +249,48 @@ class VideoProtocol(DatasetProtocol):
     @property
     def output_activation(self) -> str:
         return self.config["output_activation"]
+
     # endregion
 
     @property
     def output_length(self) -> int:
-        if self.model_architecture is "iae":
+        if self.model_architecture in ["iae", "and"]:
             return self.step_size * self.step_count
         else:
             return self.step_size
+
     # endregion
+
+    def autoencode_video(self, video_source):
+        from datasets.data_readers import VideoReader
+        import numpy as np
+        import cv2
+
+        self.load_weights(epoch=30)
+
+        video_reader = VideoReader(video_source)
+        frames = [cv2.resize(frame, (128, 128)) for frame in video_reader]
+        frames = np.stack(frames, axis=0)
+        frames = np.expand_dims(frames, axis=-1)
+        frames = frames.astype(np.float32) / 255.0
+
+        step_size = 8
+        step_count = len(frames) // step_size
+        base_shape = frames.shape
+        frames = np.reshape(frames, [step_count, step_size, *frames.shape[1:]])
+
+        decoded = self.autoencoder(frames)
+        decoded = decoded.numpy()
+
+        frames = np.reshape(frames, base_shape)
+        decoded = np.reshape(decoded, base_shape)
+
+        for i in range(len(frames)):
+            frame = cv2.resize(frames[i], (512, 512))
+            decoded_frame = cv2.resize(decoded[i], (512, 512))
+            cv2.imshow("frame", frame)
+            cv2.imshow("decoded", decoded_frame)
+            cv2.imshow("diff", np.abs(frame - decoded_frame))
+            cv2.waitKey(0)
+
+        exit()

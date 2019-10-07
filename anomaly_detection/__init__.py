@@ -1,3 +1,3 @@
-from anomaly_detection.RawPredictionsLayer import RawPredictionsLayer, known_metrics
-from anomaly_detection.RawPredictionsModel import RawPredictionsModel
+from anomaly_detection.IOCompareLayer import IOCompareLayer, known_metrics
+from anomaly_detection.IOCompareModel import IOCompareModel
 from anomaly_detection.AnomalyDetector import AnomalyDetector

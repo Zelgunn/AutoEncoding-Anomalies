@@ -26,7 +26,7 @@ def negative_ssim(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 
 def negative_psnr(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """
-    Computes one minus PSNR between `y_true` and `y_pred`.
+    Computes negative PSNR between `y_true` and `y_pred`.
 
     Values of `y_true` and `y_pred` are supposed to be between 0.0 and 1.0.
 
@@ -35,7 +35,7 @@ def negative_psnr(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     :return: A tensor with the same shape as `y_true` and `y_pred`, minus the last 3 dimensions, and the same
         dtype as inputs.
     """
-    return 1 - tf.image.psnr(y_true, y_pred, max_val=1.0)
+    return - tf.image.psnr(y_true, y_pred, max_val=1.0)
 
 
 known_metrics = {
@@ -46,9 +46,9 @@ known_metrics = {
 }
 
 
-class RawPredictionsLayer(Layer):
+class IOCompareLayer(Layer):
     """
-    Layer class for making raw predictions for anomaly detection.
+    Layer class for making raw predictions for anomaly detection, by using a comparison metric.
 
     Arguments:
         metric: Either a string ("mse", "mae", "ssim", "psnr") or a function that takes two arguments
@@ -61,8 +61,8 @@ class RawPredictionsLayer(Layer):
                  metric="mse",
                  output_length: int = None,
                  **kwargs):
+        super(IOCompareLayer, self).__init__(trainable=False, **kwargs)
 
-        super(RawPredictionsLayer, self).__init__(trainable=False, **kwargs)
         if isinstance(metric, str):
             if metric in known_metrics:
                 metric = known_metrics[metric]

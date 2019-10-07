@@ -20,7 +20,7 @@ class DatasetProtocol(Protocol):
 
         self.config = self.load_config(protocol_name, dataset_name)
         model = self.make_model()
-        autoencoder = self.make_autoencoder()
+        autoencoder = self.make_autoencoder(model)
         self.initial_epoch = initial_epoch
 
         super(DatasetProtocol, self).__init__(model=model,
@@ -35,8 +35,8 @@ class DatasetProtocol(Protocol):
         raise NotImplementedError
 
     @staticmethod
-    def make_autoencoder() -> Optional[Callable]:
-        return None
+    def make_autoencoder(model: Model = None) -> Optional[Callable]:
+        return model
 
     # endregion
 
@@ -91,8 +91,8 @@ class DatasetProtocol(Protocol):
 
         return auc_callbacks_configs
 
-    def make_log_dir(self, is_train: bool) -> str:
-        log_dir = super(DatasetProtocol, self).make_log_dir(is_train)
+    def make_log_dir(self, sub_folder: str) -> str:
+        log_dir = super(DatasetProtocol, self).make_log_dir(sub_folder)
         self.save_config(log_dir)
         return log_dir
 

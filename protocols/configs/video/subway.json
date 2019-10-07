@@ -1,0 +1,27 @@
+{
+    "model_architecture": "iae",
+    "step_size": 8,
+    "step_count": 4,
+    "height": 128,
+    "width" : 128,
+    "code_size": 64,
+    "code_activation": "sigmoid",
+    "encoder_filters": [8, 12, 18, 27, 40],
+    "encoder_strides": [
+        [1, 2, 2],
+        [2, 1, 1],
+        [1, 2, 2],
+        [2, 1, 1],
+        [1, 2, 2]
+    ],
+    "decoder_filters": [64, 40, 27, 18, 12, 8],
+    "decoder_strides": [
+        [1, 1, 1],
+        [1, 2, 2],
+        [1, 2, 2],
+        [2, 1, 1],
+        [1, 2, 2],
+        [2, 1, 1]
+    ],
+    "output_activation": "linear"
+}

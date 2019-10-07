@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import activations, Model
-from tensorflow.python.keras.layers import Layer, Dense, InputSpec
+from tensorflow.python.keras.layers import Layer, Dense, InputSpec, Lambda
 from typing import List, Optional
 
 from transformers.utils import get_look_ahead_mask
@@ -16,6 +16,8 @@ class SAAM(Model):
                  output_size: int,
                  output_activation="linear",
                  **kwargs):
+        input_shape = kwargs.pop("input_shape") if "input_shape" in kwargs else None
+
         super(SAAM, self).__init__(**kwargs)
 
         self.layer_count = layer_count
@@ -32,20 +34,24 @@ class SAAM(Model):
                                                            for _ in range(layer_count)]
 
         self.output_layer = Dense(units=output_size, use_bias=False, activation=self.output_activation)
+        # self.input_spec = InputSpec(ndim=3)
+
+        if input_shape is not None:
+            input_layer = tf.keras.layers.Input(input_shape)
+            output = self.call(input_layer)
+            self._init_graph_network(input_layer, output)
+
+    @property
+    def input_spec(self):
+        return InputSpec(ndim=3)
 
     def call(self, inputs, training=None, mask=None):
-        # region Flatten
-        inputs_shape = tf.shape(inputs)
-        batch_size = inputs_shape[0]
-        input_size = inputs_shape[-1]
-        inputs = tf.reshape(inputs, [batch_size, -1, input_size])
-        # endregion
-
         # region Projection
         predicted_outputs = inputs
         if inputs.shape[-1] != self.intermediate_size:
             if self.projection_layer is None:
-                self.projection_layer = Dense(units=self.intermediate_size, use_bias=False,
+                self.projection_layer = Dense(units=self.intermediate_size,
+                                              use_bias=False,
                                               name="projection_to_intermediate_size")
             predicted_outputs = self.projection_layer(inputs)
         # endregion
@@ -65,11 +71,6 @@ class SAAM(Model):
         # endregion
 
         outputs = self.output_layer(outputs)
-
-        # region Unflatten
-        outputs_shape = tf.concat([inputs_shape[:-1], [self.output_size]], axis=0)
-        outputs = tf.reshape(outputs, outputs_shape)
-        # endregion
 
         return outputs
 

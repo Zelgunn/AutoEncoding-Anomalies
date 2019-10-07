@@ -1,13 +1,14 @@
+import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.callbacks import Callback, TensorBoard, EarlyStopping
+from tensorflow.python.keras.callbacks import Callback, TensorBoard, EarlyStopping, ModelCheckpoint
 import time
 import os
-from typing import List, Callable, Optional
+from typing import List, Callable
 
-from anomaly_detection import AnomalyDetector, known_metrics, RawPredictionsModel
+from anomaly_detection import AnomalyDetector, known_metrics, IOCompareModel
 from datasets import DatasetLoader, DatasetConfig
 from misc_utils.train_utils import save_model_info
-from callbacks import ImageCallback, EagerModelCheckpoint, AUCCallback
+from callbacks import ImageCallback, AUCCallback
 from modalities import Pattern
 
 
@@ -58,9 +59,9 @@ class AUCCallbackConfig(object):
                     tensorboard: TensorBoard,
                     dataset_loader: DatasetLoader,
                     ) -> AUCCallback:
-        raw_predictions_model = RawPredictionsModel(self.autoencoder,
-                                                    output_length=self.output_length,
-                                                    name="{}AutoencoderRawPredictionsModel".format(self.prefix))
+        raw_predictions_model = IOCompareModel(self.autoencoder,
+                                               output_length=self.output_length,
+                                               name="{}AutoencoderRawPredictionsModel".format(self.prefix))
 
         return AUCCallback.from_subset(predictions_model=raw_predictions_model,
                                        tensorboard=tensorboard,
@@ -98,6 +99,7 @@ class ProtocolTestConfig(object):
                  output_length: int,
                  detector_stride: int,
                  pre_normalize_predictions: bool,
+                 additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
                  **kwargs,
                  ):
         self.pattern = pattern
@@ -105,6 +107,7 @@ class ProtocolTestConfig(object):
         self.output_length = output_length
         self.detector_stride = detector_stride
         self.pre_normalize_predictions = pre_normalize_predictions
+        self.additional_metrics = additional_metrics
         self.kwargs = kwargs
 
 
@@ -136,7 +139,7 @@ class Protocol(object):
     def train_model(self, config: ProtocolTrainConfig):
         self.load_weights(epoch=config.initial_epoch)
 
-        log_dir = self.make_log_dir(True)
+        log_dir = self.make_log_dir("train")
         callbacks = self.make_callback(log_dir, config)
 
         dataset = self.dataset_loader.train_subset.make_tf_dataset(config.pattern)
@@ -145,8 +148,8 @@ class Protocol(object):
         val_dataset = self.dataset_loader.test_subset.make_tf_dataset(config.pattern)
         val_dataset = val_dataset.batch(config.batch_size)
 
-        self.model.fit(dataset, steps_per_epoch=1000, epochs=config.epochs,
-                       validation_data=val_dataset, validation_steps=100,
+        self.model.fit(dataset, steps_per_epoch=10, epochs=config.epochs,
+                       validation_data=val_dataset, validation_steps=1,
                        callbacks=callbacks, initial_epoch=config.initial_epoch)
 
     def make_callback(self,
@@ -162,7 +165,7 @@ class Protocol(object):
         # endregion
         # region Checkpoint
         weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
-        model_checkpoint = EagerModelCheckpoint(weights_path)
+        model_checkpoint = ModelCheckpoint(weights_path)
         callbacks.append(model_checkpoint)
         # endregion
         # region Early stopping
@@ -184,15 +187,14 @@ class Protocol(object):
     def test_model(self, config: ProtocolTestConfig):
         self.load_weights(epoch=config.epoch)
 
-        metrics = list(known_metrics.keys())
-        if hasattr(self.autoencoder, "anomaly_metrics"):
-            metrics += getattr(self.autoencoder, "anomaly_metrics")
+        compare_metrics = list(known_metrics.keys())
 
         anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
                                            output_length=config.output_length,
-                                           metrics=metrics)
+                                           compare_metrics=compare_metrics,
+                                           additional_metrics=config.additional_metrics)
 
-        log_dir = self.make_log_dir(False)
+        log_dir = self.make_log_dir("anomaly_detection")
         pattern = config.pattern  # .with_added_depth().with_added_depth()
 
         if self.dataset_name is "emoly":
@@ -216,12 +218,11 @@ class Protocol(object):
         for config in configs:
             self.test_model(config)
 
-    def make_log_dir(self, is_train: bool) -> str:
+    def make_log_dir(self, sub_folder: str) -> str:
         timestamp = int(time.time())
-        sub_folder = "train" if is_train else "anomaly_detection"
         log_dir = os.path.join(self.base_log_dir, sub_folder, "{}_{}".format(timestamp, self.model_name))
         os.makedirs(log_dir)
-        save_model_info(self.autoencoder, log_dir)
+        save_model_info(self.model, log_dir)
         return log_dir
 
     def load_weights(self, epoch: int):

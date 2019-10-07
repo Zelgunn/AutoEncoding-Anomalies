@@ -9,7 +9,7 @@ from typing import List
 from callbacks import ImageCallback, AUCCallback
 from datasets.loaders import DatasetConfig, DatasetLoader
 from modalities import ModalityLoadInfo, RawVideo, Pattern
-from anomaly_detection import RawPredictionsLayer, AnomalyDetector
+from anomaly_detection import IOCompareLayer, AnomalyDetector
 from misc_utils.train_utils import save_model_info
 from transformers import VideoTransformer
 
@@ -179,7 +179,7 @@ def train_scaling_video_transformer():
             else:
                 output_used = video_transformer.output
 
-            raw_predictions = RawPredictionsLayer(output_length=length)([output_used, video_transformer.input])
+            raw_predictions = IOCompareLayer(output_length=length)([output_used, video_transformer.input])
             raw_predictions_model = Model(inputs=video_transformer.inputs,
                                           outputs=raw_predictions,
                                           name="{}_raw_predictions_model".format(auc_mode))
@@ -228,7 +228,7 @@ def train_scaling_video_transformer():
 
         anomaly_detector = AnomalyDetector(autoencoder=model_used,
                                            output_length=length,
-                                           metrics=detector_metrics)
+                                           compare_metrics=detector_metrics)
 
         anomaly_detector.predict_and_evaluate(dataset=dataset_loader,
                                               pattern=anomaly_pattern.with_added_depth().with_added_depth(),

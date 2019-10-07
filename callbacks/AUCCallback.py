@@ -7,7 +7,7 @@ import cv2
 from time import time
 from typing import Tuple, Optional
 
-from anomaly_detection import RawPredictionsModel
+from anomaly_detection import IOCompareModel
 from callbacks import TensorBoardPlugin
 from misc_utils.plot_utils import plot_line2d_to_array
 from datasets import SubsetLoader
@@ -165,7 +165,7 @@ class AUCCallback(TensorBoardPlugin):
         return predictions
 
     @staticmethod
-    def from_subset(predictions_model: RawPredictionsModel,
+    def from_subset(predictions_model: IOCompareModel,
                     tensorboard: TensorBoard,
                     test_subset: SubsetLoader,
                     pattern: Pattern,

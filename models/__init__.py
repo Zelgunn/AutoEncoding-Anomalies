@@ -5,4 +5,4 @@ from models.AEP import AEP
 from models.VAE import VAE
 from models.VAEGAN import VAEGAN
 from models.IAE import IAE
-from models.CNNTransformer import CNNTransformer
+from models.autoregressive.CNNTransformer import CNNTransformer

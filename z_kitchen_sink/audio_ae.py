@@ -11,7 +11,7 @@ from typing import Tuple
 from callbacks import ImageCallback, AUCCallback
 from datasets.loaders import DatasetConfig, DatasetLoader
 from modalities import ModalityLoadInfo, Pattern
-from anomaly_detection import AnomalyDetector, RawPredictionsModel
+from anomaly_detection import AnomalyDetector, IOCompareModel
 from z_kitchen_sink.utils import get_autoencoder_loss
 
 
@@ -235,7 +235,7 @@ def train_audio_autoencoder():
                                                                            tensorboard=tensorboard,
                                                                            epoch_freq=1)
 
-    raw_predictions_model = RawPredictionsModel(audio_autoencoder, output_length)
+    raw_predictions_model = IOCompareModel(audio_autoencoder, output_length)
     auc_callback = AUCCallback.from_subset(predictions_model=raw_predictions_model, tensorboard=tensorboard,
                                            test_subset=test_subset, pattern=anomaly_pattern)
 

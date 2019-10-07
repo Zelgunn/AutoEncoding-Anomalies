@@ -9,7 +9,7 @@ from time import time
 
 from callbacks import AUCCallback, LandmarksVideoCallback
 from modalities import ModalityLoadInfo, Landmarks, Pattern
-from anomaly_detection import RawPredictionsModel, AnomalyDetector
+from anomaly_detection import IOCompareModel, AnomalyDetector
 from z_kitchen_sink.utils import get_landmarks_datasets, get_temporal_loss_weights
 
 
@@ -128,7 +128,7 @@ def train_landmarks_autoencoder():
 
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
 
-    raw_predictions_model = RawPredictionsModel(landmarks_autoencoder, output_length)
+    raw_predictions_model = IOCompareModel(landmarks_autoencoder, output_length)
     auc_callback = AUCCallback.from_subset(predictions_model=raw_predictions_model, tensorboard=tensorboard,
                                            test_subset=test_subset, pattern=Pattern(*pattern, "labels"))
 

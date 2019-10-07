@@ -31,15 +31,17 @@ class UCSDProtocol(VideoProtocol):
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()
+
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.initial_epoch,
                                   output_length=self.output_length,
                                   detector_stride=1,
-                                  pre_normalize_predictions=True)
-
-    @property
-    def output_length(self) -> int:
-        return self.step_size * self.step_count
+                                  pre_normalize_predictions=True,
+                                  # additional_metrics=[self.model.encoding_error,
+                                  #                     self.model.compute_combined_errors_mae,
+                                  #                     self.model.compute_combined_errors_mse,
+                                  #                     ]
+                                  )
 
     @property
     def dataset_channels(self) -> int:
