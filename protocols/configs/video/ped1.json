@@ -6,22 +6,35 @@
     "width" : 128,
     "code_size": 128,
     "code_activation": "sigmoid",
-    "encoder_filters": [8, 16, 32, 64, 96],
+    "encoder_filters": [8, 8, 16, 32, 32, 64],
     "encoder_strides": [
+        [1, 1, 1],
         [1, 2, 2],
         [2, 1, 1],
         [1, 2, 2],
         [2, 1, 1],
         [1, 2, 2]
     ],
-    "decoder_filters": [128, 96, 64, 32, 16, 8],
+    "decoder_filters": [64, 64, 32, 32, 16, 8, 8],
     "decoder_strides": [
         [1, 1, 1],
         [1, 2, 2],
         [1, 2, 2],
         [2, 1, 1],
         [1, 2, 2],
-        [2, 1, 1]
+        [2, 1, 1],
+        [1, 1, 1]
     ],
-    "output_activation": "linear"
+    "output_activation": "linear",
+    "use_batch_norm": true,
+    "conv_am": {
+        "filters": [4, 4, 4, 32]
+    },
+    "learning_rate": 5e-4,
+    "data_augmentation": {
+        "crop_ratio": 0.2,
+        "dropout_noise_ratio" : 0.0,
+        "gaussian_noise_ratio" : 0.0,
+        "use_random_negative": false
+    }
 }

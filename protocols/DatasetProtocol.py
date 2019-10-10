@@ -35,7 +35,7 @@ class DatasetProtocol(Protocol):
         raise NotImplementedError
 
     @staticmethod
-    def make_autoencoder(model: Model = None) -> Optional[Callable]:
+    def make_autoencoder(model: Model) -> Optional[Callable]:
         return model
 
     # endregion

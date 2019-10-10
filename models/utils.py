@@ -18,7 +18,8 @@ def split_steps(inputs, step_size, merge_batch_and_steps):
         else it is `[batch_size, N, step_size, *dimensions].
 
     :return: A tuple containing:
-        1) A tensor with either the same rank or rank + 1 (see `merge_batch_and_steps`) with same type and total dimension as inputs.
+        1) A tensor with either the same rank or rank + 1 (see `merge_batch_and_steps`) with same type
+            and total dimension as inputs.
         2) The original shape
         3) The resulting shape (as if it was not merged).
     """

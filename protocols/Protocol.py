@@ -126,6 +126,7 @@ class Protocol(object):
         if model_name is None:
             model_name = model.name
         self.model_name = model_name
+        self.autoencoder_name = autoencoder.name if hasattr(autoencoder, "name") else autoencoder.__name__
         self.protocol_name = protocol_name
 
         self.dataset_name = dataset_name
@@ -142,14 +143,13 @@ class Protocol(object):
         log_dir = self.make_log_dir("train")
         callbacks = self.make_callback(log_dir, config)
 
-        dataset = self.dataset_loader.train_subset.make_tf_dataset(config.pattern)
-        dataset = dataset.batch(config.batch_size).prefetch(-1)
-
-        val_dataset = self.dataset_loader.test_subset.make_tf_dataset(config.pattern)
+        subset = self.dataset_loader.train_subset
+        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern, split=0.8)
+        train_dataset = train_dataset.batch(config.batch_size).prefetch(-1)
         val_dataset = val_dataset.batch(config.batch_size)
 
-        self.model.fit(dataset, steps_per_epoch=10, epochs=config.epochs,
-                       validation_data=val_dataset, validation_steps=1,
+        self.model.fit(train_dataset, steps_per_epoch=1000, epochs=config.epochs,
+                       validation_data=val_dataset, validation_steps=100,
                        callbacks=callbacks, initial_epoch=config.initial_epoch)
 
     def make_callback(self,
@@ -209,7 +209,7 @@ class Protocol(object):
                                               pre_normalize_predictions=config.pre_normalize_predictions,
                                               additional_config={
                                                   "epoch": config.epoch,
-                                                  "model_name": self.model_name,
+                                                  "model_name": self.autoencoder_name,
                                                   **config.kwargs
                                               }
                                               )

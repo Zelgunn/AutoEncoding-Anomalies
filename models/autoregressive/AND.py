@@ -38,6 +38,7 @@ class AND(AE):
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
+        reconstruction_loss /= tf.cast(tf.reduce_prod(tf.shape(inputs)[1:]), tf.float32)
         return reconstruction_loss, autoregression_loss
 
     @tf.function
@@ -46,11 +47,14 @@ class AND(AE):
         true_latent_code = self.encode(inputs)
 
         reconstructed = self.decode(true_latent_code)
-        reconstruction_loss = tf.reduce_mean(tf.square(inputs - reconstructed))
+        reduction_axis = list(range(1, inputs.shape.rank))
+        reconstruction_loss = tf.square(inputs - reconstructed)
+        reconstruction_loss = tf.reduce_sum(reconstruction_loss, axis=reduction_axis)
+        reconstruction_loss = tf.reduce_mean(reconstruction_loss)
 
         true_latent_code = self.reshape_latent_code_for_autoregression(true_latent_code, step_count=unmerged_shape[1])
-        latent_code_regression_loss = compute_autoregression_loss(true_latent_code,
-                                                                  self.autoregressive_model(true_latent_code))
+        pred_latent_code_distribution = self.autoregressive_model(true_latent_code)
+        latent_code_regression_loss = compute_autoregression_loss(true_latent_code, pred_latent_code_distribution)
         return reconstruction_loss, latent_code_regression_loss
 
     def split_inputs(self, inputs, merge_batch_and_steps):

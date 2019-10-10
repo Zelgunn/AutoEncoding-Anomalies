@@ -1,10 +1,11 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.callbacks import Callback, CallbackList, configure_callbacks, make_logs, ModelCheckpoint
+from tensorflow.python.keras.callbacks import Callback, CallbackList, configure_callbacks, make_logs
+from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.python.keras.engine.training_utils import MetricsAggregator
 from tensorflow.python.keras.utils.mode_keys import ModeKeys
 from abc import abstractmethod
-from typing import List, Dict
+from typing import List, Dict, Type, Optional
 import os
 
 
@@ -24,10 +25,8 @@ class CustomModel(Model):
             **kwargs):
 
         do_validation = (validation_data is not None) and (validation_steps is not None)
-        model_checkpoint = None
-        for callback in callbacks:
-            if isinstance(callback, ModelCheckpoint):
-                model_checkpoint = callback
+        model_checkpoint = get_callback(callbacks, ModelCheckpoint)
+        tensorboard: Optional[TensorBoard] = get_callback(callbacks, TensorBoard)
         callbacks: CallbackList = configure_callbacks(callbacks,
                                                       model=self,
                                                       do_validation=do_validation,
@@ -39,6 +38,10 @@ class CustomModel(Model):
                                                       mode=ModeKeys.TRAIN)
         if model_checkpoint is not None:
             model_checkpoint.save_weights_only = False
+
+        if (tensorboard is not None) and (tensorboard.update_freq != "epoch"):
+            tensorboard._samples_seen = initial_epoch * steps_per_epoch
+            tensorboard._total_batches_seen = initial_epoch * steps_per_epoch
 
         train_aggregator = MetricsAggregator(use_steps=True, num_samples=steps_per_epoch)
         val_aggregator = MetricsAggregator(use_steps=True, num_samples=validation_steps)
@@ -149,3 +152,15 @@ class CustomModel(Model):
                 print("Could not load {} - {} is not a valid filepath".format(model_id, model_filepath))
         return result
     # endregion
+
+
+def get_callback(callbacks: List[Callback], callback_type: Type[Callback]) -> Optional[Callback]:
+    if callbacks is None:
+        return None
+
+    result = None
+    for callback in callbacks:
+        if isinstance(callback, callback_type):
+            result = callback
+            break
+    return result

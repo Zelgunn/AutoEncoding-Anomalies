@@ -73,7 +73,6 @@ class AnomalyDetector(Model):
         samples_names = [os.path.basename(folder) for folder in dataset.test_subset.subset_folders]
         self.plot_predictions(predictions=predictions,
                               labels=labels,
-                              stride=stride,
                               log_dir=log_dir,
                               samples_names=samples_names)
 
@@ -151,8 +150,6 @@ class AnomalyDetector(Model):
 
             sample_predictions = self([sample_inputs, sample_outputs])
 
-            test = self.io_compare_model.autoencoder(sample_inputs)
-
             labels.append(sample_labels)
             if predictions is None:
                 predictions = [[metric_prediction] for metric_prediction in sample_predictions]
@@ -229,7 +226,6 @@ class AnomalyDetector(Model):
     def plot_predictions(self,
                          predictions: List[List[np.ndarray]],
                          labels: np.ndarray,
-                         stride: int,
                          log_dir: str,
                          samples_names: List[str],
                          ):
@@ -242,14 +238,12 @@ class AnomalyDetector(Model):
                                   for j in range(self.metric_count)]
             self.plot_sample_predictions(predictions=sample_predictions,
                                          labels=labels[i],
-                                         stride=stride,
                                          log_dir=log_dir,
                                          sample_name=samples_names[i])
 
     def plot_sample_predictions(self,
                                 predictions: List[np.ndarray],
                                 labels: np.ndarray,
-                                stride: int,
                                 log_dir: str,
                                 sample_name: str,
                                 ):
@@ -270,7 +264,6 @@ class AnomalyDetector(Model):
         unlabeled_filepath = os.path.join(log_dir, "base_{}.png".format(sample_name))
         plt.savefig(unlabeled_filepath, dpi=dpi)
 
-        # plt.gca().fill_between(np.arange(sample_length), 0, labels, alpha=0.5)
         self.plot_labels(labels)
         labeled_filepath = os.path.join(log_dir, "labeled_{}.png".format(sample_name))
         plt.savefig(labeled_filepath, dpi=dpi)

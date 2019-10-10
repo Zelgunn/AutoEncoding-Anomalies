@@ -37,10 +37,6 @@ class UCSDProtocol(VideoProtocol):
                                   output_length=self.output_length,
                                   detector_stride=1,
                                   pre_normalize_predictions=True,
-                                  # additional_metrics=[self.model.encoding_error,
-                                  #                     self.model.compute_combined_errors_mae,
-                                  #                     self.model.compute_combined_errors_mse,
-                                  #                     ]
                                   )
 
     @property

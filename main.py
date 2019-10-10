@@ -19,7 +19,8 @@ def main():
     else:
         raise ValueError
 
-    # protocol.autoencode_video(r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped1\Test\Test003")
+    # protocol.autoencode_video(r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped1\Test\Test003",
+    #                           initial_epoch)
 
     if train:
         protocol.train_model()

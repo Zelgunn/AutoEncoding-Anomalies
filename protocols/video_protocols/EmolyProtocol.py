@@ -1,5 +1,3 @@
-from tensorflow.python.keras import Model
-
 from protocols import VideoProtocol, ProtocolTrainConfig, ProtocolTestConfig
 
 

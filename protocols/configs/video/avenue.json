@@ -23,5 +23,6 @@
         [1, 2, 2],
         [2, 1, 1]
     ],
-    "output_activation": "linear"
+    "output_activation": "linear",
+    "use_batch_norm": true
 }

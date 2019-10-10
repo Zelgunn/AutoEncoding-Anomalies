@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import activations, Model
-from tensorflow.python.keras.layers import Layer, Dense, InputSpec, Lambda
+from tensorflow.python.keras.layers import Layer, Dense, InputSpec
 from typing import List, Optional
 
 from transformers.utils import get_look_ahead_mask

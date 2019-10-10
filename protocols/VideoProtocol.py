@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.layers import LeakyReLU
 from abc import abstractmethod
 from typing import List
 
@@ -8,6 +7,7 @@ from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
 from protocols import ImageCallbackConfig
 from protocols.utils import make_residual_encoder, make_residual_decoder
+from protocols.utils import video_random_cropping, video_dropout_noise, random_image_negative
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import AE, IAE
 from models.autoregressive import SAAM, AND
@@ -24,6 +24,7 @@ class VideoProtocol(DatasetProtocol):
                                             initial_epoch=initial_epoch,
                                             model_name=model_name)
 
+    # region Make models
     def make_model(self) -> Model:
         if self.model_architecture == "ae":
             return self.make_ae()
@@ -34,12 +35,19 @@ class VideoProtocol(DatasetProtocol):
         else:
             raise ValueError("Unknown architecture : {}.".format(self.model_architecture))
 
+    @staticmethod
+    def make_autoencoder(model: Model):
+        if isinstance(model, IAE):
+            return model.interpolate
+        return model
+
     def make_ae(self) -> AE:
         encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
         decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
 
         model = AE(encoder=encoder,
-                   decoder=decoder)
+                   decoder=decoder,
+                   learning_rate=self.learning_rate)
         return model
 
     def make_iae(self) -> IAE:
@@ -48,7 +56,8 @@ class VideoProtocol(DatasetProtocol):
 
         model = IAE(encoder=encoder,
                     decoder=decoder,
-                    step_size=self.step_size)
+                    step_size=self.step_size,
+                    learning_rate=self.learning_rate)
         return model
 
     def make_and(self) -> AND:
@@ -59,10 +68,14 @@ class VideoProtocol(DatasetProtocol):
         model = AND(encoder=encoder,
                     decoder=decoder,
                     am=conv_am,
-                    step_size=self.step_size)
+                    step_size=self.step_size,
+                    learning_rate=self.learning_rate)
 
         return model
 
+    # endregion
+
+    # region Sub-models input shapes
     def get_encoder_input_shape(self):
         shape = (None, self.step_size, self.height, self.width, 1)
         return shape
@@ -75,12 +88,16 @@ class VideoProtocol(DatasetProtocol):
         shape = (None, self.step_count, self.code_size)
         return shape
 
+    # endregion
+
+    # region Make sub-models
     def make_encoder(self, input_shape) -> Model:
         encoder = make_residual_encoder(input_shape=input_shape,
                                         filters=self.encoder_filters,
                                         strides=self.encoder_strides,
                                         code_size=self.code_size,
-                                        code_activation=self.code_activation, )
+                                        code_activation=self.code_activation,
+                                        use_batch_norm=self.use_batch_norm)
         return encoder
 
     def make_decoder(self, input_shape) -> Model:
@@ -88,26 +105,29 @@ class VideoProtocol(DatasetProtocol):
                                         filters=self.decoder_filters,
                                         strides=self.decoder_strides,
                                         channels=1,
-                                        output_activation=self.output_activation)
+                                        output_activation=self.output_activation,
+                                        use_batch_norm=self.use_batch_norm)
         return decoder
 
     def make_saam(self, input_shape) -> SAAM:
-        saam = SAAM(layer_count=4,
-                    head_count=4,
-                    head_size=8,
-                    intermediate_size=4,
-                    output_size=100,
+        saam = SAAM(layer_count=self.config["saam"]["layer_count"],
+                    head_count=self.config["saam"]["layer_count"],
+                    head_size=self.config["saam"]["layer_count"],
+                    intermediate_size=self.config["saam"]["layer_count"],
+                    output_size=self.config["saam"]["layer_count"],
                     output_activation="softmax",
                     input_shape=input_shape)
         return saam
 
     def make_conv_am(self, input_shape):
         conv_am = ConvAM(rank=2,
-                         filters=[4, 4, 4, 20],
+                         filters=self.config["conv_am"]["filters"],
                          intermediate_activation="relu",
                          output_activation="linear",
                          input_shape=input_shape)
         return conv_am
+
+    # endregion
 
     # region Patterns
     def get_train_pattern(self) -> Pattern:
@@ -139,11 +159,13 @@ class VideoProtocol(DatasetProtocol):
 
         def augment_video(video: tf.Tensor) -> tf.Tensor:
             if self.use_cropping:
-                crop_ratio = tf.random.uniform(shape=(), minval=0.8, maxval=1.0)
-                original_shape = tf.cast(tf.shape(video), tf.float32)
-                original_height, original_width = original_shape[1], original_shape[2]
-                crop_size = [self.output_length, crop_ratio * original_height, crop_ratio * original_width, 1]
-                video = tf.image.random_crop(video, crop_size)
+                video = video_random_cropping(video, self.crop_ratio, self.output_length)
+
+            if self.dropout_noise_ratio > 0.0:
+                video = video_dropout_noise(video, video_dropout_noise, spatial_prob=0.1)
+
+            if self.use_random_negative:
+                video = random_image_negative(video, negative_prob=0.5)
 
             video = preprocess_video(video)
             return video
@@ -192,11 +214,6 @@ class VideoProtocol(DatasetProtocol):
 
     @property
     @abstractmethod
-    def use_cropping(self) -> bool:
-        raise NotImplementedError
-
-    @property
-    @abstractmethod
     def use_face(self) -> bool:
         raise NotImplementedError
 
@@ -226,6 +243,7 @@ class VideoProtocol(DatasetProtocol):
     def code_size(self) -> int:
         return self.config["code_size"]
 
+    # region Encoder
     @property
     def encoder_filters(self) -> List[int]:
         return self.config["encoder_filters"]
@@ -238,6 +256,9 @@ class VideoProtocol(DatasetProtocol):
     def code_activation(self) -> str:
         return self.config["code_activation"]
 
+    # endregion
+
+    # region Decoder
     @property
     def decoder_filters(self) -> List[int]:
         return self.config["decoder_filters"]
@@ -253,6 +274,43 @@ class VideoProtocol(DatasetProtocol):
     # endregion
 
     @property
+    def use_batch_norm(self) -> bool:
+        return self.config["use_batch_norm"]
+
+    @property
+    def learning_rate(self) -> float:
+        return self.config["learning_rate"]
+
+    # region Data augmentation
+    @property
+    def data_augmentation_config(self):
+        return self.config["data_augmentation"]
+
+    @property
+    def use_cropping(self) -> bool:
+        return self.crop_ratio > 0.0
+
+    @property
+    def crop_ratio(self) -> float:
+        return self.data_augmentation_config["crop_ratio"]
+
+    @property
+    def dropout_noise_ratio(self) -> float:
+        return self.data_augmentation_config["dropout_noise_ratio"]
+
+    @property
+    def gaussian_noise_ratio(self) -> float:
+        return self.data_augmentation_config["gaussian_noise_ratio"]
+
+    @property
+    def use_random_negative(self) -> bool:
+        return self.data_augmentation_config["use_random_negative"]
+
+    # endregion
+
+    # endregion
+
+    @property
     def output_length(self) -> int:
         if self.model_architecture in ["iae", "and"]:
             return self.step_size * self.step_count
@@ -261,12 +319,12 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
-    def autoencode_video(self, video_source):
+    def autoencode_video(self, video_source, load_epoch: int):
         from datasets.data_readers import VideoReader
         import numpy as np
         import cv2
 
-        self.load_weights(epoch=30)
+        self.load_weights(epoch=load_epoch)
 
         video_reader = VideoReader(video_source)
         frames = [cv2.resize(frame, (128, 128)) for frame in video_reader]
@@ -284,13 +342,18 @@ class VideoProtocol(DatasetProtocol):
 
         frames = np.reshape(frames, base_shape)
         decoded = np.reshape(decoded, base_shape)
+        diffs = np.abs(frames - decoded)
+        error = np.mean(np.square(diffs), axis=(1, 2, 3))
+        error = (error - error.min()) / (error.max() - error.min())
 
         for i in range(len(frames)):
             frame = cv2.resize(frames[i], (512, 512))
             decoded_frame = cv2.resize(decoded[i], (512, 512))
+            diff = cv2.resize(diffs[i], (512, 512))
+            print(i, error[i])
             cv2.imshow("frame", frame)
             cv2.imshow("decoded", decoded_frame)
-            cv2.imshow("diff", np.abs(frame - decoded_frame))
+            cv2.imshow("diff", diff)
             cv2.waitKey(0)
 
         exit()

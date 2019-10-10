@@ -29,49 +29,22 @@ class IAE(AE):
     def compute_loss(self,
                      inputs
                      ) -> tf.Tensor:
-        return self.reconstruction_error(inputs)
-
-    def compute_combined_errors(self, inputs, metric):
-        encoding_delta = self.encoding_error(inputs)
-        reconstruction_error = self.reconstruction_error(inputs,
-                                                         metric=metric,
-                                                         reduction_axis=tuple(range(2, inputs.shape.rank)))
-        return encoding_delta * 0.1 + reconstruction_error
-
-    def compute_combined_errors_mse(self, inputs):
-        return self.compute_combined_errors(inputs, metric="mse")
-
-    def compute_combined_errors_mae(self, inputs):
-        return self.compute_combined_errors(inputs, metric="mae")
-
-    def reconstruction_error(self, inputs, metric="mse", reduction_axis=None):
         decoded = self.interpolate(inputs)
-
-        if metric == "mse":
-            error = tf.square(inputs - decoded)
-        elif metric == "mae":
-            error = tf.abs(inputs - decoded)
-        else:
-            raise ValueError("Unknown metric : {}".format(metric))
-
-        reconstruction_error = tf.reduce_mean(error, axis=reduction_axis)
-        return reconstruction_error
+        loss = tf.square(inputs - decoded)
+        loss = tf.reduce_mean(loss)
+        return loss
 
     @tf.function
-    def encoding_error(self, inputs):
-        target = self.get_interpolated_latent_code(inputs)
+    def train_step(self, inputs):
+        with tf.GradientTape() as tape:
+            loss = self.compute_loss(inputs)
+            loss_scaled = loss * tf.cast(tf.reduce_prod(tf.shape(inputs)[1:]), tf.float32)
 
-        inputs, _, new_shape = self.split_inputs(inputs, merge_batch_and_steps=True)
-        pred = self.encode(inputs)
+        gradients = tape.gradient(loss_scaled, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        batch_size, step_count, *_ = new_shape
-        new_shape = [batch_size, step_count * self.step_size, -1]
-        target = tf.reshape(target, new_shape)
-        pred = tf.reshape(pred, new_shape)
-
-        # error = tf.reduce_mean(tf.square(target - pred), axis=-1)
-        error = 1 + tf.losses.cosine_similarity(target, pred, axis=-1)
-        return error
+        # loss /= tf.cast(tf.reduce_prod(tf.shape(inputs)[1:]), tf.float32)
+        return loss
 
     @tf.function
     def interpolate(self, inputs):
