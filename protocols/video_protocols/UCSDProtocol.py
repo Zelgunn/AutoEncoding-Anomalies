@@ -37,15 +37,12 @@ class UCSDProtocol(VideoProtocol):
                                   output_length=self.output_length,
                                   detector_stride=1,
                                   pre_normalize_predictions=True,
+                                  additional_metrics=[self.model.interpolated_error]
                                   )
 
     @property
     def dataset_channels(self) -> int:
         return 1
-
-    @property
-    def use_cropping(self) -> bool:
-        return True
 
     @property
     def use_face(self) -> bool:

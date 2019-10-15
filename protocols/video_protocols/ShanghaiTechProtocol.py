@@ -36,9 +36,5 @@ class ShanghaiTechProtocol(VideoProtocol):
         return 3
 
     @property
-    def use_cropping(self) -> bool:
-        return True
-
-    @property
     def use_face(self) -> bool:
         return False

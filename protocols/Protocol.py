@@ -146,7 +146,8 @@ class Protocol(object):
         subset = self.dataset_loader.train_subset
         train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern, split=0.8)
         train_dataset = train_dataset.batch(config.batch_size).prefetch(-1)
-        val_dataset = val_dataset.batch(config.batch_size)
+        if val_dataset is not None:
+            val_dataset = val_dataset.batch(config.batch_size)
 
         self.model.fit(train_dataset, steps_per_epoch=1000, epochs=config.epochs,
                        validation_data=val_dataset, validation_steps=100,
@@ -235,10 +236,16 @@ def get_dataset_folder(dataset_name: str) -> str:
     known_datasets = {
         "ped2": "../datasets/ucsd/ped2",
         "ped1": "../datasets/ucsd/ped1",
+
+        "subway_exit": "../datasets/subway/exit",
+        "subway_entrance": "../datasets/subway/entrance",
+        "subway_mall1": "../datasets/subway/mall3",
+        "subway_mall2": "../datasets/subway/mall3",
+        "subway_mall3": "../datasets/subway/mall3",
+
+        "shanghaitech": "../datasets/shanghaitech",
         "emoly": "E:/datasets/emoly",
         "avenue": "../datasets/avenue",
-        "subway": "../datasets/subway/exit",
-        "shanghaitech": "../datasets/shanghaitech",
     }
 
     if dataset_name in known_datasets:

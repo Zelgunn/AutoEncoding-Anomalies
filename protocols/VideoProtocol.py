@@ -6,11 +6,12 @@ from typing import List
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
 from protocols import ImageCallbackConfig
-from protocols.utils import make_residual_encoder, make_residual_decoder
+from protocols.utils import make_residual_encoder, make_residual_decoder, make_discriminator
 from protocols.utils import video_random_cropping, video_dropout_noise, random_image_negative
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import AE, IAE
 from models.autoregressive import SAAM, AND
+from models.adversarial import VAEGAN
 
 
 class VideoProtocol(DatasetProtocol):
@@ -30,16 +31,18 @@ class VideoProtocol(DatasetProtocol):
             return self.make_ae()
         elif self.model_architecture == "iae":
             return self.make_iae()
+        elif self.model_architecture == "vaegan":
+            return self.make_vaegan()
         elif self.model_architecture == "and":
             return self.make_and()
         else:
             raise ValueError("Unknown architecture : {}.".format(self.model_architecture))
 
-    @staticmethod
-    def make_autoencoder(model: Model):
-        if isinstance(model, IAE):
-            return model.interpolate
-        return model
+    # @staticmethod
+    # def make_autoencoder(model: Model):
+    #     if isinstance(model, IAE):
+    #         return model.interpolate
+    #     return model
 
     def make_ae(self) -> AE:
         encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
@@ -58,6 +61,22 @@ class VideoProtocol(DatasetProtocol):
                     decoder=decoder,
                     step_size=self.step_size,
                     learning_rate=self.learning_rate)
+        return model
+
+    def make_vaegan(self) -> VAEGAN:
+        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
+        discriminator = self.make_discriminator(self.get_encoder_input_shape()[1:])
+
+        model = VAEGAN(encoder=encoder,
+                       decoder=decoder,
+                       discriminator=discriminator,
+                       learned_reconstruction_loss_factor=0.0,
+                       reconstruction_loss_factor=100.0,
+                       kl_divergence_loss_factor=10.0,
+                       balance_discriminator_learning_rate=False,
+                       )
+
         return model
 
     def make_and(self) -> AND:
@@ -82,6 +101,8 @@ class VideoProtocol(DatasetProtocol):
 
     def get_latent_code_shape(self, encoder: Model):
         shape = encoder.compute_output_shape(self.get_encoder_input_shape())
+        if self.model_architecture == "vaegan":
+            shape = (*shape[:-1], shape[-1] // 2)
         return shape
 
     def get_saam_input_shape(self):
@@ -94,6 +115,7 @@ class VideoProtocol(DatasetProtocol):
     def make_encoder(self, input_shape) -> Model:
         encoder = make_residual_encoder(input_shape=input_shape,
                                         filters=self.encoder_filters,
+                                        base_kernel_size=self.kernel_size,
                                         strides=self.encoder_strides,
                                         code_size=self.code_size,
                                         code_activation=self.code_activation,
@@ -103,11 +125,22 @@ class VideoProtocol(DatasetProtocol):
     def make_decoder(self, input_shape) -> Model:
         decoder = make_residual_decoder(input_shape=input_shape,
                                         filters=self.decoder_filters,
+                                        base_kernel_size=self.kernel_size,
                                         strides=self.decoder_strides,
                                         channels=1,
                                         output_activation=self.output_activation,
                                         use_batch_norm=self.use_batch_norm)
         return decoder
+
+    def make_discriminator(self, input_shape) -> Model:
+        discriminator = make_discriminator(input_shape=input_shape,
+                                           filters=self.encoder_filters,
+                                           base_kernel_size=self.kernel_size,
+                                           strides=self.encoder_strides,
+                                           intermediate_size=self.code_size * 2,
+                                           intermediate_activation="relu",
+                                           use_batch_norm=self.use_batch_norm)
+        return discriminator
 
     def make_saam(self, input_shape) -> SAAM:
         saam = SAAM(layer_count=self.config["saam"]["layer_count"],
@@ -274,6 +307,10 @@ class VideoProtocol(DatasetProtocol):
     # endregion
 
     @property
+    def kernel_size(self) -> int:
+        return self.config["kernel_size"]
+
+    @property
     def use_batch_norm(self) -> bool:
         return self.config["use_batch_norm"]
 
@@ -333,12 +370,23 @@ class VideoProtocol(DatasetProtocol):
         frames = frames.astype(np.float32) / 255.0
 
         step_size = 8
-        step_count = len(frames) // step_size
+        frame_count = len(frames)
+        step_count = frame_count // step_size
         base_shape = frames.shape
+
         frames = np.reshape(frames, [step_count, step_size, *frames.shape[1:]])
+        # frames = np.expand_dims(frames, axis=0)
 
         decoded = self.autoencoder(frames)
         decoded = decoded.numpy()
+
+        # decoded = []
+        # for i in range(frame_count - step_size * 4):
+        #     frame = self.autoencoder.interpolate(frames[:, i:i + step_size * 4])
+        #     frame = frame[:, step_size][0].numpy()
+        #     decoded.append(frame)
+        # decoded = np.stack(decoded, axis=0)
+        # frames = frames[0, :len(decoded)]
 
         frames = np.reshape(frames, base_shape)
         decoded = np.reshape(decoded, base_shape)

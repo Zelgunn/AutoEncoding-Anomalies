@@ -6,6 +6,7 @@
     "width" : 128,
     "code_size": 64,
     "code_activation": "sigmoid",
+    "kernel_size": 3,
     "encoder_filters": [8, 12, 18, 27, 40],
     "encoder_strides": [
         [1, 2, 2],
@@ -24,5 +25,12 @@
         [2, 1, 1]
     ],
     "output_activation": "linear",
-    "use_batch_norm": true
+    "use_batch_norm": true,
+    "learning_rate": 1e-3,
+    "data_augmentation": {
+        "crop_ratio": 0.0,
+        "dropout_noise_ratio" : 0.0,
+        "gaussian_noise_ratio" : 0.0,
+        "use_random_negative": false
+    }
 }

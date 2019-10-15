@@ -55,6 +55,17 @@ class IAE(AE):
         return decoded
 
     @tf.function
+    def interpolated_error(self, inputs):
+        interpolated = self.interpolate(inputs)
+
+        inputs = inputs[:, self.step_size: - self.step_size]
+        interpolated = interpolated[:, self.step_size: - self.step_size]
+
+        error = tf.square(interpolated - inputs)
+        error = tf.reduce_mean(error, axis=list(range(2, error.shape.rank)))
+        return error
+
+    @tf.function
     def get_interpolated_latent_code(self, inputs):
         inputs, _, new_shape = self.split_inputs(inputs, merge_batch_and_steps=False)
         batch_size, step_count, *_ = new_shape
@@ -74,7 +85,6 @@ class IAE(AE):
         encoded = tf.reshape(encoded, [batch_size * step_count, *encoded_shape_dimensions])
         return encoded
 
-    @tf.function
     def split_inputs(self, inputs, merge_batch_and_steps):
         return split_steps(inputs, self.step_size, merge_batch_and_steps)
 

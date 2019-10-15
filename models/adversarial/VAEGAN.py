@@ -7,12 +7,6 @@ from typing import Tuple, Dict
 from models import VAE
 
 
-class GANLoss(IntEnum):
-    BASE = 0,
-    LEAST_SQUARE = 1,
-    WASSERSTEIN = 2
-
-
 class GANLossTarget(IntEnum):
     GENERATOR_FAKE = 0,
     DISCRIMINATOR_FAKE = 1,
@@ -30,12 +24,12 @@ class VAEGAN(VAE):
                  reconstruction_loss_factor=100.0,
                  learned_reconstruction_loss_factor=1000.0,
                  kl_divergence_loss_factor=1.0,
-                 loss_used=GANLoss.WASSERSTEIN,
                  **kwargs):
-        super(VAEGAN, self).__init__(**kwargs)
+        super(VAEGAN, self).__init__(encoder=encoder,
+                                     decoder=decoder,
+                                     kl_divergence_loss_factor=kl_divergence_loss_factor,
+                                     **kwargs)
 
-        self.encoder = encoder
-        self.decoder = decoder
         self.discriminator = discriminator
 
         self.autoencoder_learning_rate = autoencoder_learning_rate
@@ -44,8 +38,6 @@ class VAEGAN(VAE):
 
         self.reconstruction_loss_factor = reconstruction_loss_factor
         self.learned_reconstruction_loss_factor = learned_reconstruction_loss_factor
-        self.kl_divergence_loss_factor = kl_divergence_loss_factor
-        self.loss_used = loss_used
 
         self.generator_fake_loss = tf.Variable(initial_value=1.0)
         self.discriminator_fake_loss = tf.Variable(initial_value=1.0)
@@ -102,10 +94,6 @@ class VAEGAN(VAE):
         self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
                                                          self.discriminator.trainable_variables))
 
-        if self.loss_used == GANLoss.WASSERSTEIN:
-            [variable.assign(tf.clip_by_value(variable, -0.001, 0.001))
-             for variable in self.discriminator.trainable_variables]
-
         return losses
 
     @tf.function
@@ -119,13 +107,13 @@ class VAEGAN(VAE):
         noise = tf.random.normal(shape=z.shape, mean=0.0, stddev=1.0)
         generated = self.decoder(noise)
 
-        discriminated_inputs, discriminated_inputs_early = self.discriminator(inputs)
-        discriminated_decoded, discriminated_decoded_early = self.discriminator(decoded)
-        discriminated_generated, discriminated_generated_early = self.discriminator(generated)
+        discriminated_inputs, inputs_high_level_features = self.discriminator(inputs)
+        discriminated_decoded, decoded_high_level_features = self.discriminator(decoded)
+        discriminated_generated, generated_high_level_features = self.discriminator(generated)
 
         reconstruction_loss = tf.reduce_mean(tf.square(decoded - inputs))
 
-        learned_reconstruction_loss = tf.square(discriminated_inputs_early - discriminated_decoded_early)
+        learned_reconstruction_loss = tf.square(inputs_high_level_features - decoded_high_level_features)
         learned_reconstruction_loss = tf.reduce_mean(learned_reconstruction_loss)
         learned_reconstruction_loss = learned_reconstruction_loss
 
@@ -134,20 +122,10 @@ class VAEGAN(VAE):
         kl_divergence = tf.maximum(kl_divergence, 0.0)
         kl_divergence = tf.reduce_mean(kl_divergence)
 
-        decoder_fake_loss = gan_loss(discriminated_decoded, self.loss_used, GANLossTarget.GENERATOR_FAKE)
-        generator_fake_loss = gan_loss(discriminated_generated, self.loss_used, GANLossTarget.GENERATOR_FAKE)
-        discriminator_real_loss = gan_loss(discriminated_inputs, self.loss_used, GANLossTarget.DISCRIMINATOR_REAL)
-        discriminator_fake_loss = gan_loss(discriminated_generated, self.loss_used, GANLossTarget.DISCRIMINATOR_FAKE)
-
-        # if self.loss_used == GANLoss.WASSERSTEIN:
-        #     discriminator_gradients = tf.gradients(discriminator_fake_loss, generated)
-        #     gradient_penalty = tf.square(discriminator_gradients)
-        #     reduce_axis = [0] + list(range(2, gradient_penalty.shape.rank))
-        #     gradient_penalty = tf.reduce_sum(gradient_penalty, axis=reduce_axis)
-        #     gradient_penalty = tf.sqrt(gradient_penalty)
-        #     gradient_penalty = tf.square(gradient_penalty - 1.0)
-        #     gradient_penalty = tf.reduce_mean(gradient_penalty) * 10.0
-        #     discriminator_fake_loss += gradient_penalty
+        decoder_fake_loss = gan_loss(discriminated_decoded, is_real=True)
+        generator_fake_loss = gan_loss(discriminated_generated, is_real=True)
+        discriminator_real_loss = gan_loss(discriminated_inputs, is_real=True)
+        discriminator_fake_loss = gan_loss(discriminated_generated, is_real=False)
 
         if self.balance_discriminator_learning_rate:
             update_losses = [self.generator_fake_loss.assign(generator_fake_loss),
@@ -186,7 +164,6 @@ class VAEGAN(VAE):
             "reconstruction_loss_factor": self.reconstruction_loss_factor,
             "learned_reconstruction_loss_factor": self.learned_reconstruction_loss_factor,
             "kl_divergence_loss_factor": self.kl_divergence_loss_factor,
-            "loss_used": self.loss_used
         }
         return config
 
@@ -205,38 +182,9 @@ def get_reference_distribution(latent_distribution: tfp.distributions.Multivaria
     return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=variance)
 
 
-# region Losses
-def gan_loss(logits: tf.Tensor, loss_used: GANLoss, target: GANLossTarget) -> tf.Tensor:
-    if loss_used == GANLoss.BASE:
-        return base_gan_loss(logits, is_real=target is not GANLossTarget.DISCRIMINATOR_FAKE)
-    elif loss_used == GANLoss.LEAST_SQUARE:
-        targets = {GANLossTarget.DISCRIMINATOR_FAKE: -1,
-                   GANLossTarget.DISCRIMINATOR_REAL: 1,
-                   GANLossTarget.GENERATOR_FAKE: 0}
-        return least_square_gan_loss(logits, target=targets[target])
-    elif loss_used == GANLoss.WASSERSTEIN:
-        return wasserstein_gan_loss(logits, is_real=target is not GANLossTarget.DISCRIMINATOR_FAKE)
-    else:
-        raise ValueError
-
-
 @tf.function
-def base_gan_loss(logits: tf.Tensor, is_real: bool) -> tf.Tensor:
+def gan_loss(logits: tf.Tensor, is_real: bool) -> tf.Tensor:
     labels = tf.ones_like(logits) if is_real else tf.zeros_like(logits)
     loss = tf.nn.sigmoid_cross_entropy_with_logits(labels, logits)
     loss = tf.reduce_mean(loss)
     return loss
-
-
-@tf.function
-def least_square_gan_loss(logits: tf.Tensor, target) -> tf.Tensor:
-    loss = tf.square(logits - target)
-    loss = tf.reduce_mean(loss)
-    return loss
-
-
-@tf.function
-def wasserstein_gan_loss(logits: tf.Tensor, is_real: bool) -> tf.Tensor:
-    factor = -1.0 if is_real else 1.0
-    return tf.reduce_mean(logits) * factor
-# endregion

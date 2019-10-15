@@ -12,13 +12,13 @@ class VAE(AE):
                  decoder: Model,
                  learning_rate=1e-3,
                  reconstruction_loss_factor=100.0,
-                 kl_divergence_factor=1.0,
+                 kl_divergence_loss_factor=1.0,
                  **kwargs):
         super(VAE, self).__init__(encoder=encoder,
                                   decoder=decoder,
                                   learning_rate=learning_rate,
                                   **kwargs)
-        self.kl_divergence_factor = kl_divergence_factor
+        self.kl_divergence_loss_factor = kl_divergence_loss_factor
         self.reconstruction_loss_factor = reconstruction_loss_factor
         self.training_step = tf.Variable(initial_value=0, trainable=False, name="training_step")
 
@@ -72,9 +72,9 @@ class VAE(AE):
         step_size = 1000
         step = tf.math.mod(self.training_step, step_size * 2)
         if step < step_size:
-            factor = self.kl_divergence_factor * tf.cast(step, tf.float32) / step_size
+            factor = self.kl_divergence_loss_factor * tf.cast(step, tf.float32) / step_size
         else:
-            factor = self.kl_divergence_factor
+            factor = self.kl_divergence_loss_factor
         return factor
 
     def get_config(self):
@@ -82,7 +82,7 @@ class VAE(AE):
             "encoder": self.encoder.get_config(),
             "decoder": self.decoder.get_config(),
             "learning_rate": self.learning_rate,
-            "kl_divergence_factor": self.kl_divergence_factor
+            "kl_divergence_factor": self.kl_divergence_loss_factor
         }
 
     @property

@@ -36,9 +36,5 @@ class EmolyProtocol(VideoProtocol):
         return 3
 
     @property
-    def use_cropping(self) -> bool:
-        return False
-
-    @property
     def use_face(self) -> bool:
         return True

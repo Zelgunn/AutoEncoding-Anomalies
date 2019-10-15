@@ -1,12 +1,27 @@
+from datasets.tfrecord_builders.SubwayTFRecordBuilder import SubwayVideo
 from protocols import VideoProtocol, ProtocolTrainConfig, ProtocolTestConfig
 
 
 class SubwayProtocol(VideoProtocol):
     def __init__(self,
+                 video_id: SubwayVideo,
                  initial_epoch=0,
-                 model_name=None
+                 model_name=None,
                  ):
-        super(SubwayProtocol, self).__init__(dataset_name="subway",
+        if video_id == SubwayVideo.EXIT:
+            dataset_name = "subway_exit"
+        elif video_id == SubwayVideo.ENTRANCE:
+            dataset_name = "subway_entrance"
+        elif video_id == SubwayVideo.MALL1:
+            dataset_name = "subway_mall1"
+        elif video_id == SubwayVideo.MALL1:
+            dataset_name = "subway_mall2"
+        elif video_id == SubwayVideo.MALL1:
+            dataset_name = "subway_mall3"
+        else:
+            raise ValueError("Error : {} is not a valid Subway video ID.".format(video_id))
+
+        super(SubwayProtocol, self).__init__(dataset_name=dataset_name,
                                              initial_epoch=initial_epoch,
                                              model_name=model_name)
 
@@ -34,10 +49,6 @@ class SubwayProtocol(VideoProtocol):
     @property
     def dataset_channels(self) -> int:
         return 3
-
-    @property
-    def use_cropping(self) -> bool:
-        return False
 
     @property
     def use_face(self) -> bool:
