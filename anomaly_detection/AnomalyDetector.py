@@ -257,9 +257,9 @@ class AnomalyDetector(Model):
                    loc='center left', bbox_to_anchor=(1, 0.5), fontsize=4.0,
                    fancybox=True, shadow=True)
         # noinspection PyUnresolvedReferences
-        adjust_figure_aspect(plt.gcf(), np.log(sample_length + 1) * 50)
+        adjust_figure_aspect(plt.gcf(), np.log(sample_length + 1))
         # noinspection PyUnresolvedReferences
-        dpi = sample_length + 100
+        dpi = (np.sqrt(sample_length) + 100) * 4
 
         unlabeled_filepath = os.path.join(log_dir, "base_{}.png".format(sample_name))
         plt.savefig(unlabeled_filepath, dpi=dpi)
