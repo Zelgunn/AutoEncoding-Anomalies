@@ -189,11 +189,14 @@ class Protocol(object):
         self.load_weights(epoch=config.epoch)
 
         compare_metrics = list(known_metrics.keys())
+        additional_metrics = self.additional_test_metrics
+        if config.additional_metrics is not None:
+            additional_metrics = [*additional_metrics, *config.additional_metrics]
 
         anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
                                            output_length=config.output_length,
                                            compare_metrics=compare_metrics,
-                                           additional_metrics=config.additional_metrics)
+                                           additional_metrics=additional_metrics)
 
         log_dir = self.make_log_dir("anomaly_detection")
         pattern = config.pattern  # .with_added_depth().with_added_depth()
@@ -214,6 +217,10 @@ class Protocol(object):
                                                   **config.kwargs
                                               }
                                               )
+
+    @property
+    def additional_test_metrics(self) -> List[Callable[[tf.Tensor], tf.Tensor]]:
+        return getattr(self.model, "additional_test_metrics", [])
 
     def multi_test_model(self, configs: List[ProtocolTestConfig]):
         for config in configs:

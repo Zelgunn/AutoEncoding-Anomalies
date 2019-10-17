@@ -68,6 +68,9 @@ class AnomalyDetector(Model):
 
         merged_predictions, merged_labels = self.merge_samples_predictions(predictions=predictions, labels=labels)
 
+        np.save(os.path.join(log_dir, "predictions.npy"), merged_predictions)
+        np.save(os.path.join(log_dir, "labels.npy"), labels)
+
         roc, pr = self.evaluate_predictions(predictions=merged_predictions, labels=merged_labels)
 
         samples_names = [os.path.basename(folder) for folder in dataset.test_subset.subset_folders]
@@ -251,7 +254,10 @@ class AnomalyDetector(Model):
 
         sample_length = len(labels)
         for i in range(self.metric_count):
-            plt.plot(np.mean(predictions[i], axis=1), linewidth=0.25)
+            metric_predictions = predictions[i]
+            if metric_predictions.ndim > 1:
+                metric_predictions = np.mean(metric_predictions, axis=tuple(range(1, metric_predictions.ndim)))
+            plt.plot(metric_predictions, linewidth=0.25)
 
         plt.legend(self.anomaly_metrics_names,
                    loc='center left', bbox_to_anchor=(1, 0.5), fontsize=4.0,

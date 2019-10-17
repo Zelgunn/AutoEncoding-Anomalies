@@ -36,8 +36,7 @@ class UCSDProtocol(VideoProtocol):
                                   epoch=self.initial_epoch,
                                   output_length=self.output_length,
                                   detector_stride=1,
-                                  pre_normalize_predictions=True,
-                                  additional_metrics=[self.model.interpolated_error]
+                                  pre_normalize_predictions=True
                                   )
 
     @property

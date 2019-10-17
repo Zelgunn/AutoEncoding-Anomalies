@@ -49,13 +49,13 @@ class IAE(AE):
     @tf.function
     def interpolate(self, inputs):
         inputs_shape = tf.shape(inputs)
-        encoded = self.get_interpolated_latent_code(inputs)
+        encoded = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=True)
         decoded = self.decode(encoded)
         decoded = tf.reshape(decoded, inputs_shape)
         return decoded
 
     @tf.function
-    def interpolated_error(self, inputs):
+    def interpolation_error(self, inputs):
         interpolated = self.interpolate(inputs)
 
         inputs = inputs[:, self.step_size: - self.step_size]
@@ -66,7 +66,21 @@ class IAE(AE):
         return error
 
     @tf.function
-    def get_interpolated_latent_code(self, inputs):
+    def interpolation_relative_error(self, inputs):
+        reduction_axis = list(range(2, inputs.shape.rank))
+
+        reconstructed = self(inputs)
+        reconstruction_error = tf.square(inputs - reconstructed)
+        reconstruction_error = tf.reduce_mean(reconstruction_error, axis=reduction_axis)
+
+        interpolated = self.interpolate(inputs)
+        interpolation_error = tf.square(inputs - interpolated)
+        interpolation_error = tf.reduce_mean(interpolation_error, axis=reduction_axis)
+
+        interpolation_variance = tf.abs(reconstruction_error - interpolation_error)
+        return interpolation_variance
+
+    def get_interpolated_latent_code(self, inputs, merge_batch_and_steps):
         inputs, _, new_shape = self.split_inputs(inputs, merge_batch_and_steps=False)
         batch_size, step_count, *_ = new_shape
 
@@ -82,7 +96,8 @@ class IAE(AE):
         weights = tf.reshape(weights, tile_multiples)
 
         encoded = encoded_first * (1.0 - weights) + encoded_last * weights
-        encoded = tf.reshape(encoded, [batch_size * step_count, *encoded_shape_dimensions])
+        if merge_batch_and_steps:
+            encoded = tf.reshape(encoded, [batch_size * step_count, *encoded_shape_dimensions])
         return encoded
 
     def split_inputs(self, inputs, merge_batch_and_steps):
@@ -101,3 +116,10 @@ class IAE(AE):
     def models_ids(self) -> Dict[Model, str]:
         return {self.encoder: "encoder",
                 self.decoder: "decoder"}
+
+    @property
+    def additional_test_metrics(self):
+        return [
+            self.interpolation_error,
+            self.interpolation_relative_error
+        ]

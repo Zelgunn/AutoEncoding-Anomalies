@@ -11,7 +11,7 @@ from protocols.utils import video_random_cropping, video_dropout_noise, random_i
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import AE, IAE
 from models.autoregressive import SAAM, AND
-from models.adversarial import VAEGAN
+from models.adversarial import IAEGAN, VAEGAN
 
 
 class VideoProtocol(DatasetProtocol):
@@ -25,12 +25,14 @@ class VideoProtocol(DatasetProtocol):
                                             initial_epoch=initial_epoch,
                                             model_name=model_name)
 
-    # region Make models
+    # region Make model
     def make_model(self) -> Model:
         if self.model_architecture == "ae":
             return self.make_ae()
         elif self.model_architecture == "iae":
             return self.make_iae()
+        elif self.model_architecture == "iaegan":
+            return self.make_iaegan()
         elif self.model_architecture == "vaegan":
             return self.make_vaegan()
         elif self.model_architecture == "and":
@@ -61,6 +63,17 @@ class VideoProtocol(DatasetProtocol):
                     decoder=decoder,
                     step_size=self.step_size,
                     learning_rate=self.learning_rate)
+        return model
+
+    def make_iaegan(self) -> IAEGAN:
+        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
+        discriminator = self.make_discriminator(self.get_latent_code_shape(encoder)[1:])
+
+        model = IAEGAN(encoder=encoder,
+                       decoder=decoder,
+                       discriminator=discriminator,
+                       step_size=self.step_size)
         return model
 
     def make_vaegan(self) -> VAEGAN:
@@ -133,21 +146,25 @@ class VideoProtocol(DatasetProtocol):
         return decoder
 
     def make_discriminator(self, input_shape) -> Model:
+        discriminator_config = self.config["discriminator"]
+        include_intermediate_output = self.model_architecture in ["vaegan"]
         discriminator = make_discriminator(input_shape=input_shape,
-                                           filters=self.encoder_filters,
+                                           filters=discriminator_config["filters"],
                                            base_kernel_size=self.kernel_size,
-                                           strides=self.encoder_strides,
-                                           intermediate_size=self.code_size * 2,
+                                           strides=discriminator_config["strides"],
+                                           intermediate_size=discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
-                                           use_batch_norm=self.use_batch_norm)
+                                           use_batch_norm=self.use_batch_norm,
+                                           include_intermediate_output=include_intermediate_output)
         return discriminator
 
     def make_saam(self, input_shape) -> SAAM:
-        saam = SAAM(layer_count=self.config["saam"]["layer_count"],
-                    head_count=self.config["saam"]["layer_count"],
-                    head_size=self.config["saam"]["layer_count"],
-                    intermediate_size=self.config["saam"]["layer_count"],
-                    output_size=self.config["saam"]["layer_count"],
+        saam_config = self.config["saam"]
+        saam = SAAM(layer_count=saam_config["layer_count"],
+                    head_count=saam_config["layer_count"],
+                    head_size=saam_config["layer_count"],
+                    intermediate_size=saam_config["layer_count"],
+                    output_size=saam_config["layer_count"],
                     output_activation="softmax",
                     input_shape=input_shape)
         return saam
@@ -195,7 +212,7 @@ class VideoProtocol(DatasetProtocol):
                 video = video_random_cropping(video, self.crop_ratio, self.output_length)
 
             if self.dropout_noise_ratio > 0.0:
-                video = video_dropout_noise(video, video_dropout_noise, spatial_prob=0.1)
+                video = video_dropout_noise(video, self.dropout_noise_ratio, spatial_prob=0.1)
 
             if self.use_random_negative:
                 video = random_image_negative(video, negative_prob=0.5)
@@ -349,7 +366,7 @@ class VideoProtocol(DatasetProtocol):
 
     @property
     def output_length(self) -> int:
-        if self.model_architecture in ["iae", "and"]:
+        if self.model_architecture in ["iae", "and", "iaegan"]:
             return self.step_size * self.step_count
         else:
             return self.step_size

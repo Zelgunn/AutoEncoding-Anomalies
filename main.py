@@ -3,7 +3,7 @@ from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTech
 
 
 def main():
-    train = 0
+    train = 1
     initial_epoch = 0
     dataset = "entrance"
 

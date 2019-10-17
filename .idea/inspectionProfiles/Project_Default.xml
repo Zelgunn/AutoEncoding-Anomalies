@@ -6,6 +6,7 @@
       <option name="ignoredIdentifiers">
         <list>
           <option value="skimage.io" />
+          <option value="numpy.square" />
         </list>
       </option>
     </inspection_tool>

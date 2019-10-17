@@ -3,37 +3,43 @@
     "step_size": 8,
     "step_count": 4,
     "height": 128,
-    "width" : 128,
-    "code_size": 128,
+    "width": 128,
+    "code_size": 64,
     "code_activation": "sigmoid",
     "kernel_size": 3,
-    "encoder_filters": [8, 12, 24, 48, 64, 96, 128],
+    "encoder_filters": [8, 12, 24, 48, 64],
     "encoder_strides": [
         [1, 2, 2],
         [2, 1, 1],
         [1, 2, 2],
         [2, 1, 1],
-        [1, 2, 2],
-        [2, 1, 1],
         [1, 2, 2]
     ],
-    "decoder_filters": [128, 96, 64, 48, 24, 12, 8],
+    "decoder_filters": [64, 48, 24, 12, 8],
     "decoder_strides": [
         [1, 2, 2],
         [2, 1, 1],
         [1, 2, 2],
         [2, 1, 1],
-        [1, 2, 2],
-        [2, 1, 1],
         [1, 2, 2]
     ],
-    "output_activation": "sigmoid",
+    "output_activation": "linear",
     "use_batch_norm": false,
     "learning_rate": 1e-3,
     "data_augmentation": {
-        "crop_ratio": 0.2,
-        "dropout_noise_ratio" : 0.0,
-        "gaussian_noise_ratio" : 0.0,
+        "crop_ratio": 0.0,
+        "dropout_noise_ratio": 0.02,
+        "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
+    },
+    "discriminator":
+    {
+        "filters": [64, 96, 128],
+        "strides": [
+            [1, 2, 2],
+            [1, 2, 2],
+            [1, 1, 1]
+        ],
+        "intermediate_size": 64
     }
 }

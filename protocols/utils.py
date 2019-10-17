@@ -93,6 +93,7 @@ def make_discriminator(input_shape: Tuple[int, int, int, int],
                        intermediate_size: int,
                        intermediate_activation: str,
                        use_batch_norm: bool,
+                       include_intermediate_output: bool,
                        name="Discriminator"):
     # region Core : [Conv(), Conv(), ..., Flatten(), Dense()]
     validate_filters_and_strides(filters, strides)
@@ -127,9 +128,11 @@ def make_discriminator(input_shape: Tuple[int, int, int, int],
 
     input_layer = core_model.input
     intermediate_output = core_model.output
-    final_output = Dense(units=1, activation="sigmoid")(intermediate_output)
+    final_output = Dense(units=1, activation="linear")(intermediate_output)
 
-    return Model(inputs=[input_layer], outputs=[intermediate_output, final_output], name=name)
+    outputs = [final_output, intermediate_output] if include_intermediate_output else [final_output]
+
+    return Model(inputs=[input_layer], outputs=outputs, name=name)
 
 
 def validate_filters_and_strides(filters: List[int],
