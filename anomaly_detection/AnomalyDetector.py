@@ -67,10 +67,7 @@ class AnomalyDetector(Model):
                                                      max_samples=max_samples)
 
         merged_predictions, merged_labels = self.merge_samples_predictions(predictions=predictions, labels=labels)
-
-        np.save(os.path.join(log_dir, "predictions.npy"), merged_predictions)
-        np.save(os.path.join(log_dir, "labels.npy"), labels)
-
+        self.save_predictions(predictions=merged_predictions, labels=labels, log_dir=log_dir)
         roc, pr = self.evaluate_predictions(predictions=merged_predictions, labels=merged_labels)
 
         samples_names = [os.path.basename(folder) for folder in dataset.test_subset.subset_folders]
@@ -177,6 +174,14 @@ class AnomalyDetector(Model):
 
     # endregion
 
+    def save_predictions(self, predictions: List[np.ndarray], labels: np.ndarray, log_dir: str):
+        for i in range(self.metric_count):
+            if predictions[i].ndim > 1:
+                predictions[i] = np.mean(predictions[i], axis=tuple(range(1, predictions[i].ndim)))
+
+        np.save(os.path.join(log_dir, "predictions.npy"), predictions)
+        np.save(os.path.join(log_dir, "labels.npy"), labels)
+
     @staticmethod
     def merge_samples_predictions(predictions: List[List[np.ndarray]],
                                   labels: np.ndarray
@@ -213,8 +218,8 @@ class AnomalyDetector(Model):
         roc = tf.metrics.AUC(curve="ROC")
         pr = tf.metrics.AUC(curve="PR")
 
-        if predictions.ndim == 2 and labels.ndim == 1:
-            predictions = predictions.mean(axis=-1)
+        if predictions.ndim > 1 and labels.ndim == 1:
+            predictions = predictions.mean(axis=tuple(range(1, predictions.ndim)))
 
         roc.update_state(labels, predictions)
         pr.update_state(labels, predictions)

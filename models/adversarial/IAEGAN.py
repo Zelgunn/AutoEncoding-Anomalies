@@ -1,9 +1,16 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from typing import Tuple, Dict
+from enum import IntEnum
 
 from models import IAE
 from models.adversarial import gan_loss
+
+
+class IAEGANMode(IntEnum):
+    ENCODED_VS_INTERPOLATED = 0,
+    NORMAL_VS_ENCODED = 1,
+    INPUTS_VS_OUTPUTS = 2
 
 
 class IAEGAN(IAE):
@@ -12,12 +19,16 @@ class IAEGAN(IAE):
                  decoder: Model,
                  discriminator: Model,
                  step_size: int,
+                 mode: IAEGANMode,
+                 learning_rate=1e-3,
                  ):
         super(IAEGAN, self).__init__(encoder=encoder,
                                      decoder=decoder,
-                                     step_size=step_size)
+                                     step_size=step_size,
+                                     learning_rate=learning_rate)
+        self.mode = mode
         self.discriminator = discriminator
-        self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+        self.discriminator_optimizer = tf.keras.optimizers.SGD(learning_rate=self.learning_rate)
 
     @tf.function
     def train_step(self, inputs):
@@ -27,26 +38,25 @@ class IAEGAN(IAE):
             losses = self.compute_loss(inputs)
             (
                 reconstruction_loss,
-                encoder_adversarial_loss,
+                adversarial_loss,
                 discriminator_fake_loss,
                 discriminator_real_loss
             ) = losses
 
-            reconstruction_loss_factor = tf.constant(100.0)
+            # adversarial_loss_factor = tf.constant(1e-2)
+            reconstruction_loss_factor = tf.constant(1e2)
 
-            encoder_loss = reconstruction_loss * reconstruction_loss_factor + encoder_adversarial_loss
-            decoder_loss = reconstruction_loss * reconstruction_loss_factor
-            discriminator_loss = discriminator_fake_loss + discriminator_real_loss
+            encoder_loss = reconstruction_loss * reconstruction_loss_factor
+            decoder_loss = reconstruction_loss * reconstruction_loss_factor + adversarial_loss
+            discriminator_loss = (discriminator_fake_loss + discriminator_real_loss)
 
         encoder_gradients = encoder_tape.gradient(encoder_loss, self.encoder.trainable_variables)
         decoder_gradients = decoder_tape.gradient(decoder_loss, self.decoder.trainable_variables)
-        discriminator_gradients = discriminator_tape.gradient(discriminator_loss,
-                                                              self.discriminator.trainable_variables)
+        disc_gradients = discriminator_tape.gradient(discriminator_loss, self.discriminator.trainable_variables)
 
         self.optimizer.apply_gradients(zip(encoder_gradients, self.encoder.trainable_variables))
         self.optimizer.apply_gradients(zip(decoder_gradients, self.decoder.trainable_variables))
-        self.discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
-                                                         self.discriminator.trainable_variables))
+        self.discriminator_optimizer.apply_gradients(zip(disc_gradients, self.discriminator.trainable_variables))
 
         return losses
 
@@ -54,16 +64,27 @@ class IAEGAN(IAE):
     def compute_loss(self,
                      inputs
                      ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+        if self.mode == IAEGANMode.ENCODED_VS_INTERPOLATED:
+            return self.compute_encoded_vs_interpolated_loss(inputs)
+        elif self.mode == IAEGANMode.NORMAL_VS_ENCODED:
+            return self.compute_normal_vs_encoded_loss(inputs)
+        elif self.mode == IAEGANMode.INPUTS_VS_OUTPUTS:
+            return self.compute_inputs_vs_outputs_loss(inputs)
+        else:
+            raise AttributeError("Mode is not valid : {}".format(self.mode))
+
+    # region Losses (1 per mode)
+    @tf.function
+    def compute_encoded_vs_interpolated_loss(self, inputs):
         inputs_shape = tf.shape(inputs)
 
         latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=False)
-
         base_code = tf.stack([latent_code[:, 0], latent_code[:, -1]], axis=1)
         interpolated_code = self.select_two_latent_codes(latent_code)
-
-        # region Reconstruction loss
         latent_code_shape = tf.shape(latent_code)
         batch_size, step_count, *sample_code_shape = tf.unstack(latent_code_shape)
+
+        # region Reconstruction loss
         latent_code = tf.reshape(latent_code, [batch_size * step_count, *sample_code_shape])
         decoded = self.decode(latent_code)
         decoded = tf.reshape(decoded, inputs_shape)
@@ -74,15 +95,55 @@ class IAEGAN(IAE):
         base_code = tf.reshape(base_code, [batch_size * 2, *sample_code_shape])
         interpolated_code = tf.reshape(interpolated_code, [batch_size * 2, *sample_code_shape])
 
-        real_discriminated = self.discriminator(base_code)
-        fake_discriminated = self.discriminator(interpolated_code)
+        adversarial_losses = self.compute_adversarial_losses(base_code, interpolated_code)
+        encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss = adversarial_losses
+        # endregion
+
+        return reconstruction_loss, encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
+
+    @tf.function
+    def compute_normal_vs_encoded_loss(self, inputs):
+        inputs_shape = tf.shape(inputs)
+
+        latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=True)
+        latent_code_shape = tf.shape(latent_code)
+
+        # region Reconstruction loss
+        decoded = self.decode(latent_code)
+        decoded = tf.reshape(decoded, inputs_shape)
+        reconstruction_loss = tf.reduce_mean(tf.square(inputs - decoded))
+        # endregion
+
+        # region Adversarial loss
+        normal_code = tf.random.normal(latent_code_shape)
+        adversarial_losses = self.compute_adversarial_losses(normal_code, latent_code)
+        encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss = adversarial_losses
+        # endregion
+
+        return reconstruction_loss, encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
+
+    @tf.function
+    def compute_inputs_vs_outputs_loss(self, inputs):
+        latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=True)
+        outputs = self.decode(latent_code)
+        inputs = tf.reshape(inputs, tf.shape(outputs))
+
+        reconstruction_loss = tf.reduce_mean(tf.square(inputs - outputs))
+        adversarial_losses = self.compute_adversarial_losses(inputs, outputs)
+        encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss = adversarial_losses
+
+        return reconstruction_loss, encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
+
+    @tf.function
+    def compute_adversarial_losses(self, real_inputs, fake_inputs):
+        real_discriminated = self.discriminator(real_inputs)
+        fake_discriminated = self.discriminator(fake_inputs)
 
         encoder_adversarial_loss = gan_loss(fake_discriminated, is_real=True)
         discriminator_fake_loss = gan_loss(fake_discriminated, is_real=False)
         discriminator_real_loss = gan_loss(real_discriminated, is_real=True)
-        # endregion
 
-        return reconstruction_loss, encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
+        return encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
 
     # region select_two_latent_codes (from interpolated latent code)
     @tf.function
@@ -134,14 +195,29 @@ class IAEGAN(IAE):
                            false_fn=lambda: indices[1])
 
         return tf.map_fn(fn=elem_compare, elems=tf.stack([first_indices, second_indices], axis=-1))
+
     # endregion
+    # endregion
+
+    # region Additional test metrics
+    @property
+    def additional_test_metrics(self):
+        metrics = [
+            *super(IAEGAN, self).additional_test_metrics,
+            self.discriminate,
+        ]
+
+        if self.mode == IAEGANMode.ENCODED_VS_INTERPOLATED:
+            metrics.append(self.discriminate_encoded_vs_interpolated)
+
+        return metrics
 
     @tf.function
     def discriminate(self, inputs):
         return self.discriminate_latent_code(inputs, only_interpolated=False)
 
     @tf.function
-    def discriminate_interpolated(self, inputs):
+    def discriminate_encoded_vs_interpolated(self, inputs):
         return self.discriminate_latent_code(inputs, only_interpolated=True)
 
     def discriminate_latent_code(self, inputs, only_interpolated):
@@ -158,6 +234,8 @@ class IAEGAN(IAE):
 
         return discriminated
 
+    # endregion
+
     @property
     def models_ids(self) -> Dict[Model, str]:
         return {
@@ -167,12 +245,4 @@ class IAEGAN(IAE):
 
     @property
     def metrics_names(self):
-        return ["reconstruction", "encoder_adversarial", "discriminator_fake", "discriminator_real"]
-
-    @property
-    def additional_test_metrics(self):
-        return [
-            *super(IAEGAN, self).additional_test_metrics,
-            self.discriminate,
-            self.discriminate_interpolated
-        ]
+        return ["reconstruction", "generator_adversarial", "discriminator_fake", "discriminator_real"]

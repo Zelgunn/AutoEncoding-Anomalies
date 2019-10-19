@@ -1,26 +1,34 @@
 {
-    "model_architecture": "iae",
+    "model_architecture": "iaegan",
     "step_size": 8,
     "step_count": 4,
     "height": 128,
     "width": 128,
-    "code_size": 64,
+    "code_size": 96,
     "code_activation": "sigmoid",
     "kernel_size": 3,
-    "encoder_filters": [8, 12, 24, 48, 64],
+    "encoder_filters": [8, 16, 16, 24, 24, 48, 48, 64, 64],
     "encoder_strides": [
         [1, 2, 2],
+        [1, 1, 1],
         [2, 1, 1],
+        [1, 1, 1],
         [1, 2, 2],
+        [1, 1, 1],
         [2, 1, 1],
+        [1, 1, 1],
         [1, 2, 2]
     ],
-    "decoder_filters": [64, 48, 24, 12, 8],
+    "decoder_filters": [64, 64, 48, 48, 24, 24, 12, 12, 8],
     "decoder_strides": [
         [1, 2, 2],
+        [1, 1, 1],
         [2, 1, 1],
+        [1, 1, 1],
         [1, 2, 2],
+        [1, 1, 1],
         [2, 1, 1],
+        [1, 1, 1],
         [1, 2, 2]
     ],
     "output_activation": "linear",
@@ -34,12 +42,14 @@
     },
     "discriminator":
     {
-        "filters": [64, 96, 128],
+        "filters": [16, 32, 64, 128, 128],
         "strides": [
             [1, 2, 2],
             [1, 2, 2],
-            [1, 1, 1]
+            [1, 2, 2],
+            [1, 2, 2],
+            [1, 2, 2]
         ],
-        "intermediate_size": 64
+        "intermediate_size": 128
     }
 }

@@ -11,7 +11,7 @@ from protocols.utils import video_random_cropping, video_dropout_noise, random_i
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import AE, IAE
 from models.autoregressive import SAAM, AND
-from models.adversarial import IAEGAN, VAEGAN
+from models.adversarial import IAEGAN, VAEGAN, IAEGANMode
 
 
 class VideoProtocol(DatasetProtocol):
@@ -62,18 +62,26 @@ class VideoProtocol(DatasetProtocol):
         model = IAE(encoder=encoder,
                     decoder=decoder,
                     step_size=self.step_size,
-                    learning_rate=self.learning_rate)
+                    learning_rate=WarmupSchedule(1000, self.learning_rate))
         return model
 
     def make_iaegan(self) -> IAEGAN:
         encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
         decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
-        discriminator = self.make_discriminator(self.get_latent_code_shape(encoder)[1:])
+
+        mode = IAEGANMode.INPUTS_VS_OUTPUTS
+        if mode == IAEGANMode.INPUTS_VS_OUTPUTS:
+            discriminator_input_shape = self.get_encoder_input_shape()[1:]
+        else:
+            discriminator_input_shape = self.get_latent_code_shape(encoder)[1:]
+        discriminator = self.make_discriminator(discriminator_input_shape)
 
         model = IAEGAN(encoder=encoder,
                        decoder=decoder,
                        discriminator=discriminator,
-                       step_size=self.step_size)
+                       step_size=self.step_size,
+                       mode=mode,
+                       learning_rate=WarmupSchedule(1000, self.learning_rate))
         return model
 
     def make_vaegan(self) -> VAEGAN:
@@ -422,3 +430,22 @@ class VideoProtocol(DatasetProtocol):
             cv2.waitKey(0)
 
         exit()
+
+
+class WarmupSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, warmup_steps: int, learning_rate=1e-3):
+        super(WarmupSchedule, self).__init__()
+
+        self.learning_rate = learning_rate
+        self.warmup_steps = warmup_steps
+
+    def __call__(self, step):
+        factor = (step + 1) / self.warmup_steps
+        return self.learning_rate * tf.math.minimum(factor, 1.0)
+
+    def get_config(self):
+        config = {
+            "learning_rate": self.learning_rate,
+            "warmup_steps": self.warmup_steps,
+        }
+        return config
