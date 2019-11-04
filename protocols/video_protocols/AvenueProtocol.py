@@ -15,7 +15,7 @@ class AvenueProtocol(VideoProtocol):
         image_callbacks_configs = self.get_image_callback_configs()
         auc_callbacks_configs = self.get_auc_callbacks_configs()
 
-        return ProtocolTrainConfig(batch_size=16,
+        return ProtocolTrainConfig(batch_size=self.batch_size,
                                    pattern=train_pattern,
                                    epochs=50,
                                    initial_epoch=self.initial_epoch,
@@ -28,7 +28,7 @@ class AvenueProtocol(VideoProtocol):
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.initial_epoch,
                                   output_length=self.output_length,
-                                  detector_stride=1,
+                                  detector_stride=32,
                                   pre_normalize_predictions=True)
 
     @property

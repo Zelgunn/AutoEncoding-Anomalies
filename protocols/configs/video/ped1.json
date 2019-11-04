@@ -3,34 +3,43 @@
     "step_size": 8,
     "step_count": 4,
     "height": 128,
-    "width" : 128,
-    "code_size": 64,
-    "code_activation": "sigmoid",
+    "width": 128,
+    "code_size": 96,
+    "code_activation": "tanh",
     "kernel_size": 3,
-    "encoder_filters": [8, 16, 32, 32, 64],
-    "encoder_strides": [
-        [1, 2, 2],
-        [2, 1, 1],
-        [1, 2, 2],
-        [2, 1, 1],
-        [1, 2, 2]
-    ],
-    "decoder_filters": [64, 64, 32, 32, 16, 8],
-    "decoder_strides": [
-        [1, 1, 1],
-        [1, 2, 2],
-        [1, 2, 2],
-        [2, 1, 1],
-        [1, 2, 2],
-        [2, 1, 1]
-    ],
+    "encoder": {
+        "filters": [16, 16, 32, 32, 64],
+        "strides": [
+            [1, 2, 2],
+            [2, 1, 1],
+            [1, 2, 2],
+            [2, 1, 1],
+            [1, 2, 2]
+        ],
+        "use_residual_bias": true,
+        "use_conv_bias": false
+    },
+    "decoder": {
+        "filters": [64, 64, 32, 32, 16, 16],
+        "strides": [
+            [1, 1, 1],
+            [1, 2, 2],
+            [2, 1, 1],
+            [1, 2, 2],
+            [2, 1, 1],
+            [1, 2, 2]
+        ],
+        "use_residual_bias": true,
+        "use_conv_bias": false
+    },
     "output_activation": "linear",
-    "use_batch_norm": true,
-    "learning_rate": 5e-4,
+    "use_batch_norm": false,
+    "batch_size": 32,
+    "learning_rate": 1e-3,
     "data_augmentation": {
-        "crop_ratio": 0.2,
-        "dropout_noise_ratio" : 0.0,
-        "gaussian_noise_ratio" : 0.0,
+        "crop_ratio": 0.1,
+        "dropout_noise_ratio": 0.0,
+        "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
     }
 }

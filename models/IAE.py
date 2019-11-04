@@ -29,8 +29,22 @@ class IAE(AE):
     def compute_loss(self,
                      inputs
                      ) -> tf.Tensor:
-        decoded = self.interpolate(inputs)
-        loss = tf.square(inputs - decoded)
+        # decoded = self.interpolate(inputs)
+        start = inputs[:, :self.step_size]
+        end = inputs[:, -self.step_size:]
+
+        step_count = tf.shape(inputs)[1]
+        max_offset = step_count - self.step_size
+        offset = tf.random.uniform(shape=[], minval=0, maxval=max_offset + 1, dtype=tf.int32)
+        target = inputs[:, offset:offset + self.step_size]
+
+        factor = tf.cast(offset / max_offset, tf.float32)
+        start_encoded = self.encode(start)
+        end_encoded = self.encode(end)
+        latent_code = factor * end_encoded + (1.0 - factor) * start_encoded
+        decoded = self.decode(latent_code)
+
+        loss = tf.square(target - decoded)
         loss = tf.reduce_mean(loss)
         return loss
 
@@ -55,30 +69,40 @@ class IAE(AE):
         return decoded
 
     @tf.function
-    def interpolation_error(self, inputs):
+    def interpolation_mse(self, inputs):
+        return self.interpolation_error(inputs, tf.losses.mse)
+
+    @tf.function
+    def interpolation_mae(self, inputs):
+        return self.interpolation_error(inputs, tf.losses.mae)
+
+    def interpolation_error(self, inputs, metric):
         interpolated = self.interpolate(inputs)
 
         inputs = inputs[:, self.step_size: - self.step_size]
         interpolated = interpolated[:, self.step_size: - self.step_size]
 
-        error = tf.square(interpolated - inputs)
+        error = metric(inputs, interpolated)
         error = tf.reduce_mean(error, axis=list(range(2, error.shape.rank)))
         return error
 
     @tf.function
-    def interpolation_relative_error(self, inputs):
-        reduction_axis = list(range(2, inputs.shape.rank))
+    def interpolation_relative_mse(self, inputs):
+        return self.interpolation_relative_error(inputs, tf.losses.mse)
 
-        reconstructed = self(inputs)
-        reconstruction_error = tf.square(inputs - reconstructed)
-        reconstruction_error = tf.reduce_mean(reconstruction_error, axis=reduction_axis)
+    @tf.function
+    def interpolation_relative_mae(self, inputs):
+        return self.interpolation_relative_error(inputs, tf.losses.mae)
 
-        interpolated = self.interpolate(inputs)
-        interpolation_error = tf.square(inputs - interpolated)
-        interpolation_error = tf.reduce_mean(interpolation_error, axis=reduction_axis)
+    def interpolation_relative_error(self, inputs, metric):
+        base_error = metric(inputs, self(inputs))
+        base_error = tf.reduce_mean(base_error, axis=list(range(2, base_error.shape.rank)))
 
-        interpolation_variance = tf.abs(reconstruction_error - interpolation_error)
-        return interpolation_variance
+        interpolation_error = metric(inputs, self.interpolate(inputs))
+        interpolation_error = tf.reduce_mean(interpolation_error, axis=list(range(2, interpolation_error.shape.rank)))
+
+        relative_error = tf.abs(base_error - interpolation_error)
+        return relative_error
 
     def get_interpolated_latent_code(self, inputs, merge_batch_and_steps):
         inputs, _, new_shape = self.split_inputs(inputs, merge_batch_and_steps=False)
@@ -120,6 +144,8 @@ class IAE(AE):
     @property
     def additional_test_metrics(self):
         return [
-            self.interpolation_error,
-            self.interpolation_relative_error
+            self.interpolation_mse,
+            self.interpolation_mae,
+            # self.interpolation_relative_mse,
+            # self.interpolation_relative_mae
         ]

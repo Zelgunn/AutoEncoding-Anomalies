@@ -138,6 +138,12 @@ class AnomalyDetector(Model):
                                     ):
         dataset = subset.make_source_browser(pattern, sample_index, stride)
 
+        # modality_folder = os.path.join(subset.subset_folders[sample_index], "labels")
+        # modality_files = [os.path.join(modality_folder, file)
+        #                   for file in os.listdir(modality_folder) if file.endswith(".tfrecord")]
+        # file_count = len(modality_files)
+        # k = 0
+
         get_outputs_from_inputs = len(dataset.element_spec) == 2
 
         predictions, labels = None, []
@@ -157,12 +163,15 @@ class AnomalyDetector(Model):
                 for i in range(len(predictions)):
                     predictions[i].append(sample_predictions[i])
 
+            # print("{}/{}".format(k, file_count))
+            # k += 1
+
         predictions = [np.concatenate(metric_prediction, axis=0) for metric_prediction in predictions]
         labels = np.concatenate(labels, axis=0)
 
-        # *predictions, labels = self.predict(dataset, steps=max_steps_count)
-        labels = np.abs(labels[:, :, 0] - labels[:, :, 1]) > 1e-7
-        labels = np.any(labels, axis=-1)
+        from datasets.loaders import SubsetLoader
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
+        labels = np.sum(labels, axis=-1) >= 1
 
         if normalize_predictions:
             for i in range(self.metric_count):
@@ -262,7 +271,7 @@ class AnomalyDetector(Model):
             metric_predictions = predictions[i]
             if metric_predictions.ndim > 1:
                 metric_predictions = np.mean(metric_predictions, axis=tuple(range(1, metric_predictions.ndim)))
-            plt.plot(metric_predictions, linewidth=0.25)
+            plt.plot(1.0 - metric_predictions, linewidth=0.25)
 
         plt.legend(self.anomaly_metrics_names,
                    loc='center left', bbox_to_anchor=(1, 0.5), fontsize=4.0,
@@ -272,11 +281,8 @@ class AnomalyDetector(Model):
         # noinspection PyUnresolvedReferences
         dpi = (np.sqrt(sample_length) + 100) * 4
 
-        unlabeled_filepath = os.path.join(log_dir, "base_{}.png".format(sample_name))
-        plt.savefig(unlabeled_filepath, dpi=dpi)
-
         self.plot_labels(labels)
-        labeled_filepath = os.path.join(log_dir, "labeled_{}.png".format(sample_name))
+        labeled_filepath = os.path.join(log_dir, "{}.png".format(sample_name))
         plt.savefig(labeled_filepath, dpi=dpi)
         plt.clf()
 

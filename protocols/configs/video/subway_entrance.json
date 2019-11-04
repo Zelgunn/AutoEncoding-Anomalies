@@ -1,47 +1,47 @@
 {
-    "model_architecture": "iaegan",
+    "model_architecture": "iae",
     "step_size": 8,
-    "step_count": 4,
+    "step_count": 8,
     "height": 128,
     "width": 128,
-    "code_size": 96,
-    "code_activation": "sigmoid",
-    "kernel_size": 3,
-    "encoder_filters": [8, 16, 16, 24, 24, 48, 48, 64, 64],
-    "encoder_strides": [
-        [1, 2, 2],
-        [1, 1, 1],
-        [2, 1, 1],
-        [1, 1, 1],
-        [1, 2, 2],
-        [1, 1, 1],
-        [2, 1, 1],
-        [1, 1, 1],
-        [1, 2, 2]
-    ],
-    "decoder_filters": [64, 64, 48, 48, 24, 24, 12, 12, 8],
-    "decoder_strides": [
-        [1, 2, 2],
-        [1, 1, 1],
-        [2, 1, 1],
-        [1, 1, 1],
-        [1, 2, 2],
-        [1, 1, 1],
-        [2, 1, 1],
-        [1, 1, 1],
-        [1, 2, 2]
-    ],
+    "code_size": 128,
+    "code_activation": "tanh",
+    "kernel_size": [3, 5, 5],
+    "encoder": {
+        "filters": [16, 16, 64, 64, 128],
+        "strides": [
+            [1, 4, 4],
+            [2, 1, 1],
+            [1, 4, 4],
+            [2, 1, 1],
+            [1, 4, 4]
+        ],
+        "use_residual_bias": true,
+        "use_conv_bias": false
+    },
+    "decoder": {
+        "filters": [128, 64, 64, 16, 16],
+        "strides": [
+            [1, 4, 4],
+            [2, 1, 1],
+            [1, 4, 4],
+            [2, 1, 1],
+            [1, 4, 4]
+        ],
+        "use_residual_bias": true,
+        "use_conv_bias": false
+    },
     "output_activation": "linear",
     "use_batch_norm": false,
-    "learning_rate": 1e-3,
+    "batch_size": 32,
+    "learning_rate": 1e-4,
     "data_augmentation": {
-        "crop_ratio": 0.0,
-        "dropout_noise_ratio": 0.02,
+        "crop_ratio": 0.1,
+        "dropout_noise_ratio": 0.0,
         "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
     },
-    "discriminator":
-    {
+    "discriminator": {
         "filters": [16, 32, 64, 128, 128],
         "strides": [
             [1, 2, 2],

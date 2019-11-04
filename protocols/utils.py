@@ -11,11 +11,13 @@ from CustomKerasLayers import ResBlockND, ResBlockNDTranspose
 # region Autoencoder
 def make_residual_encoder(input_shape: Tuple[int, int, int, int],
                           filters: List[int],
-                          base_kernel_size: int,
+                          kernel_size: int,
                           strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                           code_size: int,
                           code_activation: Union[str, Layer],
                           use_batch_norm: bool,
+                          use_residual_bias: bool,
+                          use_conv_bias: bool,
                           name="ResidualEncoder") -> Sequential:
     validate_filters_and_strides(filters, strides)
 
@@ -25,10 +27,11 @@ def make_residual_encoder(input_shape: Tuple[int, int, int, int],
         "input_shape": input_shape,
         "activation": leaky_relu,
         "use_batch_norm": use_batch_norm,
+        "use_residual_bias": use_residual_bias,
+        "use_conv_bias": use_conv_bias,
         "rank": rank,
     }
     intermediate_shape = input_shape
-    kernel_size = get_kernel_size(base_kernel_size, intermediate_shape)
 
     layers = []
     for i in range(len(filters)):
@@ -39,7 +42,6 @@ def make_residual_encoder(input_shape: Tuple[int, int, int, int],
             kwargs.pop("input_shape")
 
         intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
-        kernel_size = get_kernel_size(base_kernel_size, intermediate_shape)
 
     kwargs["activation"] = code_activation
     layers.append(ResBlockND(filters=code_size, strides=1, kernel_size=kernel_size, **kwargs))
@@ -49,11 +51,13 @@ def make_residual_encoder(input_shape: Tuple[int, int, int, int],
 
 def make_residual_decoder(input_shape: Tuple[int, int, int, int],
                           filters: List[int],
-                          base_kernel_size: int,
+                          kernel_size: int,
                           strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                           channels: int,
                           output_activation: Union[str, Layer],
                           use_batch_norm: bool,
+                          use_residual_bias: bool,
+                          use_conv_bias: bool,
                           name="ResidualDecoder") -> Sequential:
     validate_filters_and_strides(filters, strides)
 
@@ -62,6 +66,8 @@ def make_residual_decoder(input_shape: Tuple[int, int, int, int],
     kwargs = {
         "input_shape": input_shape,
         "activation": leaky_relu,
+        "use_residual_bias": use_residual_bias,
+        "use_conv_bias": use_conv_bias,
         "use_batch_norm": use_batch_norm,
         "rank": rank,
     }
@@ -69,7 +75,6 @@ def make_residual_decoder(input_shape: Tuple[int, int, int, int],
 
     layers = []
     for i in range(len(filters)):
-        kernel_size = get_kernel_size(base_kernel_size, intermediate_shape)
         layer = ResBlockNDTranspose(filters=filters[i], strides=strides[i], kernel_size=kernel_size, **kwargs)
         layers.append(layer)
 
@@ -78,6 +83,8 @@ def make_residual_decoder(input_shape: Tuple[int, int, int, int],
 
         intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
 
+    kwargs.pop("use_conv_bias")
+    kwargs.pop("use_residual_bias")
     kwargs.pop("use_batch_norm")
     kwargs["kernel_size"] = 1
     kwargs["activation"] = output_activation
@@ -88,7 +95,7 @@ def make_residual_decoder(input_shape: Tuple[int, int, int, int],
 
 def make_discriminator(input_shape: Tuple[int, int, int, int],
                        filters: List[int],
-                       base_kernel_size: int,
+                       kernel_size: int,
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        intermediate_size: int,
                        intermediate_activation: str,
@@ -107,7 +114,6 @@ def make_discriminator(input_shape: Tuple[int, int, int, int],
         "padding": "valid",
     }
     intermediate_shape = input_shape
-    kernel_size = get_kernel_size(base_kernel_size, intermediate_shape)
 
     layers = []
     for i in range(len(filters)):
@@ -118,7 +124,6 @@ def make_discriminator(input_shape: Tuple[int, int, int, int],
             kwargs.pop("input_shape")
 
         intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
-        kernel_size = get_kernel_size(base_kernel_size, intermediate_shape)
 
     layers.append(Flatten())
     layers.append(Dense(units=intermediate_size, activation=intermediate_activation))
@@ -141,14 +146,6 @@ def validate_filters_and_strides(filters: List[int],
     if len(filters) != len(strides):
         raise ValueError("`filters` and `strides` must have the same length. "
                          "Found {} and {}".format(len(filters), len(strides)))
-
-
-def get_kernel_size(max_kernel_size, input_shape):
-    rank = len(input_shape) - 1
-    max_kernel_size = conv_utils.normalize_tuple(max_kernel_size, rank, "kernel_size")
-    kernel_size = tuple([min(max_kernel_size[i], input_shape[i]) for i in range(rank)])
-    return kernel_size
-
 
 # endregion
 
@@ -182,7 +179,7 @@ def dropout_noise(inputs, max_rate, noise_shape_prob):
     random_tensor = tf.random.uniform(shape=noise_shape, minval=0.0, maxval=1.0, dtype=tf.float32)
     keep_mask = random_tensor >= rate
 
-    outputs = inputs * tf.cast(keep_mask, inputs.dtype)
+    outputs = inputs * tf.cast(keep_mask, inputs.dtype) / (1.0 - rate)
     return outputs
 
 

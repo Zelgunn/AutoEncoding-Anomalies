@@ -81,7 +81,9 @@ class VideoProtocol(DatasetProtocol):
                        discriminator=discriminator,
                        step_size=self.step_size,
                        mode=mode,
-                       learning_rate=WarmupSchedule(1000, self.learning_rate))
+                       autoencoder_learning_rate=WarmupSchedule(1000, self.learning_rate),
+                       discriminator_learning_rate=WarmupSchedule(1000, self.learning_rate),
+                       )
         return model
 
     def make_vaegan(self) -> VAEGAN:
@@ -136,21 +138,27 @@ class VideoProtocol(DatasetProtocol):
     def make_encoder(self, input_shape) -> Model:
         encoder = make_residual_encoder(input_shape=input_shape,
                                         filters=self.encoder_filters,
-                                        base_kernel_size=self.kernel_size,
+                                        kernel_size=self.kernel_size,
                                         strides=self.encoder_strides,
                                         code_size=self.code_size,
                                         code_activation=self.code_activation,
-                                        use_batch_norm=self.use_batch_norm)
+                                        use_batch_norm=self.use_batch_norm,
+                                        use_residual_bias=self.encoder_config["use_residual_bias"],
+                                        use_conv_bias=self.encoder_config["use_conv_bias"],
+                                        )
         return encoder
 
     def make_decoder(self, input_shape) -> Model:
         decoder = make_residual_decoder(input_shape=input_shape,
                                         filters=self.decoder_filters,
-                                        base_kernel_size=self.kernel_size,
+                                        kernel_size=self.kernel_size,
                                         strides=self.decoder_strides,
                                         channels=1,
                                         output_activation=self.output_activation,
-                                        use_batch_norm=self.use_batch_norm)
+                                        use_batch_norm=self.use_batch_norm,
+                                        use_residual_bias=self.decoder_config["use_residual_bias"],
+                                        use_conv_bias=self.decoder_config["use_conv_bias"],
+                                        )
         return decoder
 
     def make_discriminator(self, input_shape) -> Model:
@@ -158,7 +166,7 @@ class VideoProtocol(DatasetProtocol):
         include_intermediate_output = self.model_architecture in ["vaegan"]
         discriminator = make_discriminator(input_shape=input_shape,
                                            filters=discriminator_config["filters"],
-                                           base_kernel_size=self.kernel_size,
+                                           kernel_size=self.kernel_size,
                                            strides=discriminator_config["strides"],
                                            intermediate_size=discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
@@ -303,12 +311,16 @@ class VideoProtocol(DatasetProtocol):
 
     # region Encoder
     @property
+    def encoder_config(self):
+        return self.config["encoder"]
+
+    @property
     def encoder_filters(self) -> List[int]:
-        return self.config["encoder_filters"]
+        return self.encoder_config["filters"]
 
     @property
     def encoder_strides(self) -> List[List[int]]:
-        return self.config["encoder_strides"]
+        return self.encoder_config["strides"]
 
     @property
     def code_activation(self) -> str:
@@ -318,12 +330,16 @@ class VideoProtocol(DatasetProtocol):
 
     # region Decoder
     @property
+    def decoder_config(self):
+        return self.config["decoder"]
+
+    @property
     def decoder_filters(self) -> List[int]:
-        return self.config["decoder_filters"]
+        return self.decoder_config["filters"]
 
     @property
     def decoder_strides(self) -> List[List[int]]:
-        return self.config["decoder_strides"]
+        return self.decoder_config["strides"]
 
     @property
     def output_activation(self) -> str:
@@ -338,6 +354,10 @@ class VideoProtocol(DatasetProtocol):
     @property
     def use_batch_norm(self) -> bool:
         return self.config["use_batch_norm"]
+
+    @property
+    def batch_size(self) -> int:
+        return self.config["batch_size"]
 
     @property
     def learning_rate(self) -> float:

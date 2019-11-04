@@ -17,7 +17,8 @@ class AE(CustomModel):
         self.decoder = decoder
         self.learning_rate = learning_rate
 
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        self.optimizer = None
+        self.set_optimizer(tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     def call(self, inputs, training=None, mask=None):
         return self.decode(self.encode(inputs))
@@ -69,3 +70,8 @@ class AE(CustomModel):
     def models_ids(self) -> Dict[Model, str]:
         return {self.encoder: "encoder",
                 self.decoder: "decoder"}
+
+    def set_optimizer(self, optimizer):
+        self.optimizer = optimizer
+        self.encoder.optimizer = optimizer
+        self.decoder.optimizer = optimizer

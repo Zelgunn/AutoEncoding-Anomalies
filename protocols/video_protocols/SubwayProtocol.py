@@ -30,9 +30,9 @@ class SubwayProtocol(VideoProtocol):
         image_callbacks_configs = self.get_image_callback_configs()
         auc_callbacks_configs = self.get_auc_callbacks_configs()
 
-        return ProtocolTrainConfig(batch_size=12,
+        return ProtocolTrainConfig(batch_size=self.batch_size,
                                    pattern=train_pattern,
-                                   epochs=50,
+                                   epochs=100,
                                    initial_epoch=self.initial_epoch,
                                    image_callbacks_configs=image_callbacks_configs,
                                    auc_callbacks_configs=auc_callbacks_configs,

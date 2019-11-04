@@ -37,7 +37,7 @@ class CustomModel(Model):
                                                       verbose=verbose,
                                                       mode=ModeKeys.TRAIN)
         if model_checkpoint is not None:
-            model_checkpoint.save_weights_only = False
+            model_checkpoint.save_weights_only = True
 
         if (tensorboard is not None) and (tensorboard.update_freq != "epoch"):
             tensorboard._samples_seen = initial_epoch * steps_per_epoch
@@ -138,9 +138,16 @@ class CustomModel(Model):
                        include_optimizer=include_optimizer, save_format=save_format,
                        signatures=signatures, options=options)
 
+    def save_weights(self, filepath, overwrite=True, save_format=None):
+        last_point_index = filepath.rindex(".")
+        filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
+        for model, model_id in self.models_ids.items():
+            model.save_weights(filepath.format(model_id), overwrite=overwrite, save_format=save_format)
+
     def load_weights(self,
                      filepath: str,
                      by_name=False):
+        # tmp = filepath
         last_point_index = filepath.rindex(".")
         filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
         result = None
@@ -150,6 +157,7 @@ class CustomModel(Model):
                 result = model.load_weights(model_filepath, by_name=by_name)
             else:
                 print("Could not load {} - {} is not a valid filepath".format(model_id, model_filepath))
+        # super(CustomModel, self).load_weights(tmp, by_name=by_name)
         return result
     # endregion
 

@@ -67,7 +67,7 @@ class AUCCallbackConfig(object):
                                        tensorboard=tensorboard,
                                        test_subset=dataset_loader.test_subset,
                                        pattern=self.pattern,
-                                       samples_count=128,
+                                       samples_count=512,
                                        epoch_freq=self.epoch_freq,
                                        batch_size=4,
                                        prefix=self.prefix)
@@ -150,7 +150,7 @@ class Protocol(object):
             val_dataset = val_dataset.batch(config.batch_size)
 
         self.model.fit(train_dataset, steps_per_epoch=1000, epochs=config.epochs,
-                       validation_data=val_dataset, validation_steps=100,
+                       validation_data=val_dataset, validation_steps=128,
                        callbacks=callbacks, initial_epoch=config.initial_epoch)
 
     def make_callback(self,
@@ -173,8 +173,7 @@ class Protocol(object):
         if config.early_stopping_metric is not None:
             early_stopping = EarlyStopping(monitor=config.early_stopping_metric,
                                            mode="min",
-                                           restore_best_weights=True,
-                                           patience=3
+                                           patience=5
                                            )
             callbacks.append(early_stopping)
         # endregion
