@@ -43,7 +43,7 @@ class SubwayProtocol(VideoProtocol):
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.initial_epoch,
                                   output_length=self.output_length,
-                                  detector_stride=32,
+                                  detector_stride=1,
                                   pre_normalize_predictions=True)
 
     @property

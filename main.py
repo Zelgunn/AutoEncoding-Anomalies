@@ -3,9 +3,21 @@ from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTech
 
 
 def main():
-    train = 1
-    initial_epoch = 0
+    best_weights = {
+        "ped2": 16,
+        "ped1": 50,
+        "avenue": 22,
+        "shanghaitech": 14,
+        "exit": 11,
+        "entrance": 97,
+    }
+
+    train = 0
+    initial_epoch = None
     dataset = "entrance"
+
+    if initial_epoch is None:
+        initial_epoch = best_weights[dataset]
 
     if dataset == "ped2":
         protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=2)

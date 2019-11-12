@@ -23,7 +23,7 @@ class UCSDProtocol(VideoProtocol):
 
         return ProtocolTrainConfig(batch_size=self.batch_size,
                                    pattern=train_pattern,
-                                   epochs=50,
+                                   epochs=16,
                                    initial_epoch=self.initial_epoch,
                                    image_callbacks_configs=image_callbacks_configs,
                                    auc_callbacks_configs=auc_callbacks_configs,

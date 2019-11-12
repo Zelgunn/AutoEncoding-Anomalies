@@ -1,6 +1,7 @@
 import tensorflow as tf
 
 from misc_utils.misc_utils import get_known_shape
+from misc_utils.math_utils import diff
 
 
 # @tf.function
@@ -36,3 +37,19 @@ def split_steps(inputs, step_size, merge_batch_and_steps):
     inputs = tf.reshape(inputs, new_shape)
 
     return inputs, inputs_shape, unmerged_shape
+
+
+@tf.function
+def gradient_difference_loss(y_true, y_pred, axis=(-2, -3), alpha=1):
+    grad_losses = []
+
+    for current_axis in axis:
+        true_grad = diff(y_true, axis=current_axis)
+        pred_grad = diff(y_pred, axis=current_axis)
+        grad_delta = tf.abs(tf.abs(true_grad) - tf.abs(pred_grad))
+        grad_loss = tf.pow(grad_delta, alpha)
+        grad_loss = tf.reduce_mean(grad_loss, axis=axis)
+        grad_losses.append(grad_loss)
+
+    total_grad_loss = tf.reduce_sum(grad_losses, axis=0)
+    return total_grad_loss

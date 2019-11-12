@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow.python.keras.models import Model
 import numpy as np
+from scipy.optimize import brentq
+from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import os
 from typing import Union, List, Callable, Dict, Any, Tuple
@@ -68,7 +70,7 @@ class AnomalyDetector(Model):
 
         merged_predictions, merged_labels = self.merge_samples_predictions(predictions=predictions, labels=labels)
         self.save_predictions(predictions=merged_predictions, labels=labels, log_dir=log_dir)
-        roc, pr = self.evaluate_predictions(predictions=merged_predictions, labels=merged_labels)
+        results = self.evaluate_predictions(predictions=merged_predictions, labels=merged_labels)
 
         samples_names = [os.path.basename(folder) for folder in dataset.test_subset.subset_folders]
         self.plot_predictions(predictions=predictions,
@@ -77,15 +79,17 @@ class AnomalyDetector(Model):
                               samples_names=samples_names)
 
         for i in range(self.metric_count):
-            print("Anomaly_score ({}): ROC = {} | PR = {}".format(self.anomaly_metrics_names[i], roc[i], pr[i]))
+            metric_results_string = "Anomaly_score ({}):".format(self.anomaly_metrics_names[i])
+            for result_name, result_values in results.items():
+                metric_results_string += " {} = {} |".format(result_name, result_values[i])
+            print(metric_results_string)
 
         additional_config["stride"] = stride
         additional_config["pre-normalize predictions"] = pre_normalize_predictions
         self.save_evaluation_results(log_dir=log_dir,
-                                     roc_results=roc,
-                                     pr_results=pr,
+                                     results=results,
                                      additional_config=additional_config)
-        return roc, pr
+        return results
 
     # region Predict anomaly scores
     def predict_anomalies(self,
@@ -171,7 +175,10 @@ class AnomalyDetector(Model):
 
         from datasets.loaders import SubsetLoader
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
-        labels = np.sum(labels, axis=-1) >= 1
+        mask = np.zeros_like(labels)
+        mask[:, 15] = 1
+        # mask[:, 16] = 1
+        labels = np.sum(labels * mask, axis=-1) >= 1
 
         if normalize_predictions:
             for i in range(self.metric_count):
@@ -208,34 +215,64 @@ class AnomalyDetector(Model):
     @staticmethod
     def evaluate_predictions(predictions: List[np.ndarray],
                              labels: np.ndarray
-                             ):
+                             ) -> Dict[str, List[float]]:
         predictions = [(metric_pred - metric_pred.min()) / (metric_pred.max() - metric_pred.min())
                        for metric_pred in predictions]
 
-        roc_results, pr_results = [], []
+        results = None
         for i in range(len(predictions)):
-            metric_roc_result, metric_pr_result = AnomalyDetector.evaluate_metric_predictions(predictions[i], labels)
-            roc_results.append(metric_roc_result)
-            pr_results.append(metric_pr_result)
+            metric_results = AnomalyDetector.evaluate_metric_predictions(predictions[i], labels)
 
-        return roc_results, pr_results
+            if results is None:
+                results = {result_name: [] for result_name in metric_results}
+
+            for result_name in metric_results:
+                results[result_name].append(metric_results[result_name])
+
+        return results
 
     @staticmethod
     def evaluate_metric_predictions(predictions: np.ndarray,
                                     labels: np.ndarray
                                     ):
-        roc = tf.metrics.AUC(curve="ROC")
-        pr = tf.metrics.AUC(curve="PR")
+        roc = tf.metrics.AUC(curve="ROC", num_thresholds=1000)
+        pr = tf.metrics.AUC(curve="PR", num_thresholds=1000)
+
+        thresholds = list(np.arange(0.01, 1.0, 1.0/200.0, dtype=np.float32))
+        precision = tf.metrics.Precision(thresholds=thresholds)
+        recall = tf.metrics.Recall(thresholds=thresholds)
 
         if predictions.ndim > 1 and labels.ndim == 1:
             predictions = predictions.mean(axis=tuple(range(1, predictions.ndim)))
 
+        predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
+
         roc.update_state(labels, predictions)
         pr.update_state(labels, predictions)
 
-        roc_result = roc.result()
-        pr_result = pr.result()
-        return roc_result, pr_result
+        precision.update_state(labels, predictions)
+        recall.update_state(labels, predictions)
+
+        # region EER
+        tp = roc.true_positives.numpy()
+        fp = roc.false_positives.numpy()
+        tpr = (tp / tp.max()).astype(np.float64)
+        fpr = (fp / fp.max()).astype(np.float64)
+        eer = brentq(lambda x: 1. - x - interp1d(fpr, tpr)(x), 0., 1.)
+        # endregion
+
+        recall_result = recall.result().numpy()
+        precision_result = precision.result().numpy()
+        average_precision = -np.sum(np.diff(recall_result) * precision_result[:-1])
+
+        results = {
+            "ROC": roc.result(),
+            "EER": eer,
+            "PR": pr.result(),
+            "Precision": average_precision,
+        }
+
+        return results
 
     # endregion
 
@@ -271,7 +308,7 @@ class AnomalyDetector(Model):
             metric_predictions = predictions[i]
             if metric_predictions.ndim > 1:
                 metric_predictions = np.mean(metric_predictions, axis=tuple(range(1, metric_predictions.ndim)))
-            plt.plot(1.0 - metric_predictions, linewidth=0.25)
+            plt.plot(1.0 - metric_predictions, linewidth=0.1)
 
         plt.legend(self.anomaly_metrics_names,
                    loc='center left', bbox_to_anchor=(1, 0.5), fontsize=4.0,
@@ -306,14 +343,19 @@ class AnomalyDetector(Model):
 
     def save_evaluation_results(self,
                                 log_dir: str,
-                                roc_results: List[float],
-                                pr_results: List[float],
+                                results: Dict[str, List[Union[tf.Tensor, float]]],
                                 additional_config: Dict[str, any] = None):
         with open(os.path.join(log_dir, "anomaly_detection_scores.txt"), 'w') as file:
             for i in range(self.metric_count):
-                file.write("{metric}) ROC = {roc} | PR = {pr}\n".format(metric=self.anomaly_metrics_names[i],
-                                                                        roc=roc_results[i],
-                                                                        pr=pr_results[i]))
+                line = "{})".format(self.anomaly_metrics_names[i])
+                for result_name, result_values in results.items():
+                    value = round(float(result_values[i]), 3)
+                    line += " {} = {} |".format(result_name, value)
+                line += "\n"
+                file.write(line)
+
+            file.write("\n")
+
             if additional_config is not None:
                 for key, value in additional_config.items():
                     file.write("{}: {}\n".format(key, value))

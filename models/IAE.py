@@ -1,9 +1,9 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from typing import Dict
+from typing import Dict, Tuple
 
 from models import AE
-from models.utils import split_steps
+from models.utils import split_steps, gradient_difference_loss
 
 
 class IAE(AE):
@@ -28,8 +28,8 @@ class IAE(AE):
     @tf.function
     def compute_loss(self,
                      inputs
-                     ) -> tf.Tensor:
-        # decoded = self.interpolate(inputs)
+                     ) -> Tuple[tf.Tensor, tf.Tensor]:
+        # region Forward
         start = inputs[:, :self.step_size]
         end = inputs[:, -self.step_size:]
 
@@ -43,9 +43,11 @@ class IAE(AE):
         end_encoded = self.encode(end)
         latent_code = factor * end_encoded + (1.0 - factor) * start_encoded
         decoded = self.decode(latent_code)
+        # endregion
 
         loss = tf.square(target - decoded)
         loss = tf.reduce_mean(loss)
+
         return loss
 
     @tf.function
@@ -57,7 +59,6 @@ class IAE(AE):
         gradients = tape.gradient(loss_scaled, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        # loss /= tf.cast(tf.reduce_prod(tf.shape(inputs)[1:]), tf.float32)
         return loss
 
     @tf.function
@@ -104,6 +105,20 @@ class IAE(AE):
         relative_error = tf.abs(base_error - interpolation_error)
         return relative_error
 
+    @tf.function
+    def latent_code_surprisal(self, inputs):
+        interpolated_latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=False)
+        interpolated_latent_code = interpolated_latent_code[:, 1: -1]
+
+        inputs = inputs[:, self.step_size: - self.step_size]
+        inputs, _, __ = self.split_inputs(inputs, merge_batch_and_steps=True)
+        default_latent_code = self.encode(inputs)
+        default_latent_code = tf.reshape(default_latent_code, tf.shape(interpolated_latent_code))
+
+        cosine_distance = tf.losses.cosine_similarity(default_latent_code, interpolated_latent_code,
+                                                      axis=list(range(2, default_latent_code.shape.rank)))
+        return cosine_distance
+
     def get_interpolated_latent_code(self, inputs, merge_batch_and_steps):
         inputs, _, new_shape = self.split_inputs(inputs, merge_batch_and_steps=False)
         batch_size, step_count, *_ = new_shape
@@ -146,6 +161,5 @@ class IAE(AE):
         return [
             self.interpolation_mse,
             self.interpolation_mae,
-            # self.interpolation_relative_mse,
-            # self.interpolation_relative_mae
+            self.latent_code_surprisal,
         ]

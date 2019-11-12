@@ -52,7 +52,7 @@ class VideoProtocol(DatasetProtocol):
 
         model = AE(encoder=encoder,
                    decoder=decoder,
-                   learning_rate=self.learning_rate)
+                   learning_rate=WarmupSchedule(1000, self.learning_rate))
         return model
 
     def make_iae(self) -> IAE:
