@@ -78,6 +78,16 @@ class EBGAN(CustomModel):
         reconstruction_error = tf.reduce_mean(reconstruction_error, axis=tuple(range(1, inputs.shape.rank)))
         return reconstruction_error
 
+    def get_config(self):
+        config = {
+            "autoencoder": self.autoencoder.get_config(),
+            "generator": self.generator.get_config(),
+            "margin": self.margin,
+            "autoencoder_learning_rate": self.discriminator_learning_rate,
+            "generator_learning_rate": self.generator_learning_rate,
+        }
+        return config
+
     @property
     def models_ids(self) -> Dict[Model, str]:
         return {

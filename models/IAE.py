@@ -3,7 +3,7 @@ from tensorflow.python.keras import Model
 from typing import Dict, Tuple
 
 from models import AE
-from models.utils import split_steps, gradient_difference_loss
+from models.utils import split_steps
 
 
 class IAE(AE):

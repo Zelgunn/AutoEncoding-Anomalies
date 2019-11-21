@@ -170,12 +170,12 @@ class Protocol(object):
         callbacks.append(model_checkpoint)
         # endregion
         # region Early stopping
-        if config.early_stopping_metric is not None:
-            early_stopping = EarlyStopping(monitor=config.early_stopping_metric,
-                                           mode="min",
-                                           patience=5
-                                           )
-            callbacks.append(early_stopping)
+        # if config.early_stopping_metric is not None:
+        #     early_stopping = EarlyStopping(monitor=config.early_stopping_metric,
+        #                                    mode="min",
+        #                                    patience=5
+        #                                    )
+        #     callbacks.append(early_stopping)
         # endregion
         # region AUC
         if config.auc_callbacks_configs is not None:

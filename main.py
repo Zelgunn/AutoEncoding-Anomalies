@@ -14,10 +14,13 @@ def main():
 
     train = 0
     initial_epoch = None
-    dataset = "entrance"
+    dataset = "ped2"
 
     if initial_epoch is None:
-        initial_epoch = best_weights[dataset]
+        if train:
+            initial_epoch = 0
+        else:
+            initial_epoch = best_weights[dataset]
 
     if dataset == "ped2":
         protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=2)
@@ -40,8 +43,17 @@ def main():
     else:
         raise ValueError
 
-    # protocol.autoencode_video(r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped1\Test\Test008",
-    #                           initial_epoch)
+    # root = r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\subway"
+    #
+    # input_video = root + r"\exit\Subway_Exit.avi"
+    # output_video = root + r"\subway_exit.avi"
+    #
+    # protocol.autoencode_video(video_source=input_video,
+    #                           target_path=output_video,
+    #                           load_epoch=initial_epoch,
+    #                           fps=25.0)
+    #
+    # exit()
 
     if train:
         protocol.train_model()

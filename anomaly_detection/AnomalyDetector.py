@@ -238,7 +238,7 @@ class AnomalyDetector(Model):
         roc = tf.metrics.AUC(curve="ROC", num_thresholds=1000)
         pr = tf.metrics.AUC(curve="PR", num_thresholds=1000)
 
-        thresholds = list(np.arange(0.01, 1.0, 1.0/200.0, dtype=np.float32))
+        thresholds = list(np.arange(0.01, 1.0, 1.0 / 200.0, dtype=np.float32))
         precision = tf.metrics.Precision(thresholds=thresholds)
         recall = tf.metrics.Recall(thresholds=thresholds)
 
@@ -300,6 +300,11 @@ class AnomalyDetector(Model):
                                 labels: np.ndarray,
                                 log_dir: str,
                                 sample_name: str,
+                                linewidth=0.1,
+                                include_legend=True,
+                                font_size=4,
+                                clear_figure=True,
+                                ratio=None,
                                 ):
         plt.ylim(0.0, 1.0)
 
@@ -308,20 +313,34 @@ class AnomalyDetector(Model):
             metric_predictions = predictions[i]
             if metric_predictions.ndim > 1:
                 metric_predictions = np.mean(metric_predictions, axis=tuple(range(1, metric_predictions.ndim)))
-            plt.plot(1.0 - metric_predictions, linewidth=0.1)
+            plt.plot(1.0 - metric_predictions, linewidth=linewidth)
 
-        plt.legend(self.anomaly_metrics_names,
-                   loc='center left', bbox_to_anchor=(1, 0.5), fontsize=4.0,
-                   fancybox=True, shadow=True)
-        # noinspection PyUnresolvedReferences
-        adjust_figure_aspect(plt.gcf(), np.log(sample_length + 1))
+        if include_legend:
+            plt.legend(self.anomaly_metrics_names,
+                       loc="center", bbox_to_anchor=(0.5, -0.4), fontsize=font_size,
+                       fancybox=True, shadow=True)
+
+        if ratio is None:
+            # noinspection PyUnresolvedReferences
+            ratio = np.log(sample_length + 1) * 0.75
+
+        adjust_figure_aspect(plt.gcf(), ratio)
         # noinspection PyUnresolvedReferences
         dpi = (np.sqrt(sample_length) + 100) * 4
 
         self.plot_labels(labels)
+
+        for tick in plt.gca().xaxis.get_major_ticks():
+            tick.label.set_fontsize(font_size)
+
+        for tick in plt.gca().yaxis.get_major_ticks():
+            tick.label.set_fontsize(font_size)
+
         labeled_filepath = os.path.join(log_dir, "{}.png".format(sample_name))
-        plt.savefig(labeled_filepath, dpi=dpi)
-        plt.clf()
+        plt.savefig(labeled_filepath, dpi=dpi, bbox_inches='tight')
+
+        if clear_figure:
+            plt.clf()
 
     @staticmethod
     def plot_labels(labels: np.ndarray):
@@ -333,11 +352,11 @@ class AnomalyDetector(Model):
                     start = i
             else:
                 if not labels[i]:
-                    plt.gca().axvspan(start, i, alpha=0.25, color="red")
+                    plt.gca().axvspan(start, i, alpha=0.25, color="red", linewidth=0)
                     start = -1
 
         if start != -1:
-            plt.gca().axvspan(start, len(labels) - 1, alpha=0.25, color="red")
+            plt.gca().axvspan(start, len(labels) - 1, alpha=0.25, color="red", linewidth=0)
 
     # endregion
 

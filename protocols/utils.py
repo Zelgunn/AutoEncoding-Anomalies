@@ -1,18 +1,16 @@
-import tensorflow as tf
 from tensorflow.python.keras.models import Sequential, Model
 from tensorflow.python.keras.layers import LeakyReLU, Layer, Flatten, Dense
 from tensorflow.python.keras.layers.convolutional import Conv
-from tensorflow.python.keras.utils import conv_utils
 from typing import List, Tuple, Union
 
 from CustomKerasLayers import ResBlockND, ResBlockNDTranspose
 
 
 # region Autoencoder
-def make_residual_encoder(input_shape: Tuple[int, int, int, int],
+def make_residual_encoder(input_shape: Tuple[int, ...],
                           filters: List[int],
                           kernel_size: int,
-                          strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
+                          strides: Union[List[Tuple[int, ...]], List[List[int]], List[int]],
                           code_size: int,
                           code_activation: Union[str, Layer],
                           use_batch_norm: bool,
@@ -149,56 +147,4 @@ def validate_filters_and_strides(filters: List[int],
 
 # endregion
 
-# region Data augmentation
 
-def video_random_cropping(video: tf.Tensor, crop_ratio: float, output_length: int):
-    crop_ratio = tf.random.uniform(shape=(), minval=1.0 - crop_ratio, maxval=1.0)
-    original_shape = tf.cast(tf.shape(video), tf.float32)
-    original_height, original_width = original_shape[1], original_shape[2]
-
-    crop_size = [output_length, crop_ratio * original_height, crop_ratio * original_width, 1]
-
-    video = tf.image.random_crop(video, crop_size)
-    return video
-
-
-def dropout_noise(inputs, max_rate, noise_shape_prob):
-    """
-    :param inputs: A floating point `Tensor`.
-    :param max_rate: A floating point scalar `Tensor`. The maximum probability that each element is dropped.
-    :param noise_shape_prob: A 1-D `Tensor` of type `float32`, representing the probability of dropping each
-        dimension completely.
-    :return: A `Tensor` of the same shape and type as `inputs.
-    """
-    noise_shape = tf.random.uniform(shape=[len(inputs.shape)], minval=0.0, maxval=1.0, dtype=tf.float32)
-    noise_shape = noise_shape < noise_shape_prob
-    noise_shape = tf.cast(noise_shape, tf.int32)
-    noise_shape = tf.shape(inputs) * (1 - noise_shape) + noise_shape
-
-    rate = tf.random.uniform(shape=[], minval=0.0, maxval=max_rate, dtype=tf.float32)
-    random_tensor = tf.random.uniform(shape=noise_shape, minval=0.0, maxval=1.0, dtype=tf.float32)
-    keep_mask = random_tensor >= rate
-
-    outputs = inputs * tf.cast(keep_mask, inputs.dtype) / (1.0 - rate)
-    return outputs
-
-
-def video_dropout_noise(video, max_rate, spatial_prob):
-    drop_width = tf.random.uniform([], minval=0.0, maxval=1.0, dtype=tf.float32) > 0.5
-    drop_width = tf.cast(drop_width, tf.float32)
-
-    noise_shape_prob = [spatial_prob * (1.0 - drop_width), spatial_prob * drop_width, 1.0]
-    noise_shape_prob = [0.0] * (len(video.shape) - 3) + noise_shape_prob
-
-    video = dropout_noise(video, max_rate, noise_shape_prob)
-    return video
-
-
-def random_image_negative(image, negative_prob=0.5):
-    negative = tf.random.uniform([], minval=0.0, maxval=1.0, dtype=tf.float32) < negative_prob
-    image = tf.cond(pred=negative,
-                    true_fn=lambda: 1.0 - image,
-                    false_fn=lambda: image)
-    return image
-
-# endregion

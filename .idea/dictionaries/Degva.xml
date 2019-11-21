@@ -29,6 +29,7 @@
       <w>grayscale</w>
       <w>hann</w>
       <w>iaegan</w>
+      <w>iaes</w>
       <w>icns</w>
       <w>imshow</w>
       <w>induit</w>
@@ -47,6 +48,7 @@
       <w>maxval</w>
       <w>mcidas</w>
       <w>mfcc</w>
+      <w>miae</w>
       <w>mins</w>
       <w>minval</w>
       <w>mnist</w>
