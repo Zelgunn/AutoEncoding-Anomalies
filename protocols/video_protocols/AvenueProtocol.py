@@ -17,8 +17,10 @@ class AvenueProtocol(VideoProtocol):
 
         return ProtocolTrainConfig(batch_size=self.batch_size,
                                    pattern=train_pattern,
+                                   validation_steps=128,
                                    epochs=50,
                                    initial_epoch=self.initial_epoch,
+                                   steps_per_epoch=1000,
                                    image_callbacks_configs=image_callbacks_configs,
                                    auc_callbacks_configs=auc_callbacks_configs,
                                    early_stopping_metric=self.model.metrics_names[0])
@@ -27,7 +29,6 @@ class AvenueProtocol(VideoProtocol):
         anomaly_pattern = self.get_anomaly_pattern()
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.initial_epoch,
-                                  output_length=self.output_length,
                                   detector_stride=1,
                                   pre_normalize_predictions=True)
 

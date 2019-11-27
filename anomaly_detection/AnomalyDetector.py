@@ -15,7 +15,6 @@ from modalities import Pattern
 class AnomalyDetector(Model):
     def __init__(self,
                  autoencoder: Callable,
-                 output_length: int,
                  compare_metrics: List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]] = "mse",
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
                  **kwargs
@@ -23,7 +22,6 @@ class AnomalyDetector(Model):
         """
 
         :param autoencoder:
-        :param output_length:
         :param compare_metrics:
         :param additional_metrics:
         :param kwargs:
@@ -31,7 +29,6 @@ class AnomalyDetector(Model):
         super(AnomalyDetector, self).__init__(**kwargs)
 
         self.io_compare_model = IOCompareModel(autoencoder=autoencoder,
-                                               output_length=output_length,
                                                metrics=compare_metrics)
         self.additional_metrics = to_list(additional_metrics) if additional_metrics is not None else []
 

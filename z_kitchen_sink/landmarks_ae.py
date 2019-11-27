@@ -128,7 +128,7 @@ def train_landmarks_autoencoder():
 
     tensorboard = TensorBoard(log_dir=log_dir, update_freq="epoch", profile_batch=0)
 
-    raw_predictions_model = IOCompareModel(landmarks_autoencoder, output_length)
+    raw_predictions_model = IOCompareModel(landmarks_autoencoder)
     auc_callback = AUCCallback.from_subset(predictions_model=raw_predictions_model, tensorboard=tensorboard,
                                            test_subset=test_subset, pattern=Pattern(*pattern, "labels"))
 

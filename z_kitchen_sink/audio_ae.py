@@ -235,7 +235,7 @@ def train_audio_autoencoder():
                                                                            tensorboard=tensorboard,
                                                                            epoch_freq=1)
 
-    raw_predictions_model = IOCompareModel(audio_autoencoder, output_length)
+    raw_predictions_model = IOCompareModel(audio_autoencoder)
     auc_callback = AUCCallback.from_subset(predictions_model=raw_predictions_model, tensorboard=tensorboard,
                                            test_subset=test_subset, pattern=anomaly_pattern)
 

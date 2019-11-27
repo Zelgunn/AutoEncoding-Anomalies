@@ -59,7 +59,6 @@ class IOCompareLayer(Layer):
 
     def __init__(self,
                  metric="mse",
-                 output_length: int = None,
                  **kwargs):
         super(IOCompareLayer, self).__init__(trainable=False, **kwargs)
 
@@ -71,18 +70,9 @@ class IOCompareLayer(Layer):
                                  .format(metric, list(known_metrics.keys())))
 
         self.metric = metric
-        self.output_length = output_length
 
     def call(self, inputs, **kwargs):
         pred_output, true_output = inputs
-
-        if self.output_length is None:
-            length = tf.shape(true_output)[1]
-        else:
-            length = self.output_length
-            true_output = true_output[:, :length]
-
-        pred_output = pred_output[:, :length]
 
         error = self.metric(true_output, pred_output)
         reduction_axis = tuple(range(2, len(error.shape)))

@@ -149,14 +149,18 @@ class CustomModel(Model):
                      by_name=False):
         # tmp = filepath
         last_point_index = filepath.rindex(".")
-        filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
+        base_filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
         result = None
         for model, model_id in self.models_ids.items():
-            model_filepath = filepath.format(model_id)
-            if os.path.isfile(model_filepath):
-                result = model.load_weights(model_filepath, by_name=by_name)
+            if isinstance(model, CustomModel):
+                result = model.load_weights(base_filepath.format(model_id), by_name=by_name)
             else:
-                print("Could not load {} - {} is not a valid filepath".format(model_id, model_filepath))
+                model_filepath = base_filepath.format(model_id)
+                if os.path.isfile(model_filepath):
+                    result = model.load_weights(model_filepath, by_name=by_name)
+                    print("Successfully loaded {} from {}.".format(model_id, model_filepath))
+                else:
+                    print("Could not load {} - {} is not a valid filepath.".format(model_id, model_filepath))
         # super(CustomModel, self).load_weights(tmp, by_name=by_name)
         return result
     # endregion

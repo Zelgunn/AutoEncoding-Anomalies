@@ -17,8 +17,10 @@ class EmolyProtocol(VideoProtocol):
 
         return ProtocolTrainConfig(batch_size=self.batch_size,
                                    pattern=train_pattern,
+                                   steps_per_epoch=1000,
                                    epochs=50,
                                    initial_epoch=self.initial_epoch,
+                                   validation_steps=128,
                                    image_callbacks_configs=image_callbacks_configs,
                                    auc_callbacks_configs=auc_callbacks_configs,
                                    early_stopping_metric=self.model.metrics_names[0])
@@ -27,7 +29,6 @@ class EmolyProtocol(VideoProtocol):
         anomaly_pattern = self.get_anomaly_pattern()
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.initial_epoch,
-                                  output_length=self.output_length,
                                   detector_stride=32,
                                   pre_normalize_predictions=True)
 

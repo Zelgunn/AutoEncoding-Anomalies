@@ -5,7 +5,7 @@ from typing import List, Union
 
 from callbacks import TensorBoardPlugin
 from datasets import SubsetLoader
-from modalities import Pattern
+from modalities import Pattern, MelSpectrogram
 
 
 class AudioCallback(TensorBoardPlugin):
@@ -43,25 +43,53 @@ class AudioCallback(TensorBoardPlugin):
                               tensorboard: keras.callbacks.TensorBoard,
                               update_freq="epoch",
                               epoch_freq=1,
+                              mel_spectrogram: MelSpectrogram = None,
                               sample_rate=48000,
+                              inputs_are_outputs=True,
+                              modality_index=None,
                               ) -> List["AudioCallback"]:
-        inputs, outputs = subset.get_batch(batch_size=4, pattern=pattern)
+        batch = subset.get_batch(batch_size=4, pattern=pattern)
 
-        # TODO : Do not use static values for mel spectrogram conversion
-        def true_sound_function(data, step):
+        if inputs_are_outputs:
+            inputs = outputs = batch
+        else:
+            inputs, outputs = batch
+
+        if modality_index is None:
+            audio_outputs = outputs
+        else:
+            audio_outputs = outputs[modality_index]
+
+        def to_wave(data):
+            if mel_spectrogram is not None:
+                if isinstance(data, tf.Tensor):
+                    data = data.numpy()
+                data = (data - 1) * 80
+                data = mel_spectrogram.mel_spectrograms_to_wave(data, sample_rate)
+            if len(data.shape) == 2:
+                data = tf.expand_dims(data, axis=-1)
+            data *= 1.0 / tf.reduce_max(tf.abs(data), axis=(1, 2))
+            return data
+
+        audio_outputs = to_wave(audio_outputs)
+
+        def one_shot_function(data, step):
             return tf.summary.audio(name="{}_true".format(name), data=data, sample_rate=sample_rate,
                                     step=step, max_outputs=4)
 
-        def pred_sound_function(data, step):
-            predicted = autoencoder.predict_on_batch(data)
-            return tf.summary.audio(name="{}_pred".format(name), data=predicted, sample_rate=sample_rate,
+        def repeated_function(data, step):
+            data = autoencoder(data)
+            if modality_index is not None:
+                data = data[modality_index]
+            data = to_wave(data)
+            return tf.summary.audio(name="{}_pred".format(name), data=data, sample_rate=sample_rate,
                                     step=step, max_outputs=4)
 
-        one_shot_callback = AudioCallback(summary_function=true_sound_function, summary_inputs=outputs,
+        one_shot_callback = AudioCallback(summary_function=one_shot_function, summary_inputs=audio_outputs,
                                           tensorboard=tensorboard, is_train_callback=is_train_callback,
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=True)
 
-        repeated_callback = AudioCallback(summary_function=pred_sound_function, summary_inputs=inputs,
+        repeated_callback = AudioCallback(summary_function=repeated_function, summary_inputs=inputs,
                                           tensorboard=tensorboard, is_train_callback=is_train_callback,
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=False)
 

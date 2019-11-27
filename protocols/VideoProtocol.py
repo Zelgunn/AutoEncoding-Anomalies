@@ -177,7 +177,6 @@ class VideoProtocol(DatasetProtocol):
                                            strides=discriminator_config["strides"],
                                            intermediate_size=discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
-                                           use_batch_norm=self.use_batch_norm,
                                            include_intermediate_output=include_intermediate_output)
         return discriminator
 

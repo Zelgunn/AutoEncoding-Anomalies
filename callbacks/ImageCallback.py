@@ -45,19 +45,30 @@ class ImageCallback(TensorBoardPlugin):
                               update_freq="epoch",
                               epoch_freq=1,
                               max_outputs=4,
+                              inputs_are_outputs=True,
+                              modality_index=None,
                               ) -> List["ImageCallback"]:
         batch = subset.get_batch(batch_size=4, pattern=pattern)
-        if (isinstance(batch, tuple) or isinstance(batch, list)) and len(batch) == 2:
-            inputs, outputs = batch
-        else:
+        if inputs_are_outputs:
             inputs = outputs = batch
+        else:
+            inputs, outputs = batch
 
-        if len(inputs.shape) >= 5:
+        if modality_index is None:
+            image_outputs = outputs
+        else:
+            image_outputs = outputs[modality_index]
+
+        inputs_rank = len(image_outputs.shape)
+        if inputs_rank >= 5:
             one_shot_base_function = video_summary
             repeated_base_function = video_autoencoder_summary
-        else:
+        elif inputs_rank == 4:
             one_shot_base_function = image_summary
             repeated_base_function = image_autoencoder_summary
+        else:
+            raise ValueError("Incorrect rank for images/video, expected rank >= 4, got {} with rank {}."
+                             .format(image_outputs.shape, inputs_rank))
 
         def one_shot_function(data, step):
             data = convert_tensor_uint8(data)
@@ -66,13 +77,15 @@ class ImageCallback(TensorBoardPlugin):
         def repeated_function(data, step):
             _inputs, _outputs = data
             decoded = autoencoder(_inputs)
+            if modality_index is not None:
+                decoded = decoded[modality_index]
             return repeated_base_function(name=name, true_data=_outputs, pred_data=decoded, step=step)
 
-        one_shot_callback = ImageCallback(summary_function=one_shot_function, summary_inputs=inputs,
+        one_shot_callback = ImageCallback(summary_function=one_shot_function, summary_inputs=image_outputs,
                                           tensorboard=tensorboard, is_train_callback=is_train_callback,
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=True)
 
-        repeated_callback = ImageCallback(summary_function=repeated_function, summary_inputs=(inputs, outputs),
+        repeated_callback = ImageCallback(summary_function=repeated_function, summary_inputs=(inputs, image_outputs),
                                           tensorboard=tensorboard, is_train_callback=is_train_callback,
                                           update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=False)
 

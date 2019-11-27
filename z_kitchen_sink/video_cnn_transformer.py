@@ -380,7 +380,9 @@ def train_video_cnn_transformer(input_length=4,
                                  initial_epoch=initial_epoch,
                                  image_callbacks_configs=image_callbacks_configs,
                                  auc_callbacks_configs=auc_callbacks_configs,
-                                 early_stopping_metric=model.metrics_names[0])
+                                 early_stopping_metric=model.metrics_names[0],
+                                 steps_per_epoch=1000,
+                                 validation_steps=128)
 
     try:
         protocol.train_model(config=config)

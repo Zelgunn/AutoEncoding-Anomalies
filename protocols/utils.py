@@ -97,7 +97,6 @@ def make_discriminator(input_shape: Tuple[int, int, int, int],
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        intermediate_size: int,
                        intermediate_activation: str,
-                       use_batch_norm: bool,
                        include_intermediate_output: bool,
                        name="Discriminator"):
     # region Core : [Conv(), Conv(), ..., Flatten(), Dense()]

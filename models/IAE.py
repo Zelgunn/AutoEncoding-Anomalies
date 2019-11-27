@@ -139,6 +139,14 @@ class IAE(AE):
             encoded = tf.reshape(encoded, [batch_size * step_count, *encoded_shape_dimensions])
         return encoded
 
+    @tf.function
+    def step_mse(self, inputs, ground_truth):
+        error = tf.square(inputs - ground_truth)
+        error, _, _ = self.split_inputs(error, merge_batch_and_steps=False)
+        reduction_axis = list(range(2, error.shape.rank))
+        error = tf.reduce_mean(error, axis=reduction_axis)
+        return error
+
     def split_inputs(self, inputs, merge_batch_and_steps):
         return split_steps(inputs, self.step_size, merge_batch_and_steps)
 

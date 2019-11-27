@@ -10,6 +10,7 @@ from typing import Tuple, Optional
 from anomaly_detection import IOCompareModel
 from callbacks import TensorBoardPlugin
 from misc_utils.plot_utils import plot_line2d_to_array
+from misc_utils.misc_utils import to_constant_list
 from datasets import SubsetLoader
 from modalities import Pattern
 
@@ -115,8 +116,11 @@ class AUCCallback(TensorBoardPlugin):
         self.name = name
 
         with tf.name_scope(self.name):
-            self.inputs = tf.constant(inputs, name="inputs")
-            self.outputs = tf.constant(outputs, name="outputs")
+            self.inputs = to_constant_list(inputs, name="input")
+            if inputs is outputs:
+                self.outputs = self.inputs
+            else:
+                self.outputs = to_constant_list(outputs, name="outputs")
             self.labels = tf.constant(np.squeeze(labels), name="labels")
 
             self.roc = AUCWrapper(curve="ROC",
@@ -131,7 +135,7 @@ class AUCCallback(TensorBoardPlugin):
 
     def _write_logs(self, index):
         start_time = time()
-        predictions = self.predictions_model.predict((self.inputs, self.outputs), batch_size=self.batch_size)
+        predictions = self.predictions_model.predict(self.inputs + self.outputs, batch_size=self.batch_size)
         predictions = np.array(predictions)
         predictions = self.reformat_predictions(predictions)
 
@@ -169,14 +173,12 @@ class AUCCallback(TensorBoardPlugin):
                     tensorboard: TensorBoard,
                     test_subset: SubsetLoader,
                     pattern: Pattern,
+                    labels_length: int,
                     samples_count=512,
                     epoch_freq=1,
                     batch_size=32,
                     prefix="") -> "AUCCallback":
         batch = test_subset.get_batch(batch_size=samples_count, pattern=pattern)
-
-        if pattern.output_count not in [2, 3]:
-            raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(pattern.output_count))
 
         if pattern.output_count == 2:
             inputs, labels = batch
@@ -184,9 +186,9 @@ class AUCCallback(TensorBoardPlugin):
         elif pattern.output_count == 3:
             inputs, outputs, labels = batch
         else:
-            inputs = outputs = labels = None
+            raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(pattern.output_count))
 
-        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, predictions_model.output_length)
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, labels_length)
 
         auc_callback = AUCCallback(predictions_model=predictions_model,
                                    tensorboard=tensorboard,
@@ -197,4 +199,5 @@ class AUCCallback(TensorBoardPlugin):
                                    plot_size=(128, 128),
                                    batch_size=batch_size,
                                    prefix=prefix)
+
         return auc_callback
