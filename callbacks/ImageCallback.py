@@ -1,148 +1,97 @@
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.python.eager import def_function
-from typing import List, Union, Callable
+from typing import List, Union
 
-from callbacks import TensorBoardPlugin
+from callbacks import ModalityCallback
 from misc_utils.summary_utils import image_summary
-from datasets import SubsetLoader
-from modalities import Pattern
+from misc_utils.misc_utils import to_list
 
 
-class ImageCallback(TensorBoardPlugin):
+class ImageCallback(ModalityCallback):
     def __init__(self,
-                 summary_function: def_function.Function,
-                 summary_inputs,
+                 inputs: Union[tf.Tensor, List[tf.Tensor]],
+                 model: keras.Model,
                  tensorboard: keras.callbacks.TensorBoard,
                  is_train_callback: bool,
                  update_freq: int or str,
                  epoch_freq: int = None,
-                 is_one_shot=False):
-        super(ImageCallback, self).__init__(tensorboard, update_freq, epoch_freq)
-        self.summary_function = summary_function
-        self.summary_inputs = summary_inputs
-        self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
-        self.is_one_shot = is_one_shot
+                 outputs: Union[tf.Tensor, List[tf.Tensor]] = None,
+                 logged_output_indices=0,
+                 name: str = "ImageCallback",
+                 max_outputs: int = 4,
+                 fps: List[int] = None,
+                 **kwargs
+                 ):
+        super(ImageCallback, self).__init__(inputs=inputs, model=model,
+                                            tensorboard=tensorboard, is_train_callback=is_train_callback,
+                                            update_freq=update_freq, epoch_freq=epoch_freq,
+                                            outputs=outputs, logged_output_indices=logged_output_indices,
+                                            name=name, max_outputs=max_outputs, **kwargs)
+        if fps is None:
+            fps = [25, ]
+        elif isinstance(fps, int):
+            fps = [fps, ]
+        self.fps = fps
+
+        check_image_video_rank(self.true_outputs)
+        self.true_outputs = convert_tensors_uint8(self.true_outputs)
 
     def _write_logs(self, index):
-        if self.is_one_shot and self.summary_function is None:
-            return
-
         with self._get_writer(self.writer_name).as_default():
-            if self.summary_function is not None:
-                self.summary_function(self.summary_inputs, step=index)
+            if not self.outputs_were_logged:
+                self.samples_summary(self.true_outputs, step=index, suffix="true")
+                self.outputs_were_logged = True
 
-        if self.is_one_shot:
-            self.summary_function = None
+            self.write_model_summary(step=index)
 
-    @staticmethod
-    def from_model_and_subset(autoencoder: Callable,
-                              subset: Union[SubsetLoader],
-                              pattern: Pattern,
-                              name: str,
-                              is_train_callback: bool,
-                              tensorboard: keras.callbacks.TensorBoard,
-                              update_freq="epoch",
-                              epoch_freq=1,
-                              max_outputs=4,
-                              inputs_are_outputs=True,
-                              modality_index=None,
-                              ) -> List["ImageCallback"]:
-        batch = subset.get_batch(batch_size=4, pattern=pattern)
-        if inputs_are_outputs:
-            inputs = outputs = batch
+    def write_model_summary(self, step: int):
+        pred_outputs = self.summary_model(self.inputs)
+        pred_outputs = convert_tensors_uint8(pred_outputs)
+        self.samples_summary(data=pred_outputs, step=step, suffix="predicted")
+
+        pred_outputs = to_list(pred_outputs)
+
+        for index in self.logged_output_indices:
+            true_sample: tf.Tensor = self.true_outputs[index]
+            pred_sample: tf.Tensor = pred_outputs[index]
+
+            if pred_sample.shape.is_compatible_with(true_sample.shape):
+                delta = (pred_sample - true_sample) * (tf.cast(pred_sample < true_sample, dtype=tf.uint8) * 254 + 1)
+                self.sample_summary(data=delta, step=step, suffix="delta")
+
+    def sample_summary(self, data: tf.Tensor, step: int, suffix: str):
+        if use_video_summary(data):
+            self.video_summary(data=data, step=step, suffix=suffix)
         else:
-            inputs, outputs = batch
+            image_summary(name="{}_{}".format(self.name, suffix), data=data, step=step, max_outputs=self.max_outputs)
 
-        if modality_index is None:
-            image_outputs = outputs
-        else:
-            image_outputs = outputs[modality_index]
-
-        inputs_rank = len(image_outputs.shape)
-        if inputs_rank >= 5:
-            one_shot_base_function = video_summary
-            repeated_base_function = video_autoencoder_summary
-        elif inputs_rank == 4:
-            one_shot_base_function = image_summary
-            repeated_base_function = image_autoencoder_summary
-        else:
-            raise ValueError("Incorrect rank for images/video, expected rank >= 4, got {} with rank {}."
-                             .format(image_outputs.shape, inputs_rank))
-
-        def one_shot_function(data, step):
-            data = convert_tensor_uint8(data)
-            return one_shot_base_function(name=name, data=data, step=step, max_outputs=max_outputs)
-
-        def repeated_function(data, step):
-            _inputs, _outputs = data
-            decoded = autoencoder(_inputs)
-            if modality_index is not None:
-                decoded = decoded[modality_index]
-            return repeated_base_function(name=name, true_data=_outputs, pred_data=decoded, step=step)
-
-        one_shot_callback = ImageCallback(summary_function=one_shot_function, summary_inputs=image_outputs,
-                                          tensorboard=tensorboard, is_train_callback=is_train_callback,
-                                          update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=True)
-
-        repeated_callback = ImageCallback(summary_function=repeated_function, summary_inputs=(inputs, image_outputs),
-                                          tensorboard=tensorboard, is_train_callback=is_train_callback,
-                                          update_freq=update_freq, epoch_freq=epoch_freq, is_one_shot=False)
-
-        return [one_shot_callback, repeated_callback]
+    def video_summary(self, data: tf.Tensor, step: int, suffix: str):
+        for fps in self.fps:
+            image_summary(name="{}_{}_{}".format(self.name, fps, suffix), data=data,
+                          step=step, max_outputs=self.max_outputs, fps=fps)
 
 
 # region Utility / wrappers
-def video_summary(name: str,
-                  data: tf.Tensor,
-                  fps=(8, 25),
-                  step: int = None,
-                  max_outputs=4
-                  ):
-    if data.dtype != tf.uint8:
-        data = convert_tensor_uint8(data)
-    for _fps in fps:
-        image_summary(name="{}_{}".format(name, _fps),
-                      data=data,
-                      fps=_fps,
-                      step=step,
-                      max_outputs=max_outputs,
-                      )
+def check_image_video_rank(data: Union[tf.Tensor, List[tf.Tensor]]):
+    if isinstance(data, list) or isinstance(data, tuple):
+        for sample in data:
+            check_image_video_rank(sample)
+
+    elif data.shape.rank < 4:
+        raise ValueError("Incorrect rank for images/video, expected rank >= 4, got {} with rank {}."
+                         .format(data.shape, data.shape.rank))
 
 
-def video_autoencoder_summary(name: str,
-                              true_data: tf.Tensor,
-                              pred_data: tf.Tensor,
-                              fps=(8, 25),
-                              step: int = None,
-                              max_outputs=4):
-    true_data = convert_tensor_uint8(true_data)
-    pred_data = convert_tensor_uint8(pred_data)
-
-    for _fps in fps:
-        image_summary(name="{}_pred_outputs_{}".format(name, _fps), data=pred_data,
-                      step=step, max_outputs=max_outputs, fps=_fps)
-
-    if pred_data.shape.is_compatible_with(true_data.shape):
-        delta = (pred_data - true_data) * (tf.cast(pred_data < true_data, dtype=tf.uint8) * 254 + 1)
-        for _fps in fps:
-            image_summary(name="{}_delta_{}".format(name, _fps), data=delta,
-                          step=step, max_outputs=max_outputs, fps=_fps)
+def use_video_summary(data: tf.Tensor) -> bool:
+    return data.shape.rank >= 5
 
 
-def image_autoencoder_summary(name: str,
-                              true_data: tf.Tensor,
-                              pred_data: tf.Tensor,
-                              step: int = None,
-                              max_outputs=4):
-    true_data = convert_tensor_uint8(true_data)
-    pred_data = convert_tensor_uint8(pred_data)
-
-    image_summary(name="{}_pred_outputs".format(name), data=pred_data, step=step, max_outputs=max_outputs)
-
-    if pred_data.shape.is_compatible_with(true_data.shape):
-        delta = (pred_data - true_data) * (tf.cast(pred_data < true_data, dtype=tf.uint8) * 254 + 1)
-        image_summary(name="{}_delta".format(name), data=delta, step=step, max_outputs=max_outputs)
+def convert_tensors_uint8(tensors: Union[tf.Tensor, List[tf.Tensor]]) -> Union[tf.Tensor, List[tf.Tensor]]:
+    if isinstance(tensors, list) or isinstance(tensors, tuple):
+        tensors = [convert_tensor_uint8(tensor) for tensor in tensors]
+    else:
+        tensors = convert_tensor_uint8(tensors)
+    return tensors
 
 
 def convert_tensor_uint8(tensor) -> tf.Tensor:

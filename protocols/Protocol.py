@@ -35,18 +35,18 @@ class ModalityCallbackConfig(object):
         return dataset_loader.train_subset if self.is_train_callback else dataset_loader.test_subset
 
     @abstractmethod
-    def to_callbacks(self,
-                     tensorboard: TensorBoard,
-                     dataset_loader: DatasetLoader,
-                     ) -> List:
+    def to_callback(self,
+                    tensorboard: TensorBoard,
+                    dataset_loader: DatasetLoader,
+                    ) -> List:
         pass
 
 
 class ImageCallbackConfig(ModalityCallbackConfig):
-    def to_callbacks(self,
-                     tensorboard: TensorBoard,
-                     dataset_loader: DatasetLoader,
-                     ) -> List[ImageCallback]:
+    def to_callback(self,
+                    tensorboard: TensorBoard,
+                    dataset_loader: DatasetLoader,
+                    ) -> ImageCallback:
         image_callbacks = ImageCallback.from_model_and_subset(autoencoder=self.autoencoder,
                                                               subset=self.get_subset(dataset_loader),
                                                               pattern=self.pattern,
@@ -82,10 +82,10 @@ class AudioCallbackConfig(ModalityCallbackConfig):
         self.mel_spectrogram = mel_spectrogram
         self.sample_rate = sample_rate
 
-    def to_callbacks(self,
-                     tensorboard: TensorBoard,
-                     dataset_loader: DatasetLoader,
-                     ) -> List[AudioCallback]:
+    def to_callback(self,
+                    tensorboard: TensorBoard,
+                    dataset_loader: DatasetLoader,
+                    ) -> AudioCallback:
         audio_callbacks = AudioCallback.from_model_and_subset(autoencoder=self.autoencoder,
                                                               subset=self.get_subset(dataset_loader),
                                                               pattern=self.pattern,
@@ -240,7 +240,8 @@ class Protocol(object):
         if config.image_callbacks_configs is not None:
             for icc in config.image_callbacks_configs:
                 print("Protocol - Make Image Callbacks - {} callback ...".format(icc.name))
-                callbacks += icc.to_callbacks(tensorboard, self.dataset_loader)
+                callback = icc.to_callback(tensorboard, self.dataset_loader)
+                callbacks.append(callback)
         # endregion
         # region Audio Callbacks
         print("Protocol - Make Callbacks - Audio callbacks ...")
