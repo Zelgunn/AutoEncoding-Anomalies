@@ -5,6 +5,7 @@
       <w>astype</w>
       <w>autoencode</w>
       <w>autoencoder</w>
+      <w>autoencoders</w>
       <w>autoregression</w>
       <w>autoregressive</w>
       <w>blurrer</w>
@@ -52,6 +53,7 @@
       <w>miae</w>
       <w>mins</w>
       <w>minval</w>
+      <w>mmae</w>
       <w>mnist</w>
       <w>ndarray</w>
       <w>ndim</w>
