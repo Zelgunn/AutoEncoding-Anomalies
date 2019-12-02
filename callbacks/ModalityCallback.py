@@ -31,19 +31,19 @@ class ModalityCallback(TensorBoardPlugin, ABC):
         self.summary_model = model
         self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
 
-        self.outputs_were_logged = False
+        self.true_outputs_were_logged = False
         self.logged_output_indices = to_list(logged_output_indices)
 
         self.name = name
         self.max_outputs = max_outputs
 
-        self.true_outputs = to_list(extract_modality(self.outputs, self.logged_output_indices))
+        self.true_outputs = self.extract_logged_modalities(self.outputs)
 
     def _write_logs(self, index):
         with self._get_writer(self.writer_name).as_default():
-            if not self.outputs_were_logged:
+            if not self.true_outputs_were_logged:
                 self.samples_summary(self.true_outputs, step=index, suffix="true")
-                self.outputs_were_logged = True
+                self.true_outputs_were_logged = True
 
             self.write_model_summary(step=index)
 
@@ -64,6 +64,9 @@ class ModalityCallback(TensorBoardPlugin, ABC):
     @abstractmethod
     def sample_summary(self, data: tf.Tensor, step: int, suffix: str):
         raise NotImplementedError
+
+    def extract_logged_modalities(self, modalities) -> List[tf.Tensor]:
+        return to_list(extract_modality(modalities, self.logged_output_indices))
 
     @classmethod
     def from_model_and_subset(cls,

@@ -36,24 +36,16 @@ class ImageCallback(ModalityCallback):
         check_image_video_rank(self.true_outputs)
         self.true_outputs = convert_tensors_uint8(self.true_outputs)
 
-    def _write_logs(self, index):
-        with self._get_writer(self.writer_name).as_default():
-            if not self.outputs_were_logged:
-                self.samples_summary(self.true_outputs, step=index, suffix="true")
-                self.outputs_were_logged = True
-
-            self.write_model_summary(step=index)
-
     def write_model_summary(self, step: int):
         pred_outputs = self.summary_model(self.inputs)
+
+        pred_outputs = self.extract_logged_modalities(pred_outputs)
         pred_outputs = convert_tensors_uint8(pred_outputs)
         self.samples_summary(data=pred_outputs, step=step, suffix="predicted")
 
-        pred_outputs = to_list(pred_outputs)
-
-        for index in self.logged_output_indices:
-            true_sample: tf.Tensor = self.true_outputs[index]
-            pred_sample: tf.Tensor = pred_outputs[index]
+        for i in range(len(self.logged_output_indices)):
+            true_sample: tf.Tensor = self.true_outputs[i]
+            pred_sample: tf.Tensor = pred_outputs[i]
 
             if pred_sample.shape.is_compatible_with(true_sample.shape):
                 delta = (pred_sample - true_sample) * (tf.cast(pred_sample < true_sample, dtype=tf.uint8) * 254 + 1)
@@ -86,11 +78,9 @@ def use_video_summary(data: tf.Tensor) -> bool:
     return data.shape.rank >= 5
 
 
-def convert_tensors_uint8(tensors: Union[tf.Tensor, List[tf.Tensor]]) -> Union[tf.Tensor, List[tf.Tensor]]:
-    if isinstance(tensors, list) or isinstance(tensors, tuple):
-        tensors = [convert_tensor_uint8(tensor) for tensor in tensors]
-    else:
-        tensors = convert_tensor_uint8(tensors)
+def convert_tensors_uint8(tensors: Union[tf.Tensor, List[tf.Tensor]]) -> List[tf.Tensor]:
+    tensors = to_list(tensors)
+    tensors = [convert_tensor_uint8(tensor) for tensor in tensors]
     return tensors
 
 

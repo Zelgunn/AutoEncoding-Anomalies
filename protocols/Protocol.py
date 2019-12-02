@@ -93,8 +93,8 @@ class AudioCallbackConfig(ModalityCallbackConfig):
                                                               is_train_callback=self.is_train_callback,
                                                               tensorboard=tensorboard,
                                                               mel_spectrogram=self.mel_spectrogram,
-                                                              epoch_freq=self.epoch_freq,
                                                               sample_rate=self.sample_rate,
+                                                              epoch_freq=self.epoch_freq,
                                                               inputs_are_outputs=self.inputs_are_outputs,
                                                               modality_index=self.modality_index
                                                               )
@@ -248,7 +248,8 @@ class Protocol(object):
         if config.audio_callbacks_configs is not None:
             for acc in config.audio_callbacks_configs:
                 print("Protocol - Make Audio Callbacks - {} callback ...".format(acc.name))
-                callbacks += acc.to_callbacks(tensorboard, self.dataset_loader)
+                callback = acc.to_callback(tensorboard, self.dataset_loader)
+                callbacks.append(callback)
         # endregion
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
