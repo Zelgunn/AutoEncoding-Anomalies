@@ -1,3 +1,4 @@
+# SparseAE : Sparse Autoencoder
 import tensorflow as tf
 from tensorflow.python.keras import Model
 

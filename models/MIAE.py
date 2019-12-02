@@ -1,3 +1,4 @@
+# MIAE : Multi-modal Interpolating Autoencoder
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.layers import Dense, Input
@@ -491,7 +492,7 @@ def main():
                                        pattern=train_pattern,
                                        steps_per_epoch=5000,
                                        epochs=1000,
-                                       initial_epoch=0,
+                                       initial_epoch=23,
                                        validation_steps=128,
                                        image_callbacks_configs=image_callback_configs,
                                        audio_callbacks_configs=[audio_callback_config],

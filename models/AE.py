@@ -1,3 +1,4 @@
+# AE : Autoencoder
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from typing import Dict
