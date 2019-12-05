@@ -10,7 +10,7 @@ from typing import Tuple, Optional
 from anomaly_detection import IOCompareModel
 from callbacks import TensorBoardPlugin
 from misc_utils.plot_utils import plot_line2d_to_array
-from misc_utils.misc_utils import to_constant_list
+from misc_utils.general import to_constant_list
 from datasets import SubsetLoader
 from modalities import Pattern
 

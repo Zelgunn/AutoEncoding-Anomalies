@@ -1,4 +1,3 @@
-import tensorflow as tf
 from tensorflow.python.keras import Model
 from abc import abstractmethod
 from typing import List
@@ -12,6 +11,7 @@ from models import AE, IAE
 from models.autoregressive import SAAM, AND
 from models.adversarial import IAEGAN, VAEGAN, IAEGANMode, EBGAN
 from preprocessing.video_preprocessing import make_video_augmentation, make_video_preprocess
+from misc_utils.train_utils import WarmupSchedule
 
 
 class VideoProtocol(DatasetProtocol):
@@ -428,20 +428,4 @@ class VideoProtocol(DatasetProtocol):
         video_writer.release()
 
 
-class WarmupSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, warmup_steps: int, learning_rate=1e-3):
-        super(WarmupSchedule, self).__init__()
 
-        self.learning_rate = learning_rate
-        self.warmup_steps = warmup_steps
-
-    def __call__(self, step):
-        factor = (step + 1) / self.warmup_steps
-        return self.learning_rate * tf.math.minimum(factor, 1.0)
-
-    def get_config(self):
-        config = {
-            "learning_rate": self.learning_rate,
-            "warmup_steps": self.warmup_steps,
-        }
-        return config

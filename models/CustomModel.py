@@ -2,11 +2,14 @@ import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.callbacks import Callback, CallbackList, configure_callbacks, make_logs
 from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard
-from tensorflow.python.keras.engine.training_utils import MetricsAggregator
 from tensorflow.python.keras.utils.mode_keys import ModeKeys
+from tensorflow.python.data.ops.dataset_ops import get_legacy_output_shapes
 from abc import abstractmethod
 from typing import List, Dict, Type, Optional
 import os
+
+from misc_utils.train_utils import LossAggregator
+from misc_utils.summary_utils import tf_function_summary
 
 
 class CustomModel(Model):
@@ -43,11 +46,12 @@ class CustomModel(Model):
             tensorboard._samples_seen = initial_epoch * steps_per_epoch
             tensorboard._total_batches_seen = initial_epoch * steps_per_epoch
 
-        train_aggregator = MetricsAggregator(use_steps=True, num_samples=steps_per_epoch)
-        val_aggregator = MetricsAggregator(use_steps=True, num_samples=validation_steps)
+        # self.write_model_graph(tensorboard, dataset=x)
+
+        train_aggregator = LossAggregator(use_steps=True, num_samples=steps_per_epoch)
+        val_aggregator = LossAggregator(use_steps=True, num_samples=validation_steps)
 
         callbacks.on_train_begin()
-
         for epoch in range(initial_epoch, epochs):
             if callbacks.model.stop_training:
                 break
@@ -70,6 +74,7 @@ class CustomModel(Model):
                 train_aggregator.aggregate(batch_outputs)
 
                 batch_logs = make_logs(self, batch_logs, batch_outputs, ModeKeys.TRAIN)
+
                 callbacks.on_batch_end(step, batch_logs)
 
                 if callbacks.model.stop_training:
@@ -108,6 +113,10 @@ class CustomModel(Model):
     def compute_loss(self, inputs, *args, **kwargs):
         pass
 
+    @tf.function
+    def forward(self, inputs):
+        return self(inputs)
+
     # endregion
 
     def compute_output_signature(self, input_signature):
@@ -119,9 +128,20 @@ class CustomModel(Model):
     def models_ids(self) -> Dict[Model, str]:
         pass
 
+    @abstractmethod
+    def get_config(self):
+        pass
+
     def summary(self, line_length=None, positions=None, print_fn=None):
         for model in self.models_ids.keys():
             model.summary(line_length=line_length, positions=positions, print_fn=print_fn)
+
+    def write_model_graph(self, tensorboard: TensorBoard, dataset: tf.data.Dataset):
+        shapes = [get_legacy_output_shapes(dataset)]
+
+        # noinspection PyProtectedMember
+        with tensorboard._get_writer(tensorboard._train_run_name).as_default():
+            tf_function_summary(self.forward, shapes, name="train_step")
 
     def save(self,
              filepath: str,

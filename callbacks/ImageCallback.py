@@ -4,7 +4,7 @@ from typing import List, Union
 
 from callbacks import ModalityCallback
 from misc_utils.summary_utils import image_summary
-from misc_utils.misc_utils import to_list
+from misc_utils.general import to_list
 
 
 class ImageCallback(ModalityCallback):

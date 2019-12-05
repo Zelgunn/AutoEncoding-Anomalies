@@ -95,6 +95,26 @@ class MIAE(MMAE):
             latent_codes.append(latent_code)
         return latent_codes
 
+    @tf.function
+    def modalities_mse(self, inputs, ground_truths):
+        errors = []
+        for i in range(self.modality_count):
+            error = tf.square(inputs[i] - ground_truths[i])
+            errors.append(error)
+
+        errors, _, _ = self.split_inputs(errors, merge_batch_and_steps=False)
+
+        total_error = []
+        factors = [1.0, 8.0]
+        for i in range(self.modality_count):
+            error = errors[i]
+            reduction_axis = list(range(2, error.shape.rank))
+            error = tf.reduce_mean(error, axis=reduction_axis) * factors[i]
+            total_error.append(error)
+
+        total_error = tf.reduce_sum(total_error, axis=0)
+        return total_error
+
     def split_inputs(self, inputs, merge_batch_and_steps):
         split_inputs = []
         inputs_shapes = []

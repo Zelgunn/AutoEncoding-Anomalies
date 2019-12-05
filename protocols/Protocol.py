@@ -109,6 +109,7 @@ class AUCCallbackConfig(object):
                  prefix: str,
                  metrics: List[Union[str, Callable]] = "mse",
                  epoch_freq: int = 1,
+                 sample_count: int = 512,
                  ):
         self.autoencoder = autoencoder
         self.pattern = pattern
@@ -116,6 +117,7 @@ class AUCCallbackConfig(object):
         self.prefix = prefix
         self.metrics = metrics
         self.epoch_freq = epoch_freq
+        self.sample_count = sample_count
 
     def to_callback(self,
                     tensorboard: TensorBoard,
@@ -130,7 +132,7 @@ class AUCCallbackConfig(object):
                                        test_subset=dataset_loader.test_subset,
                                        pattern=self.pattern,
                                        labels_length=self.labels_length,
-                                       samples_count=512,
+                                       samples_count=self.sample_count,
                                        epoch_freq=self.epoch_freq,
                                        batch_size=4,
                                        prefix=self.prefix)
@@ -184,7 +186,8 @@ class Protocol(object):
                  dataset_name: str,
                  protocol_name: str,
                  autoencoder: Callable = None,
-                 model_name: str = None
+                 model_name: str = None,
+                 output_range=(0.0, 1.0)
                  ):
         self.model = model
         if autoencoder is None:
@@ -198,7 +201,7 @@ class Protocol(object):
 
         self.dataset_name = dataset_name
         self.dataset_folder = get_dataset_folder(dataset_name)
-        self.dataset_config = DatasetConfig(self.dataset_folder, output_range=(0.0, 1.0))
+        self.dataset_config = DatasetConfig(self.dataset_folder, output_range=output_range)
         self.dataset_loader = DatasetLoader(self.dataset_config)
 
         self.base_log_dir = "../logs/AEA/protocols/{protocol_name}/{dataset_name}" \

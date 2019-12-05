@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from misc_utils.misc_utils import get_known_shape
+from misc_utils.general import get_known_shape
 from misc_utils.math_utils import diff
 
 

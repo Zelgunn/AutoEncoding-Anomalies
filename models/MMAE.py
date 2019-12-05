@@ -36,8 +36,6 @@ class MMAE(CustomModel):
         self.set_optimizer(tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     def call(self, inputs, training=None, mask=None):
-        inputs, inputs_shapes, _ = self.split_inputs(inputs, merge_batch_and_steps=True)
-
         latent_codes = []
         for i in range(self.modality_count):
             latent_code = self.autoencoders[i].encode(inputs[i])
@@ -48,7 +46,7 @@ class MMAE(CustomModel):
         outputs = []
         for i in range(self.modality_count):
             output = self.autoencoders[i].decode(refined_latent_codes[i])
-            output = tf.reshape(output, inputs_shapes[i])
+            output = tf.reshape(output, tf.shape(inputs[i]))
             outputs.append(output)
 
         return outputs
@@ -76,26 +74,6 @@ class MMAE(CustomModel):
             losses.append(modality_loss)
 
         return tuple(losses)
-
-    @tf.function
-    def modalities_mse(self, inputs, ground_truths):
-        errors = []
-        for i in range(self.modality_count):
-            error = tf.square(inputs[i] - ground_truths[i])
-            errors.append(error)
-
-        errors, _, _ = self.split_inputs(errors, merge_batch_and_steps=False)
-
-        total_error = []
-        factors = [1.0, 8.0]
-        for i in range(self.modality_count):
-            error = errors[i]
-            reduction_axis = list(range(2, error.shape.rank))
-            error = tf.reduce_mean(error, axis=reduction_axis) * factors[i]
-            total_error.append(error)
-
-        total_error = tf.reduce_sum(total_error, axis=0)
-        return total_error
 
     @property
     def modality_count(self):

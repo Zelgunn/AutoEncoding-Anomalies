@@ -7,3 +7,4 @@ from models.IAE import IAE
 from models.autoregressive.CNNTransformer import CNNTransformer
 from models.MMAE import MMAE
 from models.MIAE import MIAE
+from models.EBAE import EBAE

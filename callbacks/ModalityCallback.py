@@ -4,7 +4,7 @@ from typing import List, Union, Callable
 from abc import ABC, abstractmethod
 
 from callbacks import TensorBoardPlugin
-from misc_utils.misc_utils import to_list
+from misc_utils.general import to_list
 from datasets import SubsetLoader
 from modalities import Pattern
 
