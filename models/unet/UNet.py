@@ -1,0 +1,197 @@
+from tensorflow.python.keras import Model
+from tensorflow.python.keras.layers import Layer, Input, Dense, Flatten, Reshape
+from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
+from tensorflow.python.keras.layers import Conv2DTranspose, Conv3DTranspose
+# from tensorflow.python.keras.layers import MaxPool1D, MaxPooling2D, MaxPooling3D
+# from tensorflow.python.keras.layers import AveragePooling1D, AveragePooling2D, AveragePooling3D
+from tensorflow.python.keras.layers import UpSampling1D, UpSampling2D, UpSampling3D
+from tensorflow.python.keras.layers.pooling import Pooling1D, Pooling2D, Pooling3D
+from typing import List, Union, Dict
+
+from CustomKerasLayers import Conv1DTranspose
+from tensorflow_core.python.keras import Model
+
+from models import AE
+
+
+class UNet(AE):
+    def __init__(self,
+                 encoder_layers: List[Layer],
+                 name: str = None,
+                 **kwargs):
+        self._init_set_name(name)
+        super(UNet, self).__init__(**kwargs)
+        self.encoder_layers = encoder_layers
+        self.decoder_layers = make_unet_decoder_layers(encoder_layers)
+        self.forward_model = self.make_forward_model()
+
+    def init_encoder(self, layers: List[Layer]) -> Model:
+        depth = len(layers)
+        input_shape = get_input_shape(layers[0])
+        input_layer = Input(batch_shape=input_shape, name=self.name + "_encoder_input")
+
+        inputs = input_layer
+        outputs = []
+        for i in range(depth):
+            layer = layers[i]
+            output = layer(inputs)
+            if len(layer.weights) > 0:
+                outputs.append(output)
+            inputs = output
+
+        encoder = Model(inputs=input_layer, outputs=outputs)
+        return encoder
+
+    def make_forward_model(self):
+        input_shape = get_input_shape(self.encoder_layers[0])
+        input_layer = Input(batch_shape=input_shape)
+
+        inputs = input_layer
+        intermediate_outputs = []
+        for i in range(self.depth):
+            outputs = self.encoder_layers[i](inputs)
+            intermediate_outputs.append(outputs)
+            inputs = outputs
+
+        outputs = None
+        for i in range(self.depth):
+            j = self.depth - i - 1
+            if len(self.encoder_layers[j].weights):
+                inputs += intermediate_outputs[j]
+            outputs = self.decoder_layers[i](inputs)
+            inputs = outputs
+
+        model = Model(inputs=input_layer, outputs=outputs, name="UNet_Forward")
+        return model
+
+    def call(self, inputs, training=None, mask=None):
+        return self.forward_model(inputs, training=training, mask=mask)
+
+    def train_step(self, inputs, *args, **kwargs):
+        raise NotImplementedError
+
+    def compute_loss(self, inputs, *args, **kwargs):
+        raise NotImplementedError
+
+    @property
+    def models_ids(self) -> Dict[Model, str]:
+        return {self.forward_model: "unet"}
+
+    def get_config(self):
+        return self.forward_model.get_config()
+
+    @property
+    def depth(self) -> int:
+        return len(self.encoder_layers)
+
+
+def make_unet_decoder_layers(encoder_layers: List[Layer]) -> List[Layer]:
+    shape = get_input_shape(encoder_layers[0])
+    shapes = [shape]
+    for layer in encoder_layers:
+        shape = layer.compute_output_shape(shape)
+        shapes.append(shape)
+
+    decoder_layers = []
+    for i in reversed(range(len(encoder_layers))):
+        encoder_layer = encoder_layers[i]
+        decoder_layer = transpose_layer(encoder_layer, shapes[i])
+        decoder_layers.append(decoder_layer)
+
+    return decoder_layers
+
+
+def transpose_layer(layer, input_shape):
+    if isinstance(layer, (Conv1D, Conv2D, Conv3D)):
+        return transpose_conv_layer(layer, layer_input_shape=input_shape)
+    elif isinstance(layer, (Pooling1D, Pooling2D, Pooling3D)):
+        return transpose_pool_layer(layer)
+    elif isinstance(layer, Dense):
+        return transpose_dense_layer(layer, layer_input_shape=input_shape)
+    elif isinstance(layer, (Flatten, Reshape)):
+        return transpose_reshape_layer(layer, input_shape)
+    else:
+        raise TypeError
+
+
+def transpose_conv_layer(layer: Union[Conv1D, Conv2D, Conv3D],
+                         layer_input_shape=None,
+                         ) -> Union[Conv1DTranspose, Conv2DTranspose, Conv3DTranspose]:
+    output_shape = get_input_shape(layer, layer_input_shape)
+    input_shape = layer.compute_output_shape(output_shape)
+
+    conv_transpose_map = [Conv1DTranspose, Conv2DTranspose, Conv3DTranspose]
+    transposed_layer_class = conv_transpose_map[layer.rank - 1]
+
+    filters = output_shape[-1]
+    kernel_size = layer.strides
+    strides = layer.strides
+    use_bias = layer.use_bias
+
+    transposed_layer = transposed_layer_class(filters=filters,
+                                              kernel_size=kernel_size,
+                                              strides=strides,
+                                              use_bias=use_bias,
+                                              name=transposed_layer_name(layer),
+                                              batch_input_shape=input_shape)
+
+    return transposed_layer
+
+
+def transpose_pool_layer(layer: Union[Pooling1D, Pooling2D, Pooling3D]
+                         ) -> Union[UpSampling1D, UpSampling2D, UpSampling3D]:
+    transpose_map = {Pooling1D: UpSampling1D, Pooling2D: UpSampling2D, Pooling3D: UpSampling3D}
+
+    transposed_layer_class = None
+    for pool_type in transpose_map:
+        if isinstance(layer, pool_type):
+            transposed_layer_class = transpose_map[pool_type]
+
+    if transposed_layer_class is None:
+        raise TypeError("Layer must be a instance of PoolingND, got {}".format(type(layer)))
+
+    size = layer.pool_size
+    transposed_layer = transposed_layer_class(size=size,
+                                              name=transposed_layer_name(layer))
+    return transposed_layer
+
+
+def transpose_dense_layer(layer: Dense,
+                          layer_input_shape=None,
+                          ) -> Dense:
+    output_shape = get_input_shape(layer, layer_input_shape)
+    units = output_shape[-1]
+
+    transposed_layer = Dense(units=units,
+                             activation=layer.activation,
+                             use_bias=layer.use_bias,
+                             kernel_initializer=layer.kernel_initializer,
+                             bias_initializer=layer.bias_initializer,
+                             kernel_regularizer=layer.kernel_regularizer,
+                             bias_regularizer=layer.bias_regularizer,
+                             activity_regularizer=layer.activity_regularizer,
+                             kernel_constraint=layer.kernel_constraint,
+                             bias_constraint=layer.bias_constraint,
+                             name=transposed_layer_name(layer))
+
+    return transposed_layer
+
+
+def transpose_reshape_layer(layer: Union[Flatten, Reshape], layer_input_shape=None) -> Reshape:
+    output_shape = get_input_shape(layer, layer_input_shape)
+    transposed_layer = Reshape(target_shape=output_shape[1:],
+                               name=transposed_layer_name(layer))
+    return transposed_layer
+
+
+def get_input_shape(layer: Layer, default=None):
+    if default is None:
+        # noinspection PyProtectedMember
+        input_shape = layer._batch_input_shape
+    else:
+        input_shape = default
+    return input_shape
+
+
+def transposed_layer_name(layer: Layer) -> str:
+    return layer.name + "_transpose"
