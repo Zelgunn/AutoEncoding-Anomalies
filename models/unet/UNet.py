@@ -1,5 +1,5 @@
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.layers import Layer, Input, Dense, Flatten, Reshape
+from tensorflow.python.keras.layers import Layer, Input, Dense, Flatten, Reshape, Add
 from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
 from tensorflow.python.keras.layers import Conv2DTranspose, Conv3DTranspose
 # from tensorflow.python.keras.layers import MaxPool1D, MaxPooling2D, MaxPooling3D
@@ -17,31 +17,60 @@ from models import AE
 class UNet(AE):
     def __init__(self,
                  encoder_layers: List[Layer],
+                 learning_rate=1e-3,
                  name: str = None,
                  **kwargs):
         self._init_set_name(name)
-        super(UNet, self).__init__(**kwargs)
-        self.encoder_layers = encoder_layers
-        self.decoder_layers = make_unet_decoder_layers(encoder_layers)
-        self.forward_model = self.make_forward_model()
+        decoder_layers = make_unet_decoder_layers(encoder_layers)
+        encoder = self.init_encoder(encoder_layers)
+        decoder = self.init_decoder(decoder_layers, encoder)
+        super(UNet, self).__init__(encoder=encoder,
+                                   decoder=decoder,
+                                   learning_rate=learning_rate,
+                                   **kwargs)
 
     def init_encoder(self, layers: List[Layer]) -> Model:
-        depth = len(layers)
         input_shape = get_input_shape(layers[0])
         input_layer = Input(batch_shape=input_shape, name=self.name + "_encoder_input")
 
         inputs = input_layer
         outputs = []
-        for i in range(depth):
-            layer = layers[i]
+
+        for layer in layers:
             output = layer(inputs)
-            if len(layer.weights) > 0:
+            if has_trainable_weights(layer):
                 outputs.append(output)
             inputs = output
 
-        encoder = Model(inputs=input_layer, outputs=outputs)
+        encoder = Model(inputs=input_layer, outputs=outputs, name=self.name + "_Encoder")
         return encoder
 
+    def init_decoder(self, layers: List[Layer], encoder: Model):
+        depth = len(layers)
+        input_layers = [
+            Input(batch_shape=output.shape, name=self.name + "_decoder_input_{}".format(i))
+            for i, output in enumerate(encoder.outputs)
+        ]
+
+        encoder.summary()
+
+        inputs = input_layers[-1]
+        skip_index = len(input_layers) - 1
+        outputs = None
+        for i in range(depth):
+            encoder_index = depth - i
+            if has_trainable_weights(encoder.layers[encoder_index]):
+                if i > 0:
+                    inputs = Add(name="skip_{}".format(skip_index))([inputs, input_layers[skip_index]])
+                skip_index -= 1
+
+            outputs = layers[i](inputs)
+            inputs = outputs
+
+        decoder = Model(inputs=input_layers, outputs=outputs, name=self.name + "_Decoder")
+        return decoder
+
+    """
     def make_forward_model(self):
         input_shape = get_input_shape(self.encoder_layers[0])
         input_layer = Input(batch_shape=input_shape)
@@ -63,9 +92,7 @@ class UNet(AE):
 
         model = Model(inputs=input_layer, outputs=outputs, name="UNet_Forward")
         return model
-
-    def call(self, inputs, training=None, mask=None):
-        return self.forward_model(inputs, training=training, mask=mask)
+    """
 
     def train_step(self, inputs, *args, **kwargs):
         raise NotImplementedError
@@ -124,7 +151,7 @@ def transpose_conv_layer(layer: Union[Conv1D, Conv2D, Conv3D],
     transposed_layer_class = conv_transpose_map[layer.rank - 1]
 
     filters = output_shape[-1]
-    kernel_size = layer.strides
+    kernel_size = layer.kernel_size
     strides = layer.strides
     use_bias = layer.use_bias
 
@@ -132,6 +159,7 @@ def transpose_conv_layer(layer: Union[Conv1D, Conv2D, Conv3D],
                                               kernel_size=kernel_size,
                                               strides=strides,
                                               use_bias=use_bias,
+                                              padding="same",
                                               name=transposed_layer_name(layer),
                                               batch_input_shape=input_shape)
 
@@ -195,3 +223,7 @@ def get_input_shape(layer: Layer, default=None):
 
 def transposed_layer_name(layer: Layer) -> str:
     return layer.name + "_transpose"
+
+
+def has_trainable_weights(layer: Layer) -> bool:
+    return len(layer.trainable_weights) > 0
