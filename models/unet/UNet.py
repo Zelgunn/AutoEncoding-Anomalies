@@ -1,42 +1,45 @@
-from tensorflow.python.keras import Model
+from tensorflow_core.python.keras import Model
 from tensorflow.python.keras.layers import Layer, Input, Dense, Flatten, Reshape, Add
 from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
 from tensorflow.python.keras.layers import Conv2DTranspose, Conv3DTranspose
-# from tensorflow.python.keras.layers import MaxPool1D, MaxPooling2D, MaxPooling3D
-# from tensorflow.python.keras.layers import AveragePooling1D, AveragePooling2D, AveragePooling3D
 from tensorflow.python.keras.layers import UpSampling1D, UpSampling2D, UpSampling3D
 from tensorflow.python.keras.layers.pooling import Pooling1D, Pooling2D, Pooling3D
-from typing import List, Union, Dict
+from typing import List, Union
 
 from CustomKerasLayers import Conv1DTranspose
-from tensorflow_core.python.keras import Model
-
+from CustomKerasLayers import ResBlockND, ResBlockNDTranspose
 from models import AE
 
 
 class UNet(AE):
     def __init__(self,
                  encoder_layers: List[Layer],
+                 connection_map: List[bool] = None,
                  learning_rate=1e-3,
                  name: str = None,
                  **kwargs):
         self._init_set_name(name)
-        decoder_layers = make_unet_decoder_layers(encoder_layers)
+        if connection_map is None:
+            connection_map = [True] * len(encoder_layers)
+        self.connection_map = connection_map
+        decoder_layers = transpose_layers(encoder_layers)
+
         encoder = self.init_encoder(encoder_layers)
-        decoder = self.init_decoder(decoder_layers, encoder)
+        decoder = self.init_decoder(encoder_layers, decoder_layers, encoder)
+
         super(UNet, self).__init__(encoder=encoder,
                                    decoder=decoder,
                                    learning_rate=learning_rate,
                                    **kwargs)
 
-    def init_encoder(self, layers: List[Layer]) -> Model:
-        input_shape = get_input_shape(layers[0])
+    def init_encoder(self, encoder_layers: List[Layer]) -> Model:
+        input_shape = get_input_shape(encoder_layers[0])
         input_layer = Input(batch_shape=input_shape, name=self.name + "_encoder_input")
 
         inputs = input_layer
         outputs = []
 
-        for layer in layers:
+        for layer in encoder_layers:
             output = layer(inputs)
             if has_trainable_weights(layer):
                 outputs.append(output)
@@ -45,54 +48,29 @@ class UNet(AE):
         encoder = Model(inputs=input_layer, outputs=outputs, name=self.name + "_Encoder")
         return encoder
 
-    def init_decoder(self, layers: List[Layer], encoder: Model):
-        depth = len(layers)
+    def init_decoder(self, encoder_layers: List[Layer], decoder_layers: List[Layer], encoder: Model):
+        depth = len(decoder_layers)
+
         input_layers = [
             Input(batch_shape=output.shape, name=self.name + "_decoder_input_{}".format(i))
             for i, output in enumerate(encoder.outputs)
         ]
 
-        encoder.summary()
-
         inputs = input_layers[-1]
         skip_index = len(input_layers) - 1
         outputs = None
         for i in range(depth):
-            encoder_index = depth - i
-            if has_trainable_weights(encoder.layers[encoder_index]):
+            encoder_index = depth - i - 1
+            if has_trainable_weights(encoder_layers[encoder_index]):
                 if i > 0:
                     inputs = Add(name="skip_{}".format(skip_index))([inputs, input_layers[skip_index]])
                 skip_index -= 1
 
-            outputs = layers[i](inputs)
+            outputs = decoder_layers[i](inputs)
             inputs = outputs
 
         decoder = Model(inputs=input_layers, outputs=outputs, name=self.name + "_Decoder")
         return decoder
-
-    """
-    def make_forward_model(self):
-        input_shape = get_input_shape(self.encoder_layers[0])
-        input_layer = Input(batch_shape=input_shape)
-
-        inputs = input_layer
-        intermediate_outputs = []
-        for i in range(self.depth):
-            outputs = self.encoder_layers[i](inputs)
-            intermediate_outputs.append(outputs)
-            inputs = outputs
-
-        outputs = None
-        for i in range(self.depth):
-            j = self.depth - i - 1
-            if len(self.encoder_layers[j].weights):
-                inputs += intermediate_outputs[j]
-            outputs = self.decoder_layers[i](inputs)
-            inputs = outputs
-
-        model = Model(inputs=input_layer, outputs=outputs, name="UNet_Forward")
-        return model
-    """
 
     def train_step(self, inputs, *args, **kwargs):
         raise NotImplementedError
@@ -100,36 +78,26 @@ class UNet(AE):
     def compute_loss(self, inputs, *args, **kwargs):
         raise NotImplementedError
 
-    @property
-    def models_ids(self) -> Dict[Model, str]:
-        return {self.forward_model: "unet"}
 
-    def get_config(self):
-        return self.forward_model.get_config()
-
-    @property
-    def depth(self) -> int:
-        return len(self.encoder_layers)
-
-
-def make_unet_decoder_layers(encoder_layers: List[Layer]) -> List[Layer]:
-    shape = get_input_shape(encoder_layers[0])
+def transpose_layers(layers: List[Layer]) -> List[Layer]:
+    shape = get_input_shape(layers[0])
     shapes = [shape]
-    for layer in encoder_layers:
+    for layer in layers:
         shape = layer.compute_output_shape(shape)
         shapes.append(shape)
 
-    decoder_layers = []
-    for i in reversed(range(len(encoder_layers))):
-        encoder_layer = encoder_layers[i]
-        decoder_layer = transpose_layer(encoder_layer, shapes[i])
-        decoder_layers.append(decoder_layer)
+    transposed_layers = []
+    for i in reversed(range(len(layers))):
+        transposed_layer = transpose_layer(layers[i], shapes[i])
+        transposed_layers.append(transposed_layer)
 
-    return decoder_layers
+    return transposed_layers
 
 
 def transpose_layer(layer, input_shape):
-    if isinstance(layer, (Conv1D, Conv2D, Conv3D)):
+    if isinstance(layer, ResBlockND):
+        return transpose_resblock(layer)
+    elif isinstance(layer, (Conv1D, Conv2D, Conv3D)):
         return transpose_conv_layer(layer, layer_input_shape=input_shape)
     elif isinstance(layer, (Pooling1D, Pooling2D, Pooling3D)):
         return transpose_pool_layer(layer)
@@ -141,6 +109,30 @@ def transpose_layer(layer, input_shape):
         raise TypeError
 
 
+def transpose_resblock(layer: ResBlockND,
+                       layer_input_shape=None,
+                       ) -> ResBlockNDTranspose:
+    output_shape = get_input_shape(layer, layer_input_shape)
+    input_shape = layer.compute_output_shape(output_shape)
+
+    transposed_layer = ResBlockNDTranspose(rank=layer.rank,
+                                           filters=output_shape[-1],
+                                           basic_block_count=layer.basic_block_count,
+                                           basic_block_depth=layer.basic_block_depth,
+                                           kernel_size=layer.kernel_size,
+                                           strides=layer.strides,
+                                           activation=layer.activation,
+                                           use_residual_bias=layer.use_residual_bias,
+                                           use_conv_bias=layer.use_conv_bias,
+                                           use_batch_norm=layer.use_batch_norm,
+                                           kernel_initializer=layer.kernel_initializer,
+                                           bias_initializer=layer.bias_initializer,
+                                           name=transposed_layer_name(layer),
+                                           batch_input_shape=input_shape
+                                           )
+    return transposed_layer
+
+
 def transpose_conv_layer(layer: Union[Conv1D, Conv2D, Conv3D],
                          layer_input_shape=None,
                          ) -> Union[Conv1DTranspose, Conv2DTranspose, Conv3DTranspose]:
@@ -150,17 +142,13 @@ def transpose_conv_layer(layer: Union[Conv1D, Conv2D, Conv3D],
     conv_transpose_map = [Conv1DTranspose, Conv2DTranspose, Conv3DTranspose]
     transposed_layer_class = conv_transpose_map[layer.rank - 1]
 
-    filters = output_shape[-1]
-    kernel_size = layer.kernel_size
-    strides = layer.strides
-    use_bias = layer.use_bias
-
-    transposed_layer = transposed_layer_class(filters=filters,
-                                              kernel_size=kernel_size,
-                                              strides=strides,
-                                              use_bias=use_bias,
+    transposed_layer = transposed_layer_class(filters=output_shape[-1],
+                                              kernel_size=layer.kernel_size,
+                                              strides=layer.strides,
+                                              use_bias=layer.use_bias,
                                               padding="same",
                                               name=transposed_layer_name(layer),
+                                              activation=layer.activation,
                                               batch_input_shape=input_shape)
 
     return transposed_layer
@@ -179,8 +167,10 @@ def transpose_pool_layer(layer: Union[Pooling1D, Pooling2D, Pooling3D]
         raise TypeError("Layer must be a instance of PoolingND, got {}".format(type(layer)))
 
     size = layer.pool_size
-    transposed_layer = transposed_layer_class(size=size,
-                                              name=transposed_layer_name(layer))
+    if isinstance(layer, Pooling1D):
+        size = size[0]
+
+    transposed_layer = transposed_layer_class(size=size, name=transposed_layer_name(layer))
     return transposed_layer
 
 

@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.callbacks import Callback, TensorBoard, EarlyStopping, ModelCheckpoint
+from tensorflow.python.keras.callbacks import Callback, TensorBoard, ModelCheckpoint
 import time
 import os
 from abc import abstractmethod

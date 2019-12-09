@@ -2,7 +2,8 @@
 import tensorflow as tf
 from typing import List, Tuple
 
-from models import MMAE, IAE
+from models import IAE
+from models.multimodal import MMAE
 from models.utils import split_steps
 
 

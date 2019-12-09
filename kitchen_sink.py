@@ -1,9 +1,10 @@
 import tensorflow as tf
+from tensorflow.python.keras.layers import Conv1D, Conv2D, AveragePooling2D, Flatten, Dense, AveragePooling1D
 from typing import List, Tuple, Callable
 
-from models import MMAE, EBAE, AE
-from protocols import Protocol, ProtocolTrainConfig, ImageCallbackConfig, AudioCallbackConfig, AUCCallbackConfig
-from protocols.utils import make_residual_encoder, make_residual_decoder
+from models.unet import UNet, AudioVideoUNet
+from models.energy_based import TakeStepESF, OffsetSequences, SwitchSamplesESF, CombineESF, EBAE
+from protocols import Protocol, ProtocolTrainConfig, ImageCallbackConfig, AudioCallbackConfig  # , AUCCallbackConfig
 from modalities import Pattern, ModalityLoadInfo, MelSpectrogram, RawVideo
 from preprocessing.video_preprocessing import make_video_preprocess
 from misc_utils.train_utils import WarmupSchedule
@@ -14,7 +15,7 @@ gaussian_noise_factor = 4e-2
 
 
 def main():
-    base_step_size = 32
+    base_step_size = 64
 
     video_step_size = base_step_size
     video_height = 128
@@ -22,53 +23,9 @@ def main():
     video_channels = 1
     audio_step_size = base_step_size * 4
     audio_channels = 100
-    step_count = 4
+    step_count = 3
 
-    # region Autoencoders
-    video_encoder = make_residual_encoder(input_shape=(video_step_size, video_height, video_width, video_channels),
-                                          filters=[32, 64, 64, 64, 128, 128],
-                                          kernel_size=3,
-                                          strides=[(2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (1, 2, 2)],
-                                          code_size=128, code_activation="sigmoid", use_batch_norm=False,
-                                          use_residual_bias=False, use_conv_bias=True,
-                                          name="VideoEncoder")
-
-    audio_encoder = make_residual_encoder(input_shape=(audio_step_size, audio_channels),
-                                          filters=[128, 128, 128, 128, 128],
-                                          kernel_size=5,
-                                          strides=[4, 2, 2, 2, 2],
-                                          code_size=128, code_activation="sigmoid", use_batch_norm=False,
-                                          use_residual_bias=False, use_conv_bias=True,
-                                          name="AudioEncoder")
-
-    video_decoder = make_residual_decoder(input_shape=video_encoder.output_shape[1:],
-                                          filters=[128, 128, 64, 64, 64, 32],
-                                          kernel_size=3,
-                                          strides=[(1, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2), (2, 2, 2)],
-                                          channels=video_channels, output_activation="linear", use_batch_norm=False,
-                                          use_residual_bias=False, use_conv_bias=True,
-                                          name="VideoDecoder")
-
-    audio_decoder = make_residual_decoder(input_shape=audio_encoder.output_shape[1:],
-                                          filters=[128, 128, 128, 128, 128],
-                                          kernel_size=5,
-                                          strides=[2, 2, 2, 2, 4],
-                                          channels=audio_channels, output_activation="linear", use_batch_norm=False,
-                                          use_residual_bias=False, use_conv_bias=True,
-                                          name="AudioDecoder")
-    video_ae = AE(encoder=video_encoder,
-                  decoder=video_decoder,
-                  name="VideoIAE")
-
-    audio_ae = AE(encoder=audio_encoder,
-                  decoder=audio_decoder,
-                  name="AudioIAE")
-    # endregion
-
-    # region Main model
-    mmae = MMAE([audio_ae, video_ae], learning_rate=WarmupSchedule(1000, 1e-4))
-
-    from models.EBAE import TakeStepESF, OffsetSequences, SwitchSamplesESF, CombineESF
+    autoencoder = make_unet(base_step_size, video_height, video_width, video_channels, audio_channels)
 
     energy_state_functions = [
         TakeStepESF(step_count),
@@ -76,8 +33,8 @@ def main():
         CombineESF([TakeStepESF(step_count), SwitchSamplesESF()])
     ]
 
-    ebae = EBAE(autoencoder=mmae,
-                energy_margin=1e-2,
+    ebae = EBAE(autoencoder=autoencoder,
+                energy_margin=1e-3,
                 energy_state_functions=energy_state_functions,
                 name="EBAE"
                 )
@@ -109,13 +66,13 @@ def main():
         output_map=lambda audio, video: (audio, video_preprocess(video))
     )
 
-    train_image_callback_config = ImageCallbackConfig(autoencoder=mmae,
+    train_image_callback_config = ImageCallbackConfig(autoencoder=autoencoder,
                                                       pattern=image_callback_pattern,
                                                       is_train_callback=True,
                                                       name="train",
                                                       modality_index=1)
 
-    test_image_callback_config = ImageCallbackConfig(autoencoder=mmae,
+    test_image_callback_config = ImageCallbackConfig(autoencoder=autoencoder,
                                                      pattern=image_callback_pattern,
                                                      is_train_callback=False,
                                                      name="test",
@@ -127,7 +84,7 @@ def main():
 
     # region Audio callback config
 
-    audio_callback_config = AudioCallbackConfig(autoencoder=mmae,
+    audio_callback_config = AudioCallbackConfig(autoencoder=autoencoder,
                                                 pattern=image_callback_pattern,
                                                 is_train_callback=True,
                                                 name="train",
@@ -140,28 +97,28 @@ def main():
     # endregion
 
     # region AUC callback config
-    def preprocess_audio_video_labels(audio, video, labels):
-        inputs = (audio, video_preprocess(video))
-        return inputs, labels
+    # def preprocess_audio_video_labels(audio, video, labels):
+    #     inputs = (audio, video_preprocess(video))
+    #     return inputs, labels
 
-    miae_auc_callback_config = AUCCallbackConfig(autoencoder=mmae,
-                                                 pattern=Pattern(
-                                                     ModalityLoadInfo(MelSpectrogram, audio_step_size),
-                                                     ModalityLoadInfo(RawVideo, video_step_size),
-                                                     output_map=preprocess_audio_video_labels
-                                                 ).with_labels(),
-                                                 labels_length=1,
-                                                 prefix="AudioVideo",
-                                                 metrics=[lambda x, y: ebae(x, y, sum_energies=True)]
-                                                 )
-
-    auc_callbacks_configs = [miae_auc_callback_config]
+    # miae_auc_callback_config = AUCCallbackConfig(autoencoder=autoencoder,
+    #                                              pattern=Pattern(
+    #                                                  ModalityLoadInfo(MelSpectrogram, audio_step_size),
+    #                                                  ModalityLoadInfo(RawVideo, video_step_size),
+    #                                                  output_map=preprocess_audio_video_labels
+    #                                              ).with_labels(),
+    #                                              labels_length=1,
+    #                                              prefix="AudioVideo"
+    #                                              )
+    #
+    # auc_callbacks_configs = [miae_auc_callback_config]
+    auc_callbacks_configs = []
     # endregion
 
-    train_config = ProtocolTrainConfig(batch_size=4,
+    train_config = ProtocolTrainConfig(batch_size=16,
                                        pattern=train_pattern,
-                                       steps_per_epoch=5,
-                                       epochs=2,
+                                       steps_per_epoch=1000,
+                                       epochs=1000,
                                        initial_epoch=0,
                                        validation_steps=128,
                                        image_callbacks_configs=image_callback_configs,
@@ -375,6 +332,63 @@ def log2_int(x):
 
 
 # endregion
+
+
+def make_unet(base_step_size, video_height, video_width, video_channels, audio_channels):
+    video_step_size = base_step_size
+    audio_step_size = base_step_size * 4
+
+    image_input_shape = (video_height, video_width, video_channels)
+
+    image_encoder_layers = [
+        Conv2D(filters=32, kernel_size=7, strides=2, padding="same", activation="linear",
+               kernel_initializer="glorot_uniform", input_shape=image_input_shape),
+        AveragePooling2D(),
+        Conv2D(filters=64, kernel_size=3, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+        Conv2D(filters=64, kernel_size=3, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+        Conv2D(filters=128, kernel_size=3, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+        Conv2D(filters=128, kernel_size=3, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+        Conv2D(filters=128, kernel_size=3, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+        Flatten(),
+        Dense(units=128, activation="relu", kernel_initializer="he_normal"),
+    ]
+
+    image_unet = UNet(encoder_layers=image_encoder_layers, name="ImageUNet")
+
+    audio_input_shape = (audio_step_size, audio_channels)
+
+    audio_encoder_layers = [
+        Conv1D(filters=256, kernel_size=7, strides=2, padding="same", activation="linear",
+               kernel_initializer="glorot_uniform", input_shape=audio_input_shape),
+        Conv1D(filters=128, kernel_size=3, strides=1, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+        Conv1D(filters=128, kernel_size=3, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+    ]
+
+    audio_unet = UNet(encoder_layers=audio_encoder_layers, name="AudioUNet")
+
+    fused_latent_code_shape = (video_step_size, 256)
+    time_encoder_layers = [
+        Conv1D(filters=256, kernel_size=7, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal", input_shape=fused_latent_code_shape),
+        AveragePooling1D(),
+        Conv1D(filters=256, kernel_size=7, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+        AveragePooling1D(),
+        Conv1D(filters=128, kernel_size=7, strides=2, padding="same", activation="relu",
+               kernel_initializer="he_normal"),
+    ]
+
+    time_unet = UNet(encoder_layers=time_encoder_layers, name="TimeUNet")
+
+    audio_video_unet = AudioVideoUNet(image_unet, audio_unet, time_unet, learning_rate=WarmupSchedule(1000, 4e-4))
+    return audio_video_unet
 
 
 if __name__ == "__main__":
