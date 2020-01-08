@@ -1,36 +1,23 @@
 # MMAE : Multi-modal Autoencoder
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.layers import Input
-import numpy as np
 from typing import List, Dict, Tuple
 
 from models import CustomModel, AE
-from models.multimodal import DenseFusionModel, DenseFusionModelMode
 
 
 class MMAE(CustomModel):
     def __init__(self,
                  autoencoders: List[AE],
+                 fusion_model: Model,
+                 concatenate_latent_codes=False,
                  learning_rate=1e-3,
                  **kwargs):
         super(MMAE, self).__init__(**kwargs)
 
         self.autoencoders = autoencoders
-        latent_code_sizes = [np.prod(ae.encoder.output_shape[1:]) for ae in autoencoders]
-        fusion_model = DenseFusionModel(latent_code_sizes, mode=DenseFusionModelMode.ONE_TO_ONE)
-
-        fusion_base_input_layers = [Input(shape=[code_size], name="FusionInputBase_{}".format(i))
-                                    for i, code_size in enumerate(latent_code_sizes)]
-
-        fuse_with_input_layers = [Input(shape=[code_size], name="FusionInputFuseWith_{}".format(i))
-                                  for i, code_size in enumerate(latent_code_sizes)]
-
-        fusion_input_layers = [fusion_base_input_layers, fuse_with_input_layers]
-
-        fusion_output_layers = fusion_model(fusion_input_layers)
-
-        self.fusion_model = Model(inputs=fusion_input_layers, outputs=fusion_output_layers, name="FusionModelProxy")
+        self.fusion_model = fusion_model
+        self.concatenate_latent_codes = concatenate_latent_codes
 
         self.optimizer = None
         self.set_optimizer(tf.keras.optimizers.Adam(learning_rate=learning_rate))
@@ -41,7 +28,13 @@ class MMAE(CustomModel):
             latent_code = self.autoencoders[i].encode(inputs[i])
             latent_codes.append(latent_code)
 
-        refined_latent_codes = self.fusion_model([latent_codes, latent_codes])
+        if self.concatenate_latent_codes:
+            latent_code_sizes = [code.shape[-1] for code in latent_codes]
+            latent_codes = tf.concat(latent_codes, axis=-1)
+            refined_latent_codes = self.fusion_model(latent_codes)
+            refined_latent_codes = tf.split(refined_latent_codes, num_or_size_splits=latent_code_sizes, axis=-1)
+        else:
+            refined_latent_codes = self.fusion_model(latent_codes)
 
         outputs = []
         for i in range(self.modality_count):
@@ -55,25 +48,42 @@ class MMAE(CustomModel):
     def train_step(self, inputs):
         with tf.GradientTape() as tape:
             losses = self.compute_loss(inputs)
-            total_loss = tf.reduce_sum(losses)
+            total_loss = losses[0]
 
         gradients = tape.gradient(total_loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        return (total_loss, *losses)
+        return losses
+
+    def compute_loss(self, inputs, *args, **kwargs) -> Tuple:
+        if self.modality_count == 2:
+            input_1, input_2 = inputs
+            return self.compute_loss_for_two(input_1, input_2)
+        else:
+            return self.compute_loss_unoptimized(inputs)
 
     @tf.function
-    def compute_loss(self,
-                     inputs
-                     ) -> Tuple[tf.Tensor]:
+    def compute_loss_for_two(self, input_1, input_2) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        output_1, output_2 = self([input_1, input_2])
+        loss_1 = self.compute_modality_loss(input_1, output_1)
+        loss_2 = self.compute_modality_loss(input_2, output_2)
+        total_loss = loss_1 + loss_2
+        return total_loss, loss_1, loss_2
+
+    def compute_loss_unoptimized(self, inputs) -> Tuple[tf.Tensor, ...]:
         outputs = self(inputs)
 
         losses = []
         for i in range(self.modality_count):
-            modality_loss: tf.Tensor = tf.reduce_mean(tf.square(inputs[i] - outputs[i]))
+            modality_loss: tf.Tensor = self.compute_modality_loss(inputs, outputs)
             losses.append(modality_loss)
 
-        return tuple(losses)
+        total_loss = tf.reduce_sum(losses)
+        return (total_loss, *losses)
+
+    @tf.function
+    def compute_modality_loss(self, inputs, outputs):
+        return tf.reduce_mean(tf.square(inputs - outputs))
 
     @property
     def modality_count(self):
@@ -97,8 +107,3 @@ class MMAE(CustomModel):
         self.optimizer = optimizer
         for ae in self.autoencoders:
             ae.set_optimizer(optimizer)
-
-
-
-
-

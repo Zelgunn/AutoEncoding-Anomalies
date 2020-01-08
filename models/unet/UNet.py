@@ -14,6 +14,7 @@ from models import AE
 class UNet(AE):
     def __init__(self,
                  encoder_layers: List[Layer],
+                 output_activation=None,
                  connection_map: List[bool] = None,
                  learning_rate=1e-3,
                  name: str = None,
@@ -22,7 +23,7 @@ class UNet(AE):
         if connection_map is None:
             connection_map = [True] * len(encoder_layers)
         self.connection_map = connection_map
-        decoder_layers = transpose_layers(encoder_layers)
+        decoder_layers = transpose_layers(encoder_layers, output_activation=output_activation)
 
         encoder = self.init_encoder(encoder_layers)
         decoder = self.init_decoder(encoder_layers, decoder_layers, encoder)
@@ -79,7 +80,7 @@ class UNet(AE):
         raise NotImplementedError
 
 
-def transpose_layers(layers: List[Layer]) -> List[Layer]:
+def transpose_layers(layers: List[Layer], output_activation=None) -> List[Layer]:
     shape = get_input_shape(layers[0])
     shapes = [shape]
     for layer in layers:
@@ -88,32 +89,40 @@ def transpose_layers(layers: List[Layer]) -> List[Layer]:
 
     transposed_layers = []
     for i in reversed(range(len(layers))):
-        transposed_layer = transpose_layer(layers[i], shapes[i])
+        activation = output_activation if (i == 0) else None
+        transposed_layer = transpose_layer(layers[i], shapes[i], activation=activation)
         transposed_layers.append(transposed_layer)
 
     return transposed_layers
 
 
-def transpose_layer(layer, input_shape):
+def transpose_layer(layer, input_shape, activation=None):
     if isinstance(layer, ResBlockND):
-        return transpose_resblock(layer)
+        return transpose_resblock(layer, layer_input_shape=input_shape, activation=activation)
+
     elif isinstance(layer, (Conv1D, Conv2D, Conv3D)):
-        return transpose_conv_layer(layer, layer_input_shape=input_shape)
+        return transpose_conv_layer(layer, layer_input_shape=input_shape, activation=activation)
+
+    elif isinstance(layer, Dense):
+        return transpose_dense_layer(layer, layer_input_shape=input_shape, activation=activation)
+
     elif isinstance(layer, (Pooling1D, Pooling2D, Pooling3D)):
         return transpose_pool_layer(layer)
-    elif isinstance(layer, Dense):
-        return transpose_dense_layer(layer, layer_input_shape=input_shape)
+
     elif isinstance(layer, (Flatten, Reshape)):
         return transpose_reshape_layer(layer, input_shape)
+
     else:
         raise TypeError
 
 
 def transpose_resblock(layer: ResBlockND,
                        layer_input_shape=None,
+                       activation=None
                        ) -> ResBlockNDTranspose:
     output_shape = get_input_shape(layer, layer_input_shape)
     input_shape = layer.compute_output_shape(output_shape)
+    activation = layer.activation if activation is None else activation
 
     transposed_layer = ResBlockNDTranspose(rank=layer.rank,
                                            filters=output_shape[-1],
@@ -121,7 +130,7 @@ def transpose_resblock(layer: ResBlockND,
                                            basic_block_depth=layer.basic_block_depth,
                                            kernel_size=layer.kernel_size,
                                            strides=layer.strides,
-                                           activation=layer.activation,
+                                           activation=activation,
                                            use_residual_bias=layer.use_residual_bias,
                                            use_conv_bias=layer.use_conv_bias,
                                            use_batch_norm=layer.use_batch_norm,
@@ -135,12 +144,14 @@ def transpose_resblock(layer: ResBlockND,
 
 def transpose_conv_layer(layer: Union[Conv1D, Conv2D, Conv3D],
                          layer_input_shape=None,
+                         activation=None
                          ) -> Union[Conv1DTranspose, Conv2DTranspose, Conv3DTranspose]:
     output_shape = get_input_shape(layer, layer_input_shape)
     input_shape = layer.compute_output_shape(output_shape)
 
     conv_transpose_map = [Conv1DTranspose, Conv2DTranspose, Conv3DTranspose]
     transposed_layer_class = conv_transpose_map[layer.rank - 1]
+    activation = layer.activation if activation is None else activation
 
     transposed_layer = transposed_layer_class(filters=output_shape[-1],
                                               kernel_size=layer.kernel_size,
@@ -148,7 +159,7 @@ def transpose_conv_layer(layer: Union[Conv1D, Conv2D, Conv3D],
                                               use_bias=layer.use_bias,
                                               padding="same",
                                               name=transposed_layer_name(layer),
-                                              activation=layer.activation,
+                                              activation=activation,
                                               batch_input_shape=input_shape)
 
     return transposed_layer
@@ -176,12 +187,15 @@ def transpose_pool_layer(layer: Union[Pooling1D, Pooling2D, Pooling3D]
 
 def transpose_dense_layer(layer: Dense,
                           layer_input_shape=None,
+                          activation=None
                           ) -> Dense:
     output_shape = get_input_shape(layer, layer_input_shape)
+    input_shape = layer.compute_output_shape(output_shape)
     units = output_shape[-1]
+    activation = layer.activation if activation is None else activation
 
     transposed_layer = Dense(units=units,
-                             activation=layer.activation,
+                             activation=activation,
                              use_bias=layer.use_bias,
                              kernel_initializer=layer.kernel_initializer,
                              bias_initializer=layer.bias_initializer,
@@ -190,7 +204,8 @@ def transpose_dense_layer(layer: Dense,
                              activity_regularizer=layer.activity_regularizer,
                              kernel_constraint=layer.kernel_constraint,
                              bias_constraint=layer.bias_constraint,
-                             name=transposed_layer_name(layer))
+                             name=transposed_layer_name(layer),
+                             batch_input_shape=input_shape)
 
     return transposed_layer
 

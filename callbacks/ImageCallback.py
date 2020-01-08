@@ -16,6 +16,7 @@ class ImageCallback(ModalityCallback):
                  update_freq: int or str,
                  epoch_freq: int = None,
                  outputs: Union[tf.Tensor, List[tf.Tensor]] = None,
+                 compare_to_ground_truth=True,
                  logged_output_indices=0,
                  name: str = "ImageCallback",
                  max_outputs: int = 4,
@@ -32,6 +33,7 @@ class ImageCallback(ModalityCallback):
         elif isinstance(fps, int):
             fps = [fps, ]
         self.fps = fps
+        self.compare_to_ground_truth = compare_to_ground_truth
 
         check_image_video_rank(self.true_outputs)
         self.true_outputs = convert_tensors_uint8(self.true_outputs)
@@ -43,13 +45,14 @@ class ImageCallback(ModalityCallback):
         pred_outputs = convert_tensors_uint8(pred_outputs)
         self.samples_summary(data=pred_outputs, step=step, suffix="predicted")
 
-        for i in range(len(self.logged_output_indices)):
-            true_sample: tf.Tensor = self.true_outputs[i]
-            pred_sample: tf.Tensor = pred_outputs[i]
+        if self.compare_to_ground_truth:
+            for i in range(len(self.logged_output_indices)):
+                true_sample: tf.Tensor = self.true_outputs[i]
+                pred_sample: tf.Tensor = pred_outputs[i]
 
-            if pred_sample.shape.is_compatible_with(true_sample.shape):
-                delta = (pred_sample - true_sample) * (tf.cast(pred_sample < true_sample, dtype=tf.uint8) * 254 + 1)
-                self.sample_summary(data=delta, step=step, suffix="delta")
+                if pred_sample.shape.is_compatible_with(true_sample.shape):
+                    delta = (pred_sample - true_sample) * (tf.cast(pred_sample < true_sample, dtype=tf.uint8) * 254 + 1)
+                    self.sample_summary(data=delta, step=step, suffix="delta")
 
     def sample_summary(self, data: tf.Tensor, step: int, suffix: str):
         if use_video_summary(data):

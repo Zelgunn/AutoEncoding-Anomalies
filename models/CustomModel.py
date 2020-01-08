@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.python.keras import Model
+from tensorflow.python.keras import Model, regularizers
 from tensorflow.python.keras.callbacks import Callback, CallbackList, configure_callbacks, make_logs
 from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.python.keras.utils.mode_keys import ModeKeys
@@ -64,6 +64,40 @@ class CustomModel(Model):
                 batch_logs = {'batch': step, 'size': 1}
                 callbacks.on_batch_begin(step, batch_logs)
 
+                # low_states = self.get_low_energy_states(batch)
+                # high_states = self.get_high_energy_states(batch)
+                # states = low_states + high_states
+                #
+                # audio_samples, video_samples = [], []
+                # for state in states:
+                #     audio, video = state[0]
+                #     audio_samples.append(audio.numpy())
+                #     video_samples.append(video.numpy())
+                #
+                # import numpy as np
+                # audio_samples = np.concatenate(audio_samples, axis=0)
+                # video_samples = np.concatenate(video_samples, axis=0)
+                # video_samples = np.tile(video_samples, [1, 1, 1, 1, 3])
+                # # audio_samples = audio_samples[:2]
+                # # video_samples = video_samples[:2]
+                #
+                # print(video_samples.max(), video_samples.min())
+                # print(audio_samples.max(), audio_samples.min())
+                # exit()
+
+                # from modalities import MelSpectrogram
+                # ms = MelSpectrogram(0.03, 0.01005, 100, to_db=True)
+                # audio_samples = (audio_samples - 1.0) * 80.0
+                # audio_samples = ms.mel_spectrograms_to_wave(audio_samples, 48000)
+                # audio_samples = np.expand_dims(audio_samples, axis=-1)
+                # video_samples = (video_samples * 255.0).astype(np.uint8)
+                #
+                # from modalities.utils import write_video_with_audio
+                # for i in range(len(video_samples)):
+                #     path = r"..\logs\AEA\protocols\audio_video\emoly\train\{}.avi".format(i)
+                #     write_video_with_audio(path, video_samples[i], audio_samples[i], 25, 48000)
+                # exit()
+
                 batch_outputs = self.train_step(batch)
                 if not (isinstance(batch_outputs, tuple) or isinstance(batch_outputs, list)):
                     batch_outputs = [batch_outputs]
@@ -87,7 +121,7 @@ class CustomModel(Model):
             # region Validation
             if do_validation and (epoch % validation_freq) == 0:
                 for val_step, batch in zip(range(validation_steps), validation_data):
-                    val_results = self.compute_loss(batch)
+                    val_results = self.compute_metrics(batch)
                     if not (isinstance(val_results, tuple) or isinstance(val_results, list)):
                         val_results = [val_results]
                     val_results = [output.numpy() for output in val_results]
@@ -112,6 +146,15 @@ class CustomModel(Model):
     @abstractmethod
     def compute_loss(self, inputs, *args, **kwargs):
         pass
+
+    def compute_weights_decay_loss(self, l1=0.0, l2=0.0):
+        loss = 0
+        for variable in self.trainable_variables:
+            loss += regularizers.L1L2(l1=l1, l2=l2)(variable)
+        return loss
+
+    def compute_metrics(self, inputs, *args, **kwargs):
+        return self.compute_loss(inputs, *args, **kwargs)
 
     @tf.function
     def forward(self, inputs):

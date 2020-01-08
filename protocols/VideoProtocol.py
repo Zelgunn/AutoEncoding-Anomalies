@@ -239,7 +239,7 @@ class VideoProtocol(DatasetProtocol):
     def make_video_preprocess(self):
         return make_video_preprocess(height=self.height,
                                      width=self.width,
-                                     channels=self.dataset_channels)
+                                     base_channels=self.dataset_channels)
 
     # endregion
 

@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.layers import Dense, Input, Lambda
 from typing import List
 from enum import IntEnum
 
@@ -11,7 +11,10 @@ class DenseFusionModelMode(IntEnum):
 
 
 class DenseFusionModel(Model):
-    def __init__(self, latent_code_sizes: List[int], mode: DenseFusionModelMode):
+    def __init__(self,
+                 latent_code_sizes: List[int],
+                 mode: DenseFusionModelMode
+                 ):
         super(DenseFusionModel, self).__init__()
 
         self.latent_code_sizes = latent_code_sizes
@@ -24,6 +27,17 @@ class DenseFusionModel(Model):
             self.init_one_to_one()
         else:
             raise ValueError("Unknown mode : {}".format(self.mode))
+
+        base_inputs = [Input(shape=[code_size], name="FusionInputBase_{}".format(i))
+                       for i, code_size in enumerate(latent_code_sizes)]
+
+        fuse_with_inputs = [Input(shape=[code_size], name="FusionInputFuseWith_{}".format(i))
+                            for i, code_size in enumerate(latent_code_sizes)]
+
+        inputs = [base_inputs, fuse_with_inputs]
+        outputs = self.fuse(inputs)
+
+        self._init_graph_network(inputs=inputs, outputs=outputs)
 
     def init_all_to_one(self):
         for i, latent_code_size in enumerate(self.latent_code_sizes):
@@ -38,17 +52,18 @@ class DenseFusionModel(Model):
                 layer_name = "Project_{}_To_{}".format(input_mod_index, output_mod_index)
                 self.projection_layers.append(Dense(units=latent_code_size, activation="tanh", name=layer_name))
 
-    def call(self, inputs, training=None, mask=None):
-        inputs, fuse_with = inputs
+    def fuse(self, inputs):
+        # Temporary equality
+        fuse_with = inputs
 
         if self.mode == DenseFusionModelMode.ALL_TO_ONE:
-            return self.call_all_to_one(inputs, fuse_with)
+            return self.fuse_all_to_one(inputs, fuse_with)
         elif self.mode == DenseFusionModelMode.ONE_TO_ONE:
-            return self.call_one_to_one(inputs, fuse_with)
+            return self.fuse_one_to_one(inputs, fuse_with)
         else:
             raise ValueError("Unknown mode : {}".format(self.mode))
 
-    def call_all_to_one(self, inputs, fuse_with=None):
+    def fuse_all_to_one(self, inputs, fuse_with=None):
         code_shapes = [tf.shape(modality_latent_code) for modality_latent_code in inputs]
 
         inputs_latent_codes, fuse_with_latent_codes = self.get_call_flat_latent_codes(inputs, fuse_with)
@@ -72,7 +87,7 @@ class DenseFusionModel(Model):
 
         return outputs
 
-    def call_one_to_one(self, inputs, fuse_with=None):
+    def fuse_one_to_one(self, inputs, fuse_with=None):
         code_shapes = [tf.shape(modality_latent_code) for modality_latent_code in inputs]
 
         inputs_latent_codes, fuse_with_latent_codes = self.get_call_flat_latent_codes(inputs, fuse_with)
@@ -102,7 +117,6 @@ class DenseFusionModel(Model):
             fuse_with_latent_codes = self.get_flat_latent_codes(fuse_with)
         return inputs_latent_codes, fuse_with_latent_codes
 
-    @tf.function
     def get_flat_latent_codes(self, latent_codes):
         batch_size = tf.shape(latent_codes[0])[0]
         flat_latent_codes = []

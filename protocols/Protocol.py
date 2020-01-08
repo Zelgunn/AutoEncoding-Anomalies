@@ -22,6 +22,7 @@ class ModalityCallbackConfig(object):
                  epoch_freq: int = 1,
                  inputs_are_outputs: bool = True,
                  modality_index: int = None,
+                 **kwargs
                  ):
         self.autoencoder = autoencoder
         self.pattern = pattern
@@ -30,6 +31,7 @@ class ModalityCallbackConfig(object):
         self.epoch_freq = epoch_freq
         self.inputs_are_outputs = inputs_are_outputs
         self.modality_index = modality_index
+        self.kwargs = kwargs
 
     def get_subset(self, dataset_loader: DatasetLoader):
         return dataset_loader.train_subset if self.is_train_callback else dataset_loader.test_subset
@@ -55,7 +57,8 @@ class ImageCallbackConfig(ModalityCallbackConfig):
                                                               tensorboard=tensorboard,
                                                               epoch_freq=self.epoch_freq,
                                                               inputs_are_outputs=self.inputs_are_outputs,
-                                                              modality_index=self.modality_index)
+                                                              modality_index=self.modality_index,
+                                                              **self.kwargs)
         return image_callbacks
 
 
@@ -70,6 +73,7 @@ class AudioCallbackConfig(ModalityCallbackConfig):
                  sample_rate: int = 48000,
                  inputs_are_outputs: bool = True,
                  modality_index: int = None,
+                 **kwargs,
                  ):
         super(AudioCallbackConfig, self).__init__(autoencoder=autoencoder,
                                                   pattern=pattern,
@@ -77,7 +81,8 @@ class AudioCallbackConfig(ModalityCallbackConfig):
                                                   name=name,
                                                   epoch_freq=epoch_freq,
                                                   inputs_are_outputs=inputs_are_outputs,
-                                                  modality_index=modality_index
+                                                  modality_index=modality_index,
+                                                  **kwargs
                                                   )
         self.mel_spectrogram = mel_spectrogram
         self.sample_rate = sample_rate
@@ -96,7 +101,8 @@ class AudioCallbackConfig(ModalityCallbackConfig):
                                                               sample_rate=self.sample_rate,
                                                               epoch_freq=self.epoch_freq,
                                                               inputs_are_outputs=self.inputs_are_outputs,
-                                                              modality_index=self.modality_index
+                                                              modality_index=self.modality_index,
+                                                              **self.kwargs
                                                               )
         return audio_callbacks
 
@@ -219,7 +225,7 @@ class Protocol(object):
 
         print("Protocol - Training : Making datasets ...")
         subset = self.dataset_loader.train_subset
-        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern, split=0.8)
+        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern, split=0.6)
         print("Protocol - Make Datasets : Train dataset ...")
         train_dataset = train_dataset.batch(config.batch_size).prefetch(-1)
         if val_dataset is not None:
@@ -343,7 +349,7 @@ def get_dataset_folder(dataset_name: str) -> str:
         "subway_mall3": "../datasets/subway/mall3",
 
         "shanghaitech": "../datasets/shanghaitech",
-        "emoly": "../datasets/emoly",
+        "emoly": "E:/datasets/emoly",
         "avenue": "../datasets/avenue",
     }
 

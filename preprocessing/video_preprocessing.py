@@ -8,7 +8,7 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
                             dropout_noise_ratio=0.0,
                             negative_prob=0.0,
                             ):
-    preprocess_video = make_video_preprocess(height=height, width=width, channels=channels)
+    preprocess_video = make_video_preprocess(height=height, width=width, base_channels=channels)
 
     def augment_video(video: tf.Tensor) -> tf.Tensor:
         if crop_ratio > 0.0:
@@ -26,11 +26,11 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
     return augment_video
 
 
-def make_video_preprocess(height: int, width: int, channels: int):
+def make_video_preprocess(height: int, width: int, base_channels: int):
     def preprocess(video: tf.Tensor, labels: tf.Tensor = None):
         video = tf.image.resize(video, (height, width))
 
-        if channels == 3:
+        if base_channels == 3:
             rgb_weights = [0.2989, 0.5870, 0.1140]
             rgb_weights = tf.reshape(rgb_weights, [1, 1, 1, 3])
             video *= rgb_weights
