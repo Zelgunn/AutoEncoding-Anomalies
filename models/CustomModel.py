@@ -1,11 +1,11 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model, regularizers
 from tensorflow.python.keras.callbacks import Callback, CallbackList, configure_callbacks, make_logs
-from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard
+from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard, BaseLogger, ProgbarLogger
 from tensorflow.python.keras.utils.mode_keys import ModeKeys
 from tensorflow.python.data.ops.dataset_ops import get_legacy_output_shapes
 from abc import abstractmethod
-from typing import List, Dict, Type, Optional
+from typing import List, Dict, Type, Optional, Union
 import os
 
 from misc_utils.train_utils import LossAggregator
@@ -28,8 +28,7 @@ class CustomModel(Model):
             **kwargs):
 
         do_validation = (validation_data is not None) and (validation_steps is not None)
-        model_checkpoint = get_callback(callbacks, ModelCheckpoint)
-        tensorboard: Optional[TensorBoard] = get_callback(callbacks, TensorBoard)
+
         callbacks: CallbackList = configure_callbacks(callbacks,
                                                       model=self,
                                                       do_validation=do_validation,
@@ -39,14 +38,8 @@ class CustomModel(Model):
                                                       samples=steps_per_epoch,
                                                       verbose=verbose,
                                                       mode=ModeKeys.TRAIN)
-        if model_checkpoint is not None:
-            model_checkpoint.save_weights_only = True
 
-        if (tensorboard is not None) and (tensorboard.update_freq != "epoch"):
-            tensorboard._samples_seen = initial_epoch * steps_per_epoch
-            tensorboard._total_batches_seen = initial_epoch * steps_per_epoch
-
-        # self.write_model_graph(tensorboard, dataset=x)
+        self.reconfigure_callbacks(callbacks, initial_epoch, steps_per_epoch)
 
         train_aggregator = LossAggregator(use_steps=True, num_samples=steps_per_epoch)
         val_aggregator = LossAggregator(use_steps=True, num_samples=validation_steps)
@@ -98,7 +91,7 @@ class CustomModel(Model):
                 #     write_video_with_audio(path, video_samples[i], audio_samples[i], 25, 48000)
                 # exit()
 
-                batch_outputs = self.train_step(batch)
+                batch_outputs = self.train_step(batch, **kwargs)
                 if not (isinstance(batch_outputs, tuple) or isinstance(batch_outputs, list)):
                     batch_outputs = [batch_outputs]
                 batch_outputs = [output.numpy() for output in batch_outputs]
@@ -139,6 +132,21 @@ class CustomModel(Model):
         callbacks.on_train_end()
         return self.history
 
+    def reconfigure_callbacks(self, callbacks: CallbackList, initial_epoch: int, steps_per_epoch: int):
+        for callback in callbacks.callbacks:
+            if isinstance(callback, (BaseLogger, ProgbarLogger)):
+                callback.stateful_metrics = self.stateful_metrics
+
+        model_checkpoint = get_callback(callbacks, ModelCheckpoint)
+        tensorboard: Optional[TensorBoard] = get_callback(callbacks, TensorBoard)
+
+        if model_checkpoint is not None:
+            model_checkpoint.save_weights_only = True
+
+        if (tensorboard is not None) and (tensorboard.update_freq != "epoch"):
+            tensorboard._samples_seen = initial_epoch * steps_per_epoch
+            tensorboard._total_batches_seen = initial_epoch * steps_per_epoch
+
     @abstractmethod
     def train_step(self, inputs, *args, **kwargs):
         pass
@@ -174,6 +182,10 @@ class CustomModel(Model):
     @abstractmethod
     def get_config(self):
         pass
+
+    @property
+    def stateful_metrics(self) -> List[str]:
+        return []
 
     def summary(self, line_length=None, positions=None, print_fn=None):
         for model in self.models_ids.keys():
@@ -229,9 +241,14 @@ class CustomModel(Model):
     # endregion
 
 
-def get_callback(callbacks: List[Callback], callback_type: Type[Callback]) -> Optional[Callback]:
+def get_callback(callbacks: Union[List[Callback], CallbackList],
+                 callback_type: Type[Callback]
+                 ) -> Optional[Callback]:
     if callbacks is None:
         return None
+
+    if isinstance(callbacks, CallbackList):
+        callbacks = callbacks.callbacks
 
     result = None
     for callback in callbacks:

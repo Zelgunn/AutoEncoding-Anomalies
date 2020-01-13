@@ -1,10 +1,9 @@
 # EBAE : Energy-based Autoencoder
 import tensorflow as tf
-from tensorflow_core.python.keras import Model
-from typing import Dict, Tuple, Union, List
+from typing import Union, List
 
 from models import CustomModel
-from models.energy_based import EBM, EnergyStateFunction, InputsTensor
+from models.energy_based import EBM, EnergyStateFunction
 
 
 class EBAE(EBM):

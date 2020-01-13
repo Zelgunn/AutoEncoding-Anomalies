@@ -1,7 +1,7 @@
 import tensorflow as tf
-from typing import Union, Tuple
+from typing import Tuple
 
-from models.energy_based import ApplyOnRandomInput, InputsTensor
+from models.energy_based import ApplyOnRandomInput
 
 
 class NoisyInput(ApplyOnRandomInput):

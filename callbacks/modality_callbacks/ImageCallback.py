@@ -3,8 +3,7 @@ from tensorflow import keras
 from typing import List, Union
 
 from callbacks import ModalityCallback
-from misc_utils.summary_utils import image_summary
-from misc_utils.general import to_list
+from misc_utils.summary_utils import image_summary, convert_tensors_uint8, check_image_video_rank, use_video_summary
 
 
 class ImageCallback(ModalityCallback):
@@ -64,34 +63,3 @@ class ImageCallback(ModalityCallback):
         for fps in self.fps:
             image_summary(name="{}_{}_{}".format(self.name, fps, suffix), data=data,
                           step=step, max_outputs=self.max_outputs, fps=fps)
-
-
-# region Utility / wrappers
-def check_image_video_rank(data: Union[tf.Tensor, List[tf.Tensor]]):
-    if isinstance(data, list) or isinstance(data, tuple):
-        for sample in data:
-            check_image_video_rank(sample)
-
-    elif data.shape.rank < 4:
-        raise ValueError("Incorrect rank for images/video, expected rank >= 4, got {} with rank {}."
-                         .format(data.shape, data.shape.rank))
-
-
-def use_video_summary(data: tf.Tensor) -> bool:
-    return data.shape.rank >= 5
-
-
-def convert_tensors_uint8(tensors: Union[tf.Tensor, List[tf.Tensor]]) -> List[tf.Tensor]:
-    tensors = to_list(tensors)
-    tensors = [convert_tensor_uint8(tensor) for tensor in tensors]
-    return tensors
-
-
-def convert_tensor_uint8(tensor) -> tf.Tensor:
-    tensor: tf.Tensor = tf.convert_to_tensor(tensor)
-    tensor_min = tf.reduce_min(tensor)
-    tensor_max = tf.reduce_max(tensor)
-    tensor = (tensor - tensor_min) / (tensor_max - tensor_min)
-    normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
-    return normalized
-# endregion

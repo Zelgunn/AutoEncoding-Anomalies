@@ -1,3 +1,4 @@
+# EBGAN : Energy-based Generative Adversarial Network
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from typing import Tuple, Dict
@@ -28,7 +29,7 @@ class EBGAN(CustomModel):
         return self.autoencoder(inputs)
 
     @tf.function
-    def train_step(self, inputs):
+    def train_step(self, inputs, *args, **kwargs):
         with tf.GradientTape() as discriminator_tape, tf.GradientTape() as generator_tape:
             losses = self.compute_loss(inputs)
             (

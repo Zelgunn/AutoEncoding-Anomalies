@@ -4,7 +4,6 @@ from typing import Dict
 
 from models import CustomModel
 from models.unet import UNet
-from misc_utils.train_utils import WarmupSchedule
 
 
 class AudioVideoUNet(CustomModel):

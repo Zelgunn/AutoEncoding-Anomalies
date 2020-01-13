@@ -5,7 +5,7 @@ import json
 import os
 
 from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
-from protocols import AUCCallbackConfig
+from callbacks.configs import AUCCallbackConfig
 from modalities import Pattern
 from models import IAE
 
@@ -41,7 +41,7 @@ class DatasetProtocol(Protocol):
     # endregion
 
     # region Train
-    def train_model(self, config: ProtocolTrainConfig = None):
+    def train_model(self, config: ProtocolTrainConfig = None, **kwargs):
         if config is None:
             config = self.get_train_config()
 

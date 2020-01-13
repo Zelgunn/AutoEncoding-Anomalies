@@ -4,12 +4,13 @@ from typing import List
 
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
-from protocols import ImageCallbackConfig
+from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_residual_encoder, make_residual_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import AE, IAE
 from models.autoregressive import SAAM, AND
-from models.adversarial import IAEGAN, VAEGAN, IAEGANMode, EBGAN
+from models.adversarial import IAEGAN, VAEGAN, IAEGANMode
+from models.energy_based import EBGAN
 from preprocessing.video_preprocessing import make_video_augmentation, make_video_preprocess
 from misc_utils.train_utils import WarmupSchedule
 
@@ -426,6 +427,3 @@ class VideoProtocol(DatasetProtocol):
                 frames = []
 
         video_writer.release()
-
-
-

@@ -3,145 +3,14 @@ from tensorflow.python.keras import Model
 from tensorflow.python.keras.callbacks import Callback, TensorBoard, ModelCheckpoint
 import time
 import os
-from abc import abstractmethod
-from typing import List, Callable, Union
+from typing import List, Callable
 
-from anomaly_detection import AnomalyDetector, known_metrics, IOCompareModel
+from anomaly_detection import AnomalyDetector, known_metrics
+from callbacks.configs import ModalityCallbackConfig
+from callbacks.configs import AUCCallbackConfig
 from datasets import DatasetLoader, DatasetConfig
 from misc_utils.train_utils import save_model_info
-from callbacks import ImageCallback, AudioCallback, AUCCallback
-from modalities import Pattern, MelSpectrogram
-
-
-class ModalityCallbackConfig(object):
-    def __init__(self,
-                 autoencoder: Callable,
-                 pattern: Pattern,
-                 is_train_callback: bool,
-                 name: str,
-                 epoch_freq: int = 1,
-                 inputs_are_outputs: bool = True,
-                 modality_index: int = None,
-                 **kwargs
-                 ):
-        self.autoencoder = autoencoder
-        self.pattern = pattern
-        self.name = name
-        self.is_train_callback = is_train_callback
-        self.epoch_freq = epoch_freq
-        self.inputs_are_outputs = inputs_are_outputs
-        self.modality_index = modality_index
-        self.kwargs = kwargs
-
-    def get_subset(self, dataset_loader: DatasetLoader):
-        return dataset_loader.train_subset if self.is_train_callback else dataset_loader.test_subset
-
-    @abstractmethod
-    def to_callback(self,
-                    tensorboard: TensorBoard,
-                    dataset_loader: DatasetLoader,
-                    ) -> List:
-        pass
-
-
-class ImageCallbackConfig(ModalityCallbackConfig):
-    def to_callback(self,
-                    tensorboard: TensorBoard,
-                    dataset_loader: DatasetLoader,
-                    ) -> ImageCallback:
-        image_callbacks = ImageCallback.from_model_and_subset(autoencoder=self.autoencoder,
-                                                              subset=self.get_subset(dataset_loader),
-                                                              pattern=self.pattern,
-                                                              name=self.name,
-                                                              is_train_callback=self.is_train_callback,
-                                                              tensorboard=tensorboard,
-                                                              epoch_freq=self.epoch_freq,
-                                                              inputs_are_outputs=self.inputs_are_outputs,
-                                                              modality_index=self.modality_index,
-                                                              **self.kwargs)
-        return image_callbacks
-
-
-class AudioCallbackConfig(ModalityCallbackConfig):
-    def __init__(self,
-                 autoencoder: Callable,
-                 pattern: Pattern,
-                 is_train_callback: bool,
-                 name: str,
-                 epoch_freq: int = 1,
-                 mel_spectrogram: MelSpectrogram = None,
-                 sample_rate: int = 48000,
-                 inputs_are_outputs: bool = True,
-                 modality_index: int = None,
-                 **kwargs,
-                 ):
-        super(AudioCallbackConfig, self).__init__(autoencoder=autoencoder,
-                                                  pattern=pattern,
-                                                  is_train_callback=is_train_callback,
-                                                  name=name,
-                                                  epoch_freq=epoch_freq,
-                                                  inputs_are_outputs=inputs_are_outputs,
-                                                  modality_index=modality_index,
-                                                  **kwargs
-                                                  )
-        self.mel_spectrogram = mel_spectrogram
-        self.sample_rate = sample_rate
-
-    def to_callback(self,
-                    tensorboard: TensorBoard,
-                    dataset_loader: DatasetLoader,
-                    ) -> AudioCallback:
-        audio_callbacks = AudioCallback.from_model_and_subset(autoencoder=self.autoencoder,
-                                                              subset=self.get_subset(dataset_loader),
-                                                              pattern=self.pattern,
-                                                              name=self.name,
-                                                              is_train_callback=self.is_train_callback,
-                                                              tensorboard=tensorboard,
-                                                              mel_spectrogram=self.mel_spectrogram,
-                                                              sample_rate=self.sample_rate,
-                                                              epoch_freq=self.epoch_freq,
-                                                              inputs_are_outputs=self.inputs_are_outputs,
-                                                              modality_index=self.modality_index,
-                                                              **self.kwargs
-                                                              )
-        return audio_callbacks
-
-
-class AUCCallbackConfig(object):
-    def __init__(self,
-                 autoencoder: Callable,
-                 pattern: Pattern,
-                 labels_length: int,
-                 prefix: str,
-                 metrics: List[Union[str, Callable]] = "mse",
-                 epoch_freq: int = 1,
-                 sample_count: int = 512,
-                 ):
-        self.autoencoder = autoencoder
-        self.pattern = pattern
-        self.labels_length = labels_length
-        self.prefix = prefix
-        self.metrics = metrics
-        self.epoch_freq = epoch_freq
-        self.sample_count = sample_count
-
-    def to_callback(self,
-                    tensorboard: TensorBoard,
-                    dataset_loader: DatasetLoader,
-                    ) -> AUCCallback:
-        raw_predictions_model = IOCompareModel(self.autoencoder,
-                                               metrics=self.metrics,
-                                               name="{}AutoencoderRawPredictionsModel".format(self.prefix))
-
-        return AUCCallback.from_subset(predictions_model=raw_predictions_model,
-                                       tensorboard=tensorboard,
-                                       test_subset=dataset_loader.test_subset,
-                                       pattern=self.pattern,
-                                       labels_length=self.labels_length,
-                                       samples_count=self.sample_count,
-                                       epoch_freq=self.epoch_freq,
-                                       batch_size=4,
-                                       prefix=self.prefix)
+from modalities import Pattern
 
 
 class ProtocolTrainConfig(object):
@@ -152,9 +21,8 @@ class ProtocolTrainConfig(object):
                  epochs: int,
                  initial_epoch: int,
                  validation_steps: int,
-                 image_callbacks_configs: List[ImageCallbackConfig] = None,
-                 audio_callbacks_configs: List[AudioCallbackConfig] = None,
-                 auc_callbacks_configs: List[AUCCallbackConfig] = None,
+                 modality_callback_configs: List[ModalityCallbackConfig] = None,
+                 auc_callback_configs: List[AUCCallbackConfig] = None,
                  early_stopping_metric: str = None,
                  ):
         self.batch_size = batch_size
@@ -163,9 +31,8 @@ class ProtocolTrainConfig(object):
         self.epochs = epochs
         self.initial_epoch = initial_epoch
         self.validation_steps = validation_steps
-        self.image_callbacks_configs = image_callbacks_configs
-        self.audio_callbacks_configs = audio_callbacks_configs
-        self.auc_callbacks_configs = auc_callbacks_configs
+        self.modality_callback_configs = modality_callback_configs
+        self.auc_callback_configs = auc_callback_configs
         self.early_stopping_metric = early_stopping_metric
 
 
@@ -213,7 +80,7 @@ class Protocol(object):
         self.base_log_dir = "../logs/AEA/protocols/{protocol_name}/{dataset_name}" \
             .format(protocol_name=protocol_name, dataset_name=dataset_name)
 
-    def train_model(self, config: ProtocolTrainConfig):
+    def train_model(self, config: ProtocolTrainConfig, **kwargs):
         print("Protocol - Training : Loading weights ...")
         self.load_weights(epoch=config.initial_epoch)
 
@@ -225,7 +92,7 @@ class Protocol(object):
 
         print("Protocol - Training : Making datasets ...")
         subset = self.dataset_loader.train_subset
-        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern, split=0.6)
+        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern, split=0.9)
         print("Protocol - Make Datasets : Train dataset ...")
         train_dataset = train_dataset.batch(config.batch_size).prefetch(-1)
         if val_dataset is not None:
@@ -235,7 +102,7 @@ class Protocol(object):
         print("Protocol - Training : Fit loop ...")
         self.model.fit(train_dataset, steps_per_epoch=config.steps_per_epoch, epochs=config.epochs,
                        validation_data=val_dataset, validation_steps=config.validation_steps,
-                       callbacks=callbacks, initial_epoch=config.initial_epoch)
+                       callbacks=callbacks, initial_epoch=config.initial_epoch, **kwargs)
 
     def make_callback(self,
                       log_dir: str,
@@ -244,20 +111,12 @@ class Protocol(object):
         print("Protocol - Make Callbacks - Tensorboard ...")
         tensorboard = TensorBoard(log_dir=log_dir, update_freq=16, profile_batch=0)
         callbacks = [tensorboard]
-        # region Image Callbacks
-        print("Protocol - Make Callbacks - Image callbacks ...")
-        if config.image_callbacks_configs is not None:
-            for icc in config.image_callbacks_configs:
-                print("Protocol - Make Image Callbacks - {} callback ...".format(icc.name))
-                callback = icc.to_callback(tensorboard, self.dataset_loader)
-                callbacks.append(callback)
-        # endregion
-        # region Audio Callbacks
-        print("Protocol - Make Callbacks - Audio callbacks ...")
-        if config.audio_callbacks_configs is not None:
-            for acc in config.audio_callbacks_configs:
-                print("Protocol - Make Audio Callbacks - {} callback ...".format(acc.name))
-                callback = acc.to_callback(tensorboard, self.dataset_loader)
+        # region Modality Callbacks
+        if config.modality_callback_configs is not None:
+            print("Protocol - Make Callbacks - Modality callbacks")
+            for mcc in config.modality_callback_configs:
+                print("Protocol - Make Modality Callbacks - {} callback ...".format(mcc.name))
+                callback = mcc.to_callback(tensorboard, self.dataset_loader)
                 callbacks.append(callback)
         # endregion
         # region Checkpoint
@@ -276,9 +135,9 @@ class Protocol(object):
         #     callbacks.append(early_stopping)
         # endregion
         # region AUC
-        print("Protocol - Make Callbacks - AUC callbacks ...")
-        if config.auc_callbacks_configs is not None:
-            for acc in config.auc_callbacks_configs:
+        if config.auc_callback_configs is not None:
+            print("Protocol - Make Callbacks - AUC callbacks ...")
+            for acc in config.auc_callback_configs:
                 print("Protocol - Make AUC Callbacks - {} callback ...".format(acc.prefix))
                 callbacks += [acc.to_callback(tensorboard, self.dataset_loader)]
         # endregion
@@ -349,7 +208,7 @@ def get_dataset_folder(dataset_name: str) -> str:
         "subway_mall3": "../datasets/subway/mall3",
 
         "shanghaitech": "../datasets/shanghaitech",
-        "emoly": "E:/datasets/emoly",
+        "emoly": "../datasets/emoly",
         "avenue": "../datasets/avenue",
     }
 

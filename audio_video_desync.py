@@ -6,7 +6,7 @@ from tensorflow.python.keras.layers import TimeDistributed, GlobalAveragePooling
 
 from protocols import Protocol, ProtocolTrainConfig, ImageCallbackConfig
 from modalities import Pattern, ModalityLoadInfo, RawVideo, MelSpectrogram
-from models.energy_based import EBM, TakeStepESF, OffsetSequences, IdentityESF, SwitchSamplesESF
+from models.energy_based import EBM, TakeStepESF, OffsetSequences  # , IdentityESF, SwitchSamplesESF
 from CustomKerasLayers import SpatialTransformer, ResBlock1D, ResBlock3D, ResBlock1DTranspose, ResBlock3DTranspose
 from CustomKerasLayers import ExpandDims
 from preprocessing.video_preprocessing import make_video_preprocess

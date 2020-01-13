@@ -80,7 +80,7 @@ class ModalityCallback(TensorBoardPlugin, ABC):
                               epoch_freq=1,
                               max_outputs=4,
                               inputs_are_outputs=True,
-                              modality_index=None,
+                              modality_indices=None,
                               **kwargs
                               ) -> "ModalityCallback":
         batch = subset.get_batch(batch_size=4, pattern=pattern)
@@ -90,13 +90,13 @@ class ModalityCallback(TensorBoardPlugin, ABC):
         else:
             inputs, outputs = batch
 
-        if modality_index is None:
-            modality_index = 0
+        if modality_indices is None:
+            modality_indices = 0
 
         one_shot_callback = cls(inputs=inputs, outputs=outputs, model=autoencoder,
                                 tensorboard=tensorboard, is_train_callback=is_train_callback,
                                 update_freq=update_freq, epoch_freq=epoch_freq,
-                                logged_output_indices=modality_index,
+                                logged_output_indices=modality_indices,
                                 name=name, max_outputs=max_outputs,
                                 **kwargs)
 

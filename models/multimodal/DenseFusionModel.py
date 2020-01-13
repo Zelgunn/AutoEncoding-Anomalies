@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.layers import Dense, Input, Lambda
+from tensorflow.python.keras.layers import Dense, Input
 from typing import List
 from enum import IntEnum
 
