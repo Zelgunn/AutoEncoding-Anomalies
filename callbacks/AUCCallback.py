@@ -121,7 +121,14 @@ class AUCCallback(TensorBoardPlugin):
                 self.outputs = self.inputs
             else:
                 self.outputs = to_constant_list(outputs, name="outputs")
-            self.labels = tf.constant(np.squeeze(labels), name="labels")
+
+            if labels.shape[-1] == 1:
+                if isinstance(labels, np.ndarray):
+                    labels = np.squeeze(labels, axis=-1)
+                else:
+                    labels = tf.squeeze(labels, axis=-1)
+
+            self.labels = tf.constant(labels, name="labels")
 
             self.roc = AUCWrapper(curve="ROC",
                                   num_thresholds=num_thresholds,
@@ -188,7 +195,7 @@ class AUCCallback(TensorBoardPlugin):
         else:
             raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(pattern.output_count))
 
-        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, labels_length)
+        labels = SubsetLoader.tf_timestamps_labels_to_frame_labels(labels, labels_length)
 
         auc_callback = AUCCallback(predictions_model=predictions_model,
                                    tensorboard=tensorboard,

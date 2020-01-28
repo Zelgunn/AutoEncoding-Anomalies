@@ -155,9 +155,10 @@ class CustomModel(Model):
     def compute_loss(self, inputs, *args, **kwargs):
         pass
 
-    def compute_weights_decay_loss(self, l1=0.0, l2=0.0):
+    def weights_decay_loss(self, l1=0.0, l2=0.0, variables=None):
         loss = 0
-        for variable in self.trainable_variables:
+        variables = self.trainable_variables if variables is None else variables
+        for variable in variables:
             loss += regularizers.L1L2(l1=l1, l2=l2)(variable)
         return loss
 

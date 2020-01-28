@@ -111,6 +111,12 @@ class Protocol(object):
         print("Protocol - Make Callbacks - Tensorboard ...")
         tensorboard = TensorBoard(log_dir=log_dir, update_freq=16, profile_batch=0)
         callbacks = [tensorboard]
+        # region Checkpoint
+        print("Protocol - Make Callbacks - Checkpoint ...")
+        weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
+        model_checkpoint = ModelCheckpoint(weights_path)
+        callbacks.append(model_checkpoint)
+        # endregion
         # region Modality Callbacks
         if config.modality_callback_configs is not None:
             print("Protocol - Make Callbacks - Modality callbacks")
@@ -118,12 +124,6 @@ class Protocol(object):
                 print("Protocol - Make Modality Callbacks - {} callback ...".format(mcc.name))
                 callback = mcc.to_callback(tensorboard, self.dataset_loader)
                 callbacks.append(callback)
-        # endregion
-        # region Checkpoint
-        print("Protocol - Make Callbacks - Checkpoint ...")
-        weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
-        model_checkpoint = ModelCheckpoint(weights_path)
-        callbacks.append(model_checkpoint)
         # endregion
         # region Early stopping
         # print("Protocol - Make Callbacks - Early Stopping ...")

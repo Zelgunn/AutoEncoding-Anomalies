@@ -13,7 +13,7 @@ class AUCCallbackConfig(object):
                  pattern: Pattern,
                  labels_length: int,
                  prefix: str,
-                 metrics: List[Union[str, Callable]] = "mse",
+                 metrics: Union[List[Union[str, Callable]], Union[str, Callable]] = "mse",
                  epoch_freq: int = 1,
                  sample_count: int = 512,
                  ):

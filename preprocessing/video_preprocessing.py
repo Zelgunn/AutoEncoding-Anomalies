@@ -26,11 +26,11 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
     return augment_video
 
 
-def make_video_preprocess(height: int, width: int, base_channels: int):
+def make_video_preprocess(height: int, width: int, to_grayscale: bool):
     def preprocess(video: tf.Tensor, labels: tf.Tensor = None):
         video = tf.image.resize(video, (height, width))
 
-        if base_channels == 3:
+        if to_grayscale:
             rgb_weights = [0.2989, 0.5870, 0.1140]
             rgb_weights = tf.reshape(rgb_weights, [1, 1, 1, 3])
             video *= rgb_weights

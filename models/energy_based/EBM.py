@@ -60,7 +60,7 @@ class EBM(CustomModel):
     def _compute_loss(self, inputs, *args, **kwargs):
         low_energy_loss = self.compute_loss_for_energy(inputs, low_energy=True)
         high_energy_loss = self.compute_loss_for_energy(inputs, low_energy=False)
-        weight_decay_loss = self.compute_weights_decay_loss(l1=2e-6)
+        weight_decay_loss = self.weights_decay_loss(l1=2e-6)
 
         total_loss = low_energy_loss + high_energy_loss
         total_loss += weight_decay_loss
@@ -93,7 +93,7 @@ class EBM(CustomModel):
         accuracy = tf.keras.metrics.binary_accuracy(labels, tf.sigmoid(logits))
         accuracy = tf.reduce_mean(accuracy)
 
-        weight_decay = self.compute_weights_decay_loss(l2=1e-5)
+        weight_decay = self.weights_decay_loss(l2=1e-5)
         tf.print("Weight decay : ", weight_decay)
 
         loss = error + weight_decay

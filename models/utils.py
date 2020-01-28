@@ -39,7 +39,7 @@ def split_steps(inputs, step_size, merge_batch_and_steps):
     return inputs, inputs_shape, unmerged_shape
 
 
-@tf.function
+# @tf.function
 def gradient_difference_loss(y_true, y_pred, axis=(-2, -3), alpha=1):
     grad_losses = []
 
@@ -53,3 +53,9 @@ def gradient_difference_loss(y_true, y_pred, axis=(-2, -3), alpha=1):
 
     total_grad_loss = tf.reduce_sum(grad_losses, axis=0)
     return total_grad_loss
+
+
+@tf.function
+def reduce_mean_from(inputs: tf.Tensor, start_axis=1):
+    reduction_axis = tuple(range(start_axis, inputs.shape.rank))
+    return tf.reduce_mean(inputs, axis=reduction_axis)
