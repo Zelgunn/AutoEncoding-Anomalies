@@ -51,6 +51,7 @@ class BMEG(CustomModel):
                  energy_margin: float,
                  autoencoder_optimizer: tf.keras.optimizers.Optimizer,
                  generators_optimizer: tf.keras.optimizers.Optimizer,
+                 seed=None,
                  **kwargs):
         super(BMEG, self).__init__(**kwargs)
         self.models_1 = models_1
@@ -59,13 +60,14 @@ class BMEG(CustomModel):
         self.energy_margin = tf.constant(energy_margin, dtype=tf.float32, name="energy_margin")
         self.autoencoder_optimizer = autoencoder_optimizer
         self.generators_optimizer = generators_optimizer
+        self.seed = seed
 
-        # self.adversarial_emphasis = tf.Variable(initial_value=0.0, dtype=tf.float32, name="adversarial_emphasis",
-        #                                         trainable=False)
+        def init_emphasis(shape, dtype=tf.float32):
+            return tf.zeros(shape, dtype=dtype)
+            # return tf.ones(shape, dtype=dtype) * 0.2
 
         self.adversarial_emphasis = self.add_weight(name="adversarial_emphasis", shape=[], dtype=tf.float32,
-                                                    initializer="zeros", trainable=False)
-        # self.step = self.add_weight(name="step", shape=[], dtype=tf.int32, initializer="zeros", trainable=False)
+                                                    initializer=init_emphasis, trainable=False)
 
     # region Training
     @tf.function
@@ -97,10 +99,10 @@ class BMEG(CustomModel):
                 generators_loss
             ) = losses
 
-            weights_decay = self.weights_decay_loss(l2=1e-5)
-            encoders_loss += weights_decay
-            discriminator_loss += weights_decay
-            generators_loss += weights_decay
+            # weights_decay = self.weights_decay_loss(l2=1e-5)
+            # encoders_loss += weights_decay
+            # discriminator_loss += weights_decay
+            # generators_loss += weights_decay
 
         encoders_gradient = encoders_tape.gradient(encoders_loss, self.encoders_trainable_variables)
         discriminator_gradient = discriminator_tape.gradient(discriminator_loss, self.discriminator_trainable_variables)
@@ -117,7 +119,8 @@ class BMEG(CustomModel):
         latent_codes = self.encode(inputs)
         latent_code_1, latent_code_2 = latent_codes
 
-        generated_1, generated_2 = self.generate(latent_codes)
+        generators_inputs = (tf.stop_gradient(latent_code_1), tf.stop_gradient(latent_code_2))
+        generated_1, generated_2 = self.generate(generators_inputs)
 
         generated_encoded = self.encode([generated_1, generated_2])
         generated_1_encoded, generated_2_encoded = generated_encoded
@@ -125,37 +128,33 @@ class BMEG(CustomModel):
         fused_1_1 = self.fusion_autoencoder(latent_codes)
         fused_1_0 = self.fusion_autoencoder([latent_code_1, generated_2_encoded])
         fused_0_1 = self.fusion_autoencoder([generated_1_encoded, latent_code_2])
-        fused_0_0 = self.fusion_autoencoder(generated_encoded)
 
         reconstructed_1_1 = self.decode(fused_1_1)
         reconstructed_1_0 = self.decode(fused_1_0)
         reconstructed_0_1 = self.decode(fused_0_1)
-        reconstructed_0_0 = self.decode(fused_0_0)
 
         energy_1_1 = self.compute_reconstruction_energy(inputs, reconstructed_1_1)
         energy_1_0 = self.compute_reconstruction_energy([input_1, generated_2], reconstructed_1_0)
         energy_0_1 = self.compute_reconstruction_energy([generated_1, input_2], reconstructed_0_1)
-        energy_0_0 = self.compute_reconstruction_energy([generated_1, generated_2], reconstructed_0_0)
-        generators_energy = tf.reduce_mean((energy_1_0, energy_0_1, energy_0_0), axis=0)
+        generators_energy = tf.reduce_mean((energy_1_0, energy_0_1), axis=0)
 
         pull_away_loss = self.batch_pull_away_loss(generated_encoded)
-        pull_away_factor = pull_away_loss
-        # pull_away_loss = tf.nn.relu(pull_away_loss - 0.5)
-        latent_code_error = self.latent_code_distance_loss(latent_codes, generated_encoded)
-        simple_autoencoded = self.decode(latent_codes)
-        # simple_autoencode_loss = self.compute_reconstruction_energy(inputs, simple_autoencoded)
+        pull_away_factor = tf.stop_gradient(pull_away_loss)
 
-        encoders_loss = energy_1_1  # + simple_autoencode_loss * 0.5
+        # gradient_error_1 = reduce_mean_from(gradient_difference_loss(input_1, generated_1, axis=1))
+        # gradient_error_2 = reduce_mean_from(gradient_difference_loss(input_2, generated_2, axis=1))
+        # generator_gradient_error = gradient_error_1 + gradient_error_2
+
         discriminator_loss = energy_1_1 - generators_energy * self.adversarial_emphasis
-        generators_loss = generators_energy + latent_code_error + pull_away_loss * 0.5
-        # generators_loss = generators_energy + pull_away_loss * 0.5
+        encoders_loss = discriminator_loss
+        generators_loss = generators_energy  # + pull_away_loss * 0.1 + generator_gradient_error * 0.1
 
         # region Update Emphasis rate & Convergence measure
-        emphasis_rate = tf.constant(1e-4, dtype=tf.float32, name="emphasis_rate")
+        emphasis_rate = tf.constant(1e-2, dtype=tf.float32, name="emphasis_rate")
         diversity_ratio = tf.constant(0.7, dtype=tf.float32, name="diversity_ratio")
         balance = diversity_ratio * energy_1_1 - generators_energy
 
-        adversarial_emphasis = tf.reduce_mean(emphasis_rate * balance)
+        adversarial_emphasis = tf.reduce_mean(emphasis_rate * balance * pull_away_factor)
         adversarial_emphasis = tf.clip_by_value(self.adversarial_emphasis + adversarial_emphasis, 0.0, 1.0)
         self.adversarial_emphasis.assign(adversarial_emphasis)
 
@@ -164,7 +163,13 @@ class BMEG(CustomModel):
 
         total_loss = encoders_loss + discriminator_loss + generators_loss
 
-        return total_loss, encoders_loss, discriminator_loss, generators_loss, convergence_measure, pull_away_factor
+        return (total_loss,
+                encoders_loss,
+                discriminator_loss,
+                generators_loss,
+                convergence_measure,
+                pull_away_factor,
+                adversarial_emphasis)
 
     # endregion
 
@@ -205,7 +210,7 @@ class BMEG(CustomModel):
 
     @tf.function
     def get_noise(self, batch_size, name="noise"):
-        return tf.random.normal(shape=[batch_size, self.noise_size], name=name)
+        return tf.random.normal(shape=[batch_size, self.noise_size], name=name, seed=self.seed)
 
     @tf.function
     def generate_with_given_noise(self, latent_codes, noise):
@@ -225,20 +230,28 @@ class BMEG(CustomModel):
         error_1 = reduce_mean_from(tf.square(input_1 - reconstructed_1))
         error_2 = reduce_mean_from(tf.square(input_2 - reconstructed_2))
 
-        # gradient_axis_1 = tuple(range(1, input_1.shape.rank - 1))
-        # gradient_axis_2 = tuple(range(1, input_2.shape.rank - 1))
-
-        # gradient_error_1 = reduce_mean_from(gradient_difference_loss(input_1, reconstructed_1, axis=gradient_axis_1))
-        # gradient_error_2 = reduce_mean_from(gradient_difference_loss(input_2, reconstructed_2, axis=gradient_axis_2))
-
         # true_contrast = tf.math.reduce_variance(input_2, axis=(2, 3, 4))
         # recon_contrast = tf.math.reduce_variance(input_2, axis=(2, 3, 4))
         # contrast_error = reduce_mean_from(tf.abs(true_contrast - recon_contrast))
 
         error = error_1 + error_2
-        # error = error + (gradient_error_1 + gradient_error_2) * 0.5
-        # error = error + contrast_error
+
+        # gradient_error = BMEG.compute_gradient_difference_loss(inputs, reconstructed)
+        # error = error + gradient_error * 0.1
         return error
+
+    @staticmethod
+    def compute_gradient_difference_loss(inputs, reconstructed) -> tf.Tensor:
+        input_1, input_2 = inputs
+        reconstructed_1, reconstructed_2 = reconstructed
+
+        gradient_axis_1 = tuple(range(1, input_1.shape.rank - 1))
+        gradient_axis_2 = tuple(range(1, input_2.shape.rank - 1))
+
+        gradient_error_1 = reduce_mean_from(gradient_difference_loss(input_1, reconstructed_1, axis=gradient_axis_1))
+        gradient_error_2 = reduce_mean_from(gradient_difference_loss(input_2, reconstructed_2, axis=gradient_axis_2))
+
+        return gradient_error_1 + gradient_error_2
 
     @staticmethod
     def batch_pull_away_loss(latent_code: Union[List[tf.Tensor], tf.Tensor]):
@@ -306,7 +319,13 @@ class BMEG(CustomModel):
 
     @property
     def metrics_names(self):
-        return ["total_loss", "encoders_loss", "discriminator_loss", "generators_loss", "convergence", "pull_away"]
+        return ["total_loss",
+                "encoders_loss",
+                "discriminator_loss",
+                "generators_loss",
+                "convergence",
+                "pull_away",
+                "adversarial_emphasis"]
 
     def get_config(self):
         config = {
@@ -316,5 +335,6 @@ class BMEG(CustomModel):
             "energy_margin": self.energy_margin.numpy(),
             "autoencoder_optimizer": self.autoencoder_optimizer,
             "generators_optimizer": self.generators_optimizer,
+            "seed": self.seed,
         }
         return config

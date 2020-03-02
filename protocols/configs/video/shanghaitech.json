@@ -42,5 +42,9 @@
         "dropout_noise_ratio": 0.0,
         "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
-    }
+    },
+    "seed": 0,
+    "epochs" : 50,
+    "steps_per_epoch" : 1000,
+    "validation_steps" : 128
 }

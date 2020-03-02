@@ -3,8 +3,10 @@ import tensorflow as tf
 from tensorflow.python.keras import Model
 from typing import Dict, Tuple
 
+from misc_utils.math_utils import lerp
 from models import AE
 from models.utils import split_steps
+from misc_utils.train_utils import CustomLearningRateSchedule
 
 
 class IAE(AE):
@@ -13,17 +15,23 @@ class IAE(AE):
                  decoder: Model,
                  step_size: int,
                  learning_rate=1e-3,
+                 seed=None,
                  **kwargs):
         super(IAE, self).__init__(encoder=encoder,
                                   decoder=decoder,
                                   learning_rate=learning_rate,
                                   **kwargs)
         self.step_size = step_size
+        self.seed = seed
 
     def call(self, inputs, training=None, mask=None):
         inputs, inputs_shape, new_shape = self.split_inputs(inputs, merge_batch_and_steps=True)
         decoded = self.decode(self.encode(inputs))
         decoded = tf.reshape(decoded, inputs_shape)
+        return decoded
+
+    def decode(self, inputs):
+        decoded = self.decoder(inputs)
         return decoded
 
     @tf.function
@@ -36,31 +44,34 @@ class IAE(AE):
 
         step_count = tf.shape(inputs)[1]
         max_offset = step_count - self.step_size
-        offset = tf.random.uniform(shape=[], minval=0, maxval=max_offset + 1, dtype=tf.int32)
+        offset = tf.random.uniform(shape=[], minval=0, maxval=max_offset + 1, dtype=tf.int32, seed=self.seed)
         target = inputs[:, offset:offset + self.step_size]
 
         factor = tf.cast(offset / max_offset, tf.float32)
         start_encoded = self.encode(start)
         end_encoded = self.encode(end)
-        latent_code = factor * end_encoded + (1.0 - factor) * start_encoded
-        decoded = self.decode(latent_code)
+        latent_code = lerp(start_encoded, end_encoded, factor)
+
+        decoded = self.decoder(latent_code)
         # endregion
 
-        loss = tf.square(target - decoded)
-        loss = tf.reduce_mean(loss)
+        reconstruction_loss = tf.square(target - decoded)
+        reconstruction_loss = tf.reduce_mean(reconstruction_loss)
 
-        return loss
+        total_loss = reconstruction_loss
+
+        return total_loss, reconstruction_loss
 
     @tf.function
     def train_step(self, inputs):
         with tf.GradientTape() as tape:
-            loss = self.compute_loss(inputs)
-            loss_scaled = loss * tf.cast(tf.reduce_prod(tf.shape(inputs)[1:]), tf.float32)
+            losses = self.compute_loss(inputs)
+            total_loss = losses[0]
 
-        gradients = tape.gradient(loss_scaled, self.trainable_variables)
+        gradients = tape.gradient(total_loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        return loss
+        return losses
 
     @tf.function
     def interpolate(self, inputs):
@@ -161,6 +172,10 @@ class IAE(AE):
         return config
 
     @property
+    def metrics_names(self):
+        return ["total_loss", "reconstruction"]
+
+    @property
     def models_ids(self) -> Dict[Model, str]:
         return {self.encoder: "encoder",
                 self.decoder: "decoder"}
@@ -172,3 +187,54 @@ class IAE(AE):
             self.interpolation_mae,
             self.latent_code_surprisal,
         ]
+
+
+# WIP
+class IAESchedule(CustomLearningRateSchedule):
+    def __init__(self,
+                 learning_rate=1e-3,
+                 update_rate=0.01,
+                 max_reduction_factor=32.0,
+                 recover_rate=1.1,
+                 epsilon=1e-7,
+                 **kwargs):
+        super(IAESchedule, self).__init__(learning_rate=learning_rate,
+                                          **kwargs)
+
+        self.update_rate = tf.constant(update_rate)
+        self.max_reduction_factor = tf.constant(max_reduction_factor)
+        self.recover_rate = tf.constant(recover_rate)
+        self.epsilon = tf.constant(epsilon)
+
+        self.current_loss = tf.Variable(initial_value=0.0, trainable=False, name="current_loss", dtype=tf.float32)
+        self.previous_loss = tf.Variable(initial_value=0.0, trainable=False, name="previous_loss", dtype=tf.float32)
+        self.step_rate = tf.Variable(initial_value=0.0, trainable=False, name="step_rate", dtype=tf.float32)
+        self.current_rate = tf.Variable(initial_value=1.0, trainable=False, name="current_rate", dtype=tf.float32)
+
+    def update(self, loss):
+        delta = tf.abs(loss - self.current_loss)
+        step_rate = self.step_rate * (tf.ones([]) - self.update_rate) + delta * self.update_rate
+        self.step_rate.assign(step_rate)
+
+        self.previous_loss.assign(self.current_loss)
+        self.current_loss.assign(loss)
+
+    def call(self, step):
+        delta = self.current_loss - self.previous_loss
+        rate = delta / (self.step_rate + self.epsilon)
+        rate = 1.0 / tf.clip_by_value(rate, 1.0, self.max_reduction_factor)
+        rate = tf.minimum(rate, tf.minimum(self.current_rate * self.recover_rate, 1.0))
+        self.current_rate.assign(rate)
+        base_learning_rate = self.get_learning_rate(step)
+        return base_learning_rate * rate
+
+    def get_config(self):
+        base_config = super(IAESchedule, self).get_config()
+        config = {
+            "update_rate": self.update_rate.numpy(),
+            "max_reduction_factor": self.max_reduction_factor.numpy(),
+            "recover_rate": self.recover_rate.numpy(),
+            "epsilon": self.epsilon.numpy(),
+            "seed": self.seed,
+        }
+        return {**base_config, **config}

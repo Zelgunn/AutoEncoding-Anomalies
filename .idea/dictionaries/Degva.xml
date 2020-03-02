@@ -2,6 +2,7 @@
   <dictionary name="Degva">
     <words>
       <w>actee</w>
+      <w>ariae</w>
       <w>astype</w>
       <w>autoencode</w>
       <w>autoencoder</w>
@@ -92,6 +93,7 @@
       <w>upsample</w>
       <w>upsampled</w>
       <w>wasserstein</w>
+      <w>wgan</w>
       <w>winsize</w>
     </words>
   </dictionary>

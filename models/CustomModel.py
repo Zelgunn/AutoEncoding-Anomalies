@@ -39,12 +39,11 @@ class CustomModel(Model):
                                                       verbose=verbose,
                                                       mode=ModeKeys.TRAIN)
 
-        self.reconfigure_callbacks(callbacks, initial_epoch, steps_per_epoch)
-
         train_aggregator = LossAggregator(use_steps=True, num_samples=steps_per_epoch)
         val_aggregator = LossAggregator(use_steps=True, num_samples=validation_steps)
 
-        callbacks.on_train_begin()
+        self.on_train_begin(callbacks, initial_epoch, steps_per_epoch)
+
         for epoch in range(initial_epoch, epochs):
             if callbacks.model.stop_training:
                 break
@@ -56,40 +55,6 @@ class CustomModel(Model):
             for step, batch in zip(range(steps_per_epoch), x):
                 batch_logs = {'batch': step, 'size': 1}
                 callbacks.on_batch_begin(step, batch_logs)
-
-                # low_states = self.get_low_energy_states(batch)
-                # high_states = self.get_high_energy_states(batch)
-                # states = low_states + high_states
-                #
-                # audio_samples, video_samples = [], []
-                # for state in states:
-                #     audio, video = state[0]
-                #     audio_samples.append(audio.numpy())
-                #     video_samples.append(video.numpy())
-                #
-                # import numpy as np
-                # audio_samples = np.concatenate(audio_samples, axis=0)
-                # video_samples = np.concatenate(video_samples, axis=0)
-                # video_samples = np.tile(video_samples, [1, 1, 1, 1, 3])
-                # # audio_samples = audio_samples[:2]
-                # # video_samples = video_samples[:2]
-                #
-                # print(video_samples.max(), video_samples.min())
-                # print(audio_samples.max(), audio_samples.min())
-                # exit()
-
-                # from modalities import MelSpectrogram
-                # ms = MelSpectrogram(0.03, 0.01005, 100, to_db=True)
-                # audio_samples = (audio_samples - 1.0) * 80.0
-                # audio_samples = ms.mel_spectrograms_to_wave(audio_samples, 48000)
-                # audio_samples = np.expand_dims(audio_samples, axis=-1)
-                # video_samples = (video_samples * 255.0).astype(np.uint8)
-                #
-                # from modalities.utils import write_video_with_audio
-                # for i in range(len(video_samples)):
-                #     path = r"..\logs\AEA\protocols\audio_video\emoly\train\{}.avi".format(i)
-                #     write_video_with_audio(path, video_samples[i], audio_samples[i], 25, 48000)
-                # exit()
 
                 batch_outputs = self.train_step(batch, **kwargs)
                 if not (isinstance(batch_outputs, tuple) or isinstance(batch_outputs, list)):
@@ -146,6 +111,10 @@ class CustomModel(Model):
         if (tensorboard is not None) and (tensorboard.update_freq != "epoch"):
             tensorboard._samples_seen = initial_epoch * steps_per_epoch
             tensorboard._total_batches_seen = initial_epoch * steps_per_epoch
+
+    def on_train_begin(self, callbacks: CallbackList, initial_epoch: int, steps_per_epoch: int):
+        self.reconfigure_callbacks(callbacks, initial_epoch, steps_per_epoch)
+        callbacks.on_train_begin()
 
     @abstractmethod
     def train_step(self, inputs, *args, **kwargs):

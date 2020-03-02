@@ -14,6 +14,7 @@ class EBM(CustomModel):
                  optimizer: tf.keras.optimizers.Optimizer,
                  energy_margin: float = None,
                  energy_model_uses_ground_truth=False,
+                 seed=None,
                  **kwargs
                  ):
         super(EBM, self).__init__(**kwargs)
@@ -22,6 +23,7 @@ class EBM(CustomModel):
         self.high_energy_state_functions = [esf for esf in energy_state_functions if not esf.is_low_energy]
         self.energy_margin = energy_margin
         self.energy_model_uses_ground_truth = energy_model_uses_ground_truth
+        self.seed = seed
 
         self.optimizer = optimizer
 
@@ -75,7 +77,7 @@ class EBM(CustomModel):
         high_audio, high_video = high_state
 
         batch_size = tf.shape(low_audio)[0]
-        labels = tf.random.uniform(shape=[batch_size, 1], maxval=1.0) > 0.5
+        labels = tf.random.uniform(shape=[batch_size, 1], maxval=1.0, seed=self.seed) > 0.5
 
         audio = tf.where(tf.reshape(labels, [batch_size, 1, 1]),
                          high_audio, low_audio)
@@ -113,7 +115,7 @@ class EBM(CustomModel):
             #     if not low_energy:
             #         loss = -loss
             # else:
-            #     # margin_noise = tf.abs(tf.random.normal(tf.shape(loss), mean=1.0, stddev=0.05))
+            #     # margin_noise = tf.abs(tf.random.normal(tf.shape(loss), mean=1.0, stddev=0.05, seed=self.seed))
             #     margin_noise = 1.0
             #     if not low_energy:
             #         loss = tf.nn.relu(self.energy_margin * margin_noise - loss)
@@ -171,5 +173,6 @@ class EBM(CustomModel):
             "high_energy_functions": [str(func) for func in self.high_energy_state_functions],
             "optimizer": self.optimizer.get_config(),
             "energy_margin": self.energy_margin,
-            "energy_model_uses_ground_truth": self.energy_model_uses_ground_truth
+            "energy_model_uses_ground_truth": self.energy_model_uses_ground_truth,
+            "seed": self.seed,
         }

@@ -6,11 +6,13 @@ from models.energy_based import ApplyOnRandomInput
 
 class SplitSequence(ApplyOnRandomInput):
     def __init__(self,
+                 seed,
                  gaussian_noise_stddev: float = None,
                  output_range: Tuple[float, float] = None
                  ):
         super(SplitSequence, self).__init__(is_low_energy=False,
-                                            ground_truth_from_inputs=True)
+                                            ground_truth_from_inputs=True,
+                                            seed=seed)
         self.gaussian_noise_stddev = gaussian_noise_stddev
         self.output_range = output_range
 
@@ -18,7 +20,7 @@ class SplitSequence(ApplyOnRandomInput):
         length = tf.shape(input_tensor)[1]
         half_length = length // 2
 
-        split_start = tf.random.uniform(shape=[], minval=1, maxval=half_length - 1, dtype=tf.int32)
+        split_start = tf.random.uniform(shape=[], minval=1, maxval=half_length - 1, dtype=tf.int32, seed=self.seed)
         split_end = split_start + half_length
 
         min_weight = 1.0 / (tf.cast(half_length, tf.float32) - 1.0)
@@ -34,7 +36,7 @@ class SplitSequence(ApplyOnRandomInput):
         interpolated = start + delta * weights
 
         if self.gaussian_noise_stddev:
-            noise = tf.random.normal(shape=weights_shape, stddev=self.gaussian_noise_stddev)
+            noise = tf.random.normal(shape=weights_shape, stddev=self.gaussian_noise_stddev, seed=self.seed)
             interpolated += noise
 
         if self.output_range:

@@ -1,3 +1,4 @@
+import tensorflow as tf
 from tensorflow.python.keras import Model
 from abc import abstractmethod
 from typing import List
@@ -9,10 +10,11 @@ from protocols.utils import make_residual_encoder, make_residual_decoder, make_d
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import AE, IAE
 from models.autoregressive import SAAM, AND
-from models.adversarial import IAEGAN, VAEGAN, IAEGANMode
+from models.adversarial import IAEGAN, VAEGAN
 from models.energy_based import EBGAN
 from preprocessing.video_preprocessing import make_video_augmentation, make_video_preprocess
-from misc_utils.train_utils import WarmupSchedule
+from misc_utils.train_utils import ScaledSchedule
+# from misc_utils.train_utils import WarmupSchedule
 
 
 class VideoProtocol(DatasetProtocol):
@@ -49,7 +51,7 @@ class VideoProtocol(DatasetProtocol):
 
         model = AE(encoder=encoder,
                    decoder=decoder,
-                   learning_rate=WarmupSchedule(1000, self.learning_rate))
+                   learning_rate=self.base_learning_rate_schedule)
         return model
 
     def make_iae(self) -> IAE:
@@ -59,27 +61,24 @@ class VideoProtocol(DatasetProtocol):
         model = IAE(encoder=encoder,
                     decoder=decoder,
                     step_size=self.step_size,
-                    learning_rate=WarmupSchedule(1000, self.learning_rate))
+                    learning_rate=self.base_learning_rate_schedule,
+                    seed=self.seed)
         return model
 
     def make_iaegan(self) -> IAEGAN:
         encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
         decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
 
-        mode = IAEGANMode.INPUTS_VS_OUTPUTS
-        if mode == IAEGANMode.INPUTS_VS_OUTPUTS:
-            discriminator_input_shape = self.get_encoder_input_shape()[1:]
-        else:
-            discriminator_input_shape = self.get_latent_code_shape(encoder)[1:]
+        discriminator_input_shape = self.get_encoder_input_shape()[1:]
         discriminator = self.make_discriminator(discriminator_input_shape)
 
         model = IAEGAN(encoder=encoder,
                        decoder=decoder,
                        discriminator=discriminator,
                        step_size=self.step_size,
-                       mode=mode,
-                       autoencoder_learning_rate=WarmupSchedule(1000, self.learning_rate),
-                       discriminator_learning_rate=WarmupSchedule(1000, self.learning_rate),
+                       autoencoder_learning_rate=self.base_learning_rate_schedule,
+                       discriminator_learning_rate=self.discriminator_learning_rate_schedule,
+                       seed=self.seed
                        )
         return model
 
@@ -95,6 +94,7 @@ class VideoProtocol(DatasetProtocol):
                        reconstruction_loss_factor=100.0,
                        kl_divergence_loss_factor=10.0,
                        balance_discriminator_learning_rate=False,
+                       seed=self.seed
                        )
 
         return model
@@ -105,7 +105,9 @@ class VideoProtocol(DatasetProtocol):
 
         model = EBGAN(autoencoder=autoencoder,
                       generator=generator,
-                      margin=1e-3)
+                      margin=1e-3,
+                      seed=self.seed,
+                      )
         return model
 
     def make_and(self) -> AND:
@@ -130,7 +132,7 @@ class VideoProtocol(DatasetProtocol):
 
     def get_latent_code_shape(self, encoder: Model):
         shape = encoder.compute_output_shape(self.get_encoder_input_shape())
-        if self.model_architecture == "vaegan":
+        if self.model_architecture in ["vaegan"]:
             shape = (*shape[:-1], shape[-1] // 2)
         return shape
 
@@ -148,9 +150,8 @@ class VideoProtocol(DatasetProtocol):
                                         strides=self.encoder_strides,
                                         code_size=self.code_size,
                                         code_activation=self.code_activation,
-                                        use_batch_norm=self.use_batch_norm,
-                                        use_residual_bias=self.encoder_config["use_residual_bias"],
-                                        use_conv_bias=self.encoder_config["use_conv_bias"],
+                                        model_depth=self.model_depth,
+                                        seed=self.seed,
                                         name=name,
                                         )
         return encoder
@@ -162,9 +163,8 @@ class VideoProtocol(DatasetProtocol):
                                         strides=self.decoder_strides,
                                         channels=1,
                                         output_activation=self.output_activation,
-                                        use_batch_norm=self.use_batch_norm,
-                                        use_residual_bias=self.decoder_config["use_residual_bias"],
-                                        use_conv_bias=self.decoder_config["use_conv_bias"],
+                                        model_depth=self.model_depth,
+                                        seed=self.seed,
                                         name=name,
                                         )
         return decoder
@@ -178,7 +178,8 @@ class VideoProtocol(DatasetProtocol):
                                            strides=discriminator_config["strides"],
                                            intermediate_size=discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
-                                           include_intermediate_output=include_intermediate_output)
+                                           include_intermediate_output=include_intermediate_output,
+                                           seed=self.seed)
         return discriminator
 
     def make_saam(self, input_shape) -> SAAM:
@@ -235,16 +236,17 @@ class VideoProtocol(DatasetProtocol):
                                        channels=self.dataset_channels,
                                        crop_ratio=self.crop_ratio,
                                        dropout_noise_ratio=self.dropout_noise_ratio,
-                                       negative_prob=negative_prob)
+                                       negative_prob=negative_prob,
+                                       seed=self.seed)
 
     def make_video_preprocess(self):
         return make_video_preprocess(height=self.height,
                                      width=self.width,
-                                     base_channels=self.dataset_channels)
+                                     to_grayscale=self.dataset_channels == 3)
 
     # endregion
 
-    def get_image_callback_configs(self):
+    def get_modality_callback_configs(self):
         image_pattern = self.get_image_pattern()
 
         image_callbacks_configs = [
@@ -328,11 +330,11 @@ class VideoProtocol(DatasetProtocol):
     def decoder_strides(self) -> List[List[int]]:
         return self.decoder_config["strides"]
 
-    @property
-    def output_activation(self) -> str:
-        return self.config["output_activation"]
-
     # endregion
+
+    @property
+    def model_depth(self) -> int:
+        return len(self.encoder_filters) + len(self.decoder_filters)
 
     @property
     def kernel_size(self) -> int:
@@ -343,12 +345,21 @@ class VideoProtocol(DatasetProtocol):
         return self.config["use_batch_norm"]
 
     @property
-    def batch_size(self) -> int:
-        return self.config["batch_size"]
-
-    @property
     def learning_rate(self) -> float:
         return self.config["learning_rate"]
+
+    @property
+    def base_learning_rate_schedule(self):
+        learning_rate = self.learning_rate
+        # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.9, staircase=True)
+        # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
+        return learning_rate
+
+    @property
+    def discriminator_learning_rate_schedule(self):
+        learning_rate = self.base_learning_rate_schedule
+        # learning_rate = ScaledSchedule(learning_rate, 1.0)
+        return learning_rate
 
     # region Data augmentation
     @property

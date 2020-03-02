@@ -81,9 +81,10 @@ class ModalityCallback(TensorBoardPlugin, ABC):
                               max_outputs=4,
                               inputs_are_outputs=True,
                               modality_indices=None,
+                              seed=None,
                               **kwargs
                               ) -> "ModalityCallback":
-        batch = subset.get_batch(batch_size=4, pattern=pattern)
+        batch = subset.get_batch(batch_size=4, pattern=pattern, seed=seed)
 
         if inputs_are_outputs:
             inputs = outputs = batch

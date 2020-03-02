@@ -175,7 +175,7 @@ class AnomalyDetector(Model):
         mask = np.zeros_like(labels)
         mask[:, 15] = 1
         # mask[:, 16] = 1
-        labels = np.sum(labels * mask, axis=-1) >= 1
+        labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
 
         if normalize_predictions:
             for i in range(self.metric_count):

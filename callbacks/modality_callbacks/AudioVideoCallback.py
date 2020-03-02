@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
-from typing import List, Union
+from typing import List
 
 from callbacks import ModalityCallback
 from callbacks.modality_callbacks.AudioCallback import audio_sample_summary

@@ -1,9 +1,11 @@
 # AE : Autoencoder
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.callbacks import CallbackList
 from typing import Dict
 
 from models import CustomModel
+from misc_utils.train_utils import CustomLearningRateSchedule
 
 
 class AE(CustomModel):
@@ -52,6 +54,11 @@ class AE(CustomModel):
                      ) -> tf.Tensor:
         outputs = self(inputs)
         return tf.reduce_mean(tf.square(inputs - outputs))
+
+    def on_train_begin(self, callbacks: CallbackList, initial_epoch: int, steps_per_epoch: int):
+        super(AE, self).on_train_begin(callbacks, initial_epoch, steps_per_epoch)
+        if isinstance(self.learning_rate, CustomLearningRateSchedule):
+            self.learning_rate.step_offset = initial_epoch * steps_per_epoch
 
     def compute_encoded_shape(self, input_shape):
         return self.encoder.compute_output_shape(input_shape)

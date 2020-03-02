@@ -1,4 +1,4 @@
-from datasets.tfrecord_builders.SubwayTFRecordBuilder import SubwayVideo
+from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
 from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTechProtocol, SubwayProtocol
 
 
@@ -12,8 +12,8 @@ def main():
         "entrance": 97,
     }
 
-    train = 0
-    initial_epoch = None
+    train = 1
+    initial_epoch = 0
     dataset = "ped2"
 
     if initial_epoch is None:
@@ -41,7 +41,7 @@ def main():
     elif dataset == "mall3":
         protocol = SubwayProtocol(initial_epoch=initial_epoch, video_id=SubwayVideo.MALL3)
     else:
-        raise ValueError
+        raise ValueError(dataset)
 
     # root = r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\subway"
     #

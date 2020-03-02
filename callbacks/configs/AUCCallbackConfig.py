@@ -28,6 +28,7 @@ class AUCCallbackConfig(object):
     def to_callback(self,
                     tensorboard: TensorBoard,
                     dataset_loader: DatasetLoader,
+                    seed=None,
                     ) -> AUCCallback:
         raw_predictions_model = IOCompareModel(self.autoencoder,
                                                metrics=self.metrics,
@@ -41,4 +42,5 @@ class AUCCallbackConfig(object):
                                        samples_count=self.sample_count,
                                        epoch_freq=self.epoch_freq,
                                        batch_size=4,
-                                       prefix=self.prefix)
+                                       prefix=self.prefix,
+                                       seed=seed)

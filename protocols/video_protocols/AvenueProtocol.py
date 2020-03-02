@@ -1,4 +1,4 @@
-from protocols import VideoProtocol, ProtocolTrainConfig, ProtocolTestConfig
+from protocols import VideoProtocol, ProtocolTestConfig
 
 
 class AvenueProtocol(VideoProtocol):
@@ -9,21 +9,6 @@ class AvenueProtocol(VideoProtocol):
         super(AvenueProtocol, self).__init__(dataset_name="avenue",
                                              initial_epoch=initial_epoch,
                                              model_name=model_name)
-
-    def get_train_config(self) -> ProtocolTrainConfig:
-        train_pattern = self.get_train_pattern()
-        image_callbacks_configs = self.get_image_callback_configs()
-        auc_callbacks_configs = self.get_auc_callbacks_configs()
-
-        return ProtocolTrainConfig(batch_size=self.batch_size,
-                                   pattern=train_pattern,
-                                   validation_steps=128,
-                                   epochs=50,
-                                   initial_epoch=self.initial_epoch,
-                                   steps_per_epoch=1000,
-                                   image_callbacks_configs=image_callbacks_configs,
-                                   auc_callbacks_configs=auc_callbacks_configs,
-                                   early_stopping_metric=self.model.metrics_names[0])
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()

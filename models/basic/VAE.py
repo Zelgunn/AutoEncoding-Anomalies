@@ -14,6 +14,7 @@ class VAE(AE):
                  learning_rate=1e-3,
                  reconstruction_loss_factor=100.0,
                  kl_divergence_loss_factor=1.0,
+                 seed=None,
                  **kwargs):
         super(VAE, self).__init__(encoder=encoder,
                                   decoder=decoder,
@@ -22,6 +23,7 @@ class VAE(AE):
         self.kl_divergence_loss_factor = kl_divergence_loss_factor
         self.reconstruction_loss_factor = reconstruction_loss_factor
         self.training_step = tf.Variable(initial_value=0, trainable=False, name="training_step")
+        self.seed = seed
 
     @tf.function
     def encode(self, inputs):
@@ -83,7 +85,8 @@ class VAE(AE):
             "encoder": self.encoder.get_config(),
             "decoder": self.decoder.get_config(),
             "learning_rate": self.learning_rate,
-            "kl_divergence_factor": self.kl_divergence_loss_factor
+            "kl_divergence_factor": self.kl_divergence_loss_factor,
+            "seed": self.seed,
         }
 
     @property

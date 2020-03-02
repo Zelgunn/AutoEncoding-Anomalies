@@ -1,4 +1,5 @@
 import tensorflow as tf
+from typing import Callable
 
 from misc_utils.general import get_known_shape
 from misc_utils.math_utils import diff
@@ -41,6 +42,9 @@ def split_steps(inputs, step_size, merge_batch_and_steps):
 
 # @tf.function
 def gradient_difference_loss(y_true, y_pred, axis=(-2, -3), alpha=1):
+    if not isinstance(axis, (tuple, list)):
+        axis = [axis]
+
     grad_losses = []
 
     for current_axis in axis:
@@ -57,5 +61,14 @@ def gradient_difference_loss(y_true, y_pred, axis=(-2, -3), alpha=1):
 
 @tf.function
 def reduce_mean_from(inputs: tf.Tensor, start_axis=1):
+    return reduce_from(inputs, start_axis, tf.reduce_mean)
+
+
+@tf.function
+def reduce_sum_from(inputs: tf.Tensor, start_axis=1):
+    return reduce_from(inputs, start_axis, tf.reduce_sum)
+
+
+def reduce_from(inputs: tf.Tensor, start_axis, fn: Callable):
     reduction_axis = tuple(range(start_axis, inputs.shape.rank))
-    return tf.reduce_mean(inputs, axis=reduction_axis)
+    return fn(inputs, axis=reduction_axis)

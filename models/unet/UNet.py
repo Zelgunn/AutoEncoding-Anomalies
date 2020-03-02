@@ -137,7 +137,7 @@ def transpose_resblock(layer: ResBlockND,
                                            kernel_initializer=layer.kernel_initializer,
                                            bias_initializer=layer.bias_initializer,
                                            name=transposed_layer_name(layer),
-                                           batch_input_shape=input_shape
+                                           batch_input_shape=input_shape,
                                            )
     return transposed_layer
 

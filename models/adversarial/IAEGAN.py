@@ -1,16 +1,11 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from typing import Tuple, Dict
-from enum import IntEnum
 
+from misc_utils.math_utils import lerp
 from models import IAE
+from models.utils import reduce_sum_from
 from models.adversarial import gan_loss
-
-
-class IAEGANMode(IntEnum):
-    ENCODED_VS_INTERPOLATED = 0,
-    NORMAL_VS_ENCODED = 1,
-    INPUTS_VS_OUTPUTS = 2
 
 
 class IAEGAN(IAE):
@@ -19,48 +14,45 @@ class IAEGAN(IAE):
                  decoder: Model,
                  discriminator: Model,
                  step_size: int,
-                 mode: IAEGANMode,
                  autoencoder_learning_rate=1e-3,
                  discriminator_learning_rate=1e-3,
+                 wgan=False,
+                 seed=None,
                  ):
         super(IAEGAN, self).__init__(encoder=encoder,
                                      decoder=decoder,
                                      step_size=step_size,
-                                     learning_rate=autoencoder_learning_rate)
-        self.mode = mode
+                                     learning_rate=autoencoder_learning_rate,
+                                     seed=seed)
         self.discriminator = discriminator
         self.discriminator_learning_rate = discriminator_learning_rate
         # self.discriminator.optimizer = tf.keras.optimizers.SGD(learning_rate=self.discriminator_learning_rate)
         self.discriminator.optimizer = tf.keras.optimizers.Adam(learning_rate=self.discriminator_learning_rate,
-                                                                beta_1=0.5, beta_2=0.9)
+                                                                beta_1=0.9, beta_2=0.999)
+        #                                                       beta_1=0.5, beta_2=0.9)
+        self.wgan = wgan
 
     @tf.function
     def train_step(self, inputs):
-        with tf.GradientTape() as encoder_tape, \
-                tf.GradientTape() as decoder_tape, \
+        with tf.GradientTape() as autoencoder_tape, \
                 tf.GradientTape() as discriminator_tape:
             losses = self.compute_loss(inputs)
-            (
-                reconstruction_loss,
-                adversarial_loss,
-                discriminator_fake_loss,
-                discriminator_real_loss
-            ) = losses
+            reconstruction_loss, generator_adversarial_loss, discriminator_adversarial_loss, gradient_penalty = losses
 
-            # adversarial_loss_factor = tf.constant(1e-2)
-            reconstruction_loss_factor = tf.constant(1e2)
+            reconstruction_loss_weight = tf.constant(1e3)
+            autoencoder_loss = reconstruction_loss * reconstruction_loss_weight + generator_adversarial_loss
 
-            encoder_loss = reconstruction_loss * reconstruction_loss_factor
-            decoder_loss = reconstruction_loss * reconstruction_loss_factor + adversarial_loss
-            discriminator_loss = (discriminator_fake_loss + discriminator_real_loss)
+            if self.wgan:
+                gradient_penalty_weight = tf.constant(10.0)
+            else:
+                gradient_penalty_weight = tf.constant(1.0)
+            discriminator_loss = discriminator_adversarial_loss + gradient_penalty * gradient_penalty_weight
 
-        encoder_gradients = encoder_tape.gradient(encoder_loss, self.encoder.trainable_variables)
-        decoder_gradients = decoder_tape.gradient(decoder_loss, self.decoder.trainable_variables)
-        disc_gradients = discriminator_tape.gradient(discriminator_loss, self.discriminator.trainable_variables)
+        autoencoder = autoencoder_tape.gradient(autoencoder_loss, self.autoencoder_trainable_variables)
+        disc_gradients = discriminator_tape.gradient(discriminator_loss, self.discriminator_trainable_variables)
 
-        self.optimizer.apply_gradients(zip(encoder_gradients, self.encoder.trainable_variables))
-        self.optimizer.apply_gradients(zip(decoder_gradients, self.decoder.trainable_variables))
-        self.discriminator.optimizer.apply_gradients(zip(disc_gradients, self.discriminator.trainable_variables))
+        self.optimizer.apply_gradients(zip(autoencoder, self.autoencoder_trainable_variables))
+        self.discriminator.optimizer.apply_gradients(zip(disc_gradients, self.discriminator_trainable_variables))
 
         return losses
 
@@ -68,86 +60,76 @@ class IAEGAN(IAE):
     def compute_loss(self,
                      inputs
                      ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
-        if self.mode == IAEGANMode.ENCODED_VS_INTERPOLATED:
-            return self.compute_encoded_vs_interpolated_loss(inputs)
-        elif self.mode == IAEGANMode.NORMAL_VS_ENCODED:
-            return self.compute_normal_vs_encoded_loss(inputs)
-        elif self.mode == IAEGANMode.INPUTS_VS_OUTPUTS:
-            return self.compute_inputs_vs_outputs_loss(inputs)
+        step_count = tf.shape(inputs)[1]
+
+        start = inputs[:, :self.step_size]
+        end = inputs[:, -self.step_size:]
+
+        start_encoded = self.encode(start)
+        end_encoded = self.encode(end)
+
+        # region Reconstruction Loss
+        max_offset = step_count - self.step_size
+        offset = tf.random.uniform(shape=[], minval=0, maxval=max_offset + 1, dtype=tf.int32, seed=self.seed)
+        step = inputs[:, offset:offset + self.step_size]
+
+        factor = tf.cast(offset / max_offset, tf.float32)
+        latent_code = lerp(start_encoded, end_encoded, factor)
+        step_interpolated = self.decoder(latent_code)
+        interpolation_loss = tf.reduce_mean(tf.square(step - step_interpolated))
+
+        step_decoded = self.decode(self.encode(step))
+        reconstruction_loss = tf.reduce_mean(tf.square(step - step_decoded))
+
+        reconstruction_loss = interpolation_loss + reconstruction_loss
+        # endregion
+
+        # region Adversarial Loss
+        factor = tf.random.uniform(shape=[], minval=-0.5, maxval=1.5, dtype=tf.float32, seed=self.seed)
+        latent_code = lerp(start_encoded, end_encoded, factor)
+        generated = self.decode(latent_code)
+
+        real = step
+        fake = generated
+
+        real_discriminated = self.discriminator(real)
+        fake_discriminated = self.discriminator(fake)
+
+        if self.wgan:
+            real_logits = tf.reduce_mean(real_discriminated)
+            fake_logits = tf.reduce_mean(fake_discriminated)
+
+            generator_adversarial_loss = fake_logits
+            discriminator_adversarial_loss = real_logits - fake_logits
         else:
-            raise AttributeError("Mode is not valid : {}".format(self.mode))
-
-    # region Losses (1 per mode)
-    @tf.function
-    def compute_encoded_vs_interpolated_loss(self, inputs):
-        inputs_shape = tf.shape(inputs)
-
-        latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=False)
-        base_code = tf.stack([latent_code[:, 0], latent_code[:, -1]], axis=1)
-        interpolated_code = self.select_two_latent_codes(latent_code)
-        latent_code_shape = tf.shape(latent_code)
-        batch_size, step_count, *sample_code_shape = tf.unstack(latent_code_shape)
-
-        # region Reconstruction loss
-        latent_code = tf.reshape(latent_code, [batch_size * step_count, *sample_code_shape])
-        decoded = self.decode(latent_code)
-        decoded = tf.reshape(decoded, inputs_shape)
-        reconstruction_loss = tf.reduce_mean(tf.square(inputs - decoded))
+            generator_adversarial_loss = gan_loss(fake_discriminated, is_real=True)
+            discriminator_adversarial_loss = (
+                    gan_loss(fake_discriminated, is_real=False) +
+                    gan_loss(real_discriminated, is_real=True)
+            )
         # endregion
 
-        # region Adversarial loss
-        base_code = tf.reshape(base_code, [batch_size * 2, *sample_code_shape])
-        interpolated_code = tf.reshape(interpolated_code, [batch_size * 2, *sample_code_shape])
+        gradient_penalty = self.gradient_penalty(real, fake)
 
-        adversarial_losses = self.compute_adversarial_losses(base_code, interpolated_code)
-        encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss = adversarial_losses
-        # endregion
-
-        return reconstruction_loss, encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
+        return reconstruction_loss, generator_adversarial_loss, discriminator_adversarial_loss, gradient_penalty
 
     @tf.function
-    def compute_normal_vs_encoded_loss(self, inputs):
-        inputs_shape = tf.shape(inputs)
+    def gradient_penalty(self, real, fake) -> tf.Tensor:
+        fake = tf.stop_gradient(fake)
+        batch_size = tf.shape(real)[0]
+        factors_shape = [batch_size] + [1] * (real.shape.rank - 1)
+        factors = tf.random.uniform(shape=factors_shape, minval=0.0, maxval=1.0, dtype=tf.float32, seed=self.seed)
+        x_hat = lerp(real, fake, factors)
 
-        latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=True)
-        latent_code_shape = tf.shape(latent_code)
+        with tf.GradientTape() as tape:
+            tape.watch(x_hat)
+            discriminated = self.discriminate(x_hat)
 
-        # region Reconstruction loss
-        decoded = self.decode(latent_code)
-        decoded = tf.reshape(decoded, inputs_shape)
-        reconstruction_loss = tf.reduce_mean(tf.square(inputs - decoded))
-        # endregion
+        gradients = tape.gradient(discriminated, x_hat)
+        penalty = tf.sqrt(reduce_sum_from(tf.square(gradients)))
+        penalty = tf.reduce_mean(tf.square(penalty - 1.0))
 
-        # region Adversarial loss
-        normal_code = tf.random.normal(latent_code_shape)
-        adversarial_losses = self.compute_adversarial_losses(normal_code, latent_code)
-        encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss = adversarial_losses
-        # endregion
-
-        return reconstruction_loss, encoder_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
-
-    @tf.function
-    def compute_inputs_vs_outputs_loss(self, inputs):
-        latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=True)
-        outputs = self.decode(latent_code)
-        inputs = tf.reshape(inputs, tf.shape(outputs))
-
-        reconstruction_loss = tf.reduce_mean(tf.square(inputs - outputs))
-        adversarial_losses = self.compute_adversarial_losses(inputs, outputs)
-        generator_adversarial_loss, discriminator_fake_loss, discriminator_real_loss = adversarial_losses
-
-        return reconstruction_loss, generator_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
-
-    @tf.function
-    def compute_adversarial_losses(self, real_inputs, fake_inputs):
-        real_discriminated = self.discriminator(real_inputs)
-        fake_discriminated = self.discriminator(fake_inputs)
-
-        generator_adversarial_loss = gan_loss(fake_discriminated, is_real=True)
-        discriminator_fake_loss = gan_loss(fake_discriminated, is_real=False)
-        discriminator_real_loss = gan_loss(real_discriminated, is_real=True)
-
-        return generator_adversarial_loss, discriminator_fake_loss, discriminator_real_loss
+        return penalty
 
     # region select_two_latent_codes (from interpolated latent code)
     @tf.function
@@ -176,8 +158,9 @@ class IAEGAN(IAE):
         batch_range = tf.reshape(batch_range, [batch_size, 1, 1])
         batch_range = tf.tile(batch_range, [1, 2, 1])
 
-        first_indices = tf.random.uniform([batch_size], minval=1, maxval=step_count - 1, dtype=tf.int32)
-        second_indices = tf.random.uniform([batch_size], minval=1, maxval=step_count - 1, dtype=tf.int32)
+        first_indices = tf.random.uniform([batch_size], minval=1, maxval=step_count - 1, dtype=tf.int32, seed=self.seed)
+        second_indices = tf.random.uniform([batch_size], minval=1, maxval=step_count - 1,
+                                           dtype=tf.int32, seed=self.seed)
         second_indices = self.select_next_if_same(first_indices, second_indices, step_count)
 
         indices = tf.stack([first_indices, second_indices], axis=-1)
@@ -201,51 +184,22 @@ class IAEGAN(IAE):
         return tf.map_fn(fn=elem_compare, elems=tf.stack([first_indices, second_indices], axis=-1))
 
     # endregion
-    # endregion
-
-    # region Additional test metrics
-    @property
-    def additional_test_metrics(self):
-        metrics = [
-            *super(IAEGAN, self).additional_test_metrics,
-            self.discriminate,
-        ]
-
-        if self.mode == IAEGANMode.ENCODED_VS_INTERPOLATED:
-            metrics.append(self.discriminate_encoded_vs_interpolated)
-
-        return metrics
 
     @tf.function
     def discriminate(self, inputs):
-        if self.mode == IAEGANMode.INPUTS_VS_OUTPUTS:
-            batch_size = tf.shape(inputs)[0]
-            inputs = self.split_inputs(inputs, merge_batch_and_steps=True)
-            result = self.discriminator(inputs)
-            result = tf.reshape(result, [batch_size, -1])
-            return result
-        else:
-            return self.discriminate_latent_code(inputs, only_interpolated=False)
+        batch_size = tf.shape(inputs)[0]
+        inputs = self.split_inputs(inputs, merge_batch_and_steps=True)
+        result = self.discriminator(inputs)
+        result = tf.reshape(result, [batch_size, -1])
+        return result
 
-    @tf.function
-    def discriminate_encoded_vs_interpolated(self, inputs):
-        return self.discriminate_latent_code(inputs, only_interpolated=True)
+    @property
+    def autoencoder_trainable_variables(self):
+        return self.encoder.trainable_variables + self.decoder.trainable_variables
 
-    def discriminate_latent_code(self, inputs, only_interpolated):
-        latent_code = self.get_interpolated_latent_code(inputs, merge_batch_and_steps=False)
-
-        if only_interpolated:
-            latent_code = latent_code[:, 1: -1]
-
-        batch_size, step_count, *dimensions = tf.unstack(tf.shape(latent_code))
-        latent_code = tf.reshape(latent_code, [batch_size * step_count, *dimensions])
-
-        discriminated = self.discriminator(latent_code)
-        discriminated = tf.reshape(discriminated, [batch_size, step_count])
-
-        return discriminated
-
-    # endregion
+    @property
+    def discriminator_trainable_variables(self):
+        return self.discriminator.trainable_variables
 
     @property
     def models_ids(self) -> Dict[Model, str]:
@@ -256,4 +210,4 @@ class IAEGAN(IAE):
 
     @property
     def metrics_names(self):
-        return ["reconstruction", "generator_adversarial", "discriminator_fake", "discriminator_real"]
+        return ["reconstruction", "generator_adversarial", "discriminator_loss", "gradient_penalty"]

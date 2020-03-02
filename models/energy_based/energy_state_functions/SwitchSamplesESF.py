@@ -4,9 +4,10 @@ from models.energy_based import ApplyOnRandomInput
 
 
 class SwitchSamplesESF(ApplyOnRandomInput):
-    def __init__(self, axis=0):
+    def __init__(self, seed, axis=0):
         super(SwitchSamplesESF, self).__init__(is_low_energy=False,
-                                               ground_truth_from_inputs=True)
+                                               ground_truth_from_inputs=True,
+                                               seed=seed)
         self.axis = axis
 
     def apply_on_one(self, input_tensor):

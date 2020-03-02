@@ -4,7 +4,8 @@ from tensorflow.python.keras.layers import Input, Concatenate, Lambda, Flatten, 
 from tensorflow.python.keras.layers import Dense, Conv1D, Conv3D
 from tensorflow.python.keras.layers import TimeDistributed, GlobalAveragePooling2D, AveragePooling3D
 
-from protocols import Protocol, ProtocolTrainConfig, ImageCallbackConfig
+from protocols import Protocol, ProtocolTrainConfig
+from callbacks.configs import ImageCallbackConfig
 from modalities import Pattern, ModalityLoadInfo, RawVideo, MelSpectrogram
 from models.energy_based import EBM, TakeStepESF, OffsetSequences  # , IdentityESF, SwitchSamplesESF
 from CustomKerasLayers import SpatialTransformer, ResBlock1D, ResBlock3D, ResBlock1DTranspose, ResBlock3DTranspose
@@ -268,7 +269,7 @@ def main():
                         output_range=(0.0, 1.0)
                         )
 
-    video_preprocess = make_video_preprocess(height=video_height, width=video_width, base_channels=3)
+    video_preprocess = make_video_preprocess(height=video_height, width=video_width, to_grayscale=True)
 
     def preprocess(inputs):
         audio, video = inputs
@@ -309,7 +310,7 @@ def main():
                                        epochs=100,
                                        initial_epoch=0,
                                        validation_steps=32,
-                                       image_callbacks_configs=image_callbacks_configs
+                                       modality_callback_configs=image_callbacks_configs
                                        )
 
     protocol.train_model(train_config)

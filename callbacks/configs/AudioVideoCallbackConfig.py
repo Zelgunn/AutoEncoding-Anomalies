@@ -37,6 +37,7 @@ class AudioVideoCallbackConfig(ModalityCallbackConfig):
     def to_callback(self,
                     tensorboard: TensorBoard,
                     dataset_loader: DatasetLoader,
+                    seed=None,
                     ) -> AudioVideoCallback:
         image_callbacks = AudioVideoCallback.from_model_and_subset(autoencoder=self.autoencoder,
                                                                    subset=self.get_subset(dataset_loader),
@@ -50,6 +51,7 @@ class AudioVideoCallbackConfig(ModalityCallbackConfig):
                                                                    epoch_freq=self.epoch_freq,
                                                                    inputs_are_outputs=self.inputs_are_outputs,
                                                                    modality_indices=self.modality_indices,
+                                                                   seed=seed,
                                                                    **self.kwargs
                                                                    )
         return image_callbacks

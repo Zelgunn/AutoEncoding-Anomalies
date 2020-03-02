@@ -15,9 +15,10 @@ def get_audio_encoder(length: int,
                       code_size: int,
                       name="AudioEncoder",
                       n=96,
+                      kernel_size=3,
                       **kwargs
                       ) -> Sequential:
-    shared_params = {"kernel_size": 3, **kwargs}
+    shared_params = {"kernel_size": kernel_size, **kwargs}
     layers = [
         ResBlock1D(filters=n * 2, basic_block_count=1, strides=1, input_shape=(length, channels), **shared_params),
         ResBlock1D(filters=n * 2, basic_block_count=4, strides=2, **shared_params),
@@ -34,9 +35,10 @@ def get_audio_decoder(length: int,
                       code_size: int,
                       name="AudioDecoder",
                       n=192,
+                      kernel_size=3,
                       **kwargs
                       ) -> Sequential:
-    shared_params = {"kernel_size": 3, **kwargs}
+    shared_params = {"kernel_size": kernel_size, **kwargs}
     layers = [
         ResBlock1DTranspose(filters=code_size, basic_block_count=1, strides=1, input_shape=(length, code_size),
                             **shared_params),
@@ -55,6 +57,7 @@ def get_audio_generator(length: int,
                         noise_code_size: int,
                         name="AudioGenerator",
                         n=256,
+                        kernel_size=3,
                         **kwargs
                         ) -> Model:
     base_decoder = get_audio_decoder(length=length,
@@ -62,6 +65,7 @@ def get_audio_generator(length: int,
                                      code_size=code_size + noise_code_size,
                                      name="{}_BaseDecoder".format(name),
                                      n=n,
+                                     kernel_size=kernel_size,
                                      **kwargs)
     generator = get_generator(base_decoder=base_decoder,
                               length=length,
@@ -80,17 +84,18 @@ def get_video_encoder(length: int,
                       code_size: int,
                       name="VideoEncoder",
                       n=32,
+                      kernel_size=3,
                       **kwargs
                       ) -> Sequential:
     input_shape = (length, height, width, channels)
     shared_params = {**kwargs}
 
     layers = [
-        ResBlock3D(filters=n * 1, kernel_size=3, strides=(1, 2, 2), input_shape=input_shape, **shared_params),
-        ResBlock3D(filters=n * 2, kernel_size=3, strides=(1, 2, 2), **shared_params),
-        ResBlock3D(filters=n * 4, kernel_size=3, strides=(1, 2, 2), **shared_params),
-        ResBlock3D(filters=n * 8, kernel_size=3, strides=(1, 2, 2), **shared_params),
-        ResBlock3D(filters=code_size, kernel_size=(3, 2, 2), strides=(1, 2, 2), **shared_params),
+        ResBlock3D(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), input_shape=input_shape, **shared_params),
+        ResBlock3D(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
+        ResBlock3D(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
+        ResBlock3D(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
+        ResBlock3D(filters=code_size, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), **shared_params),
         Reshape(target_shape=(length, code_size), name="FlattenVideoCode"),
         Dense(units=code_size, activation=None, kernel_initializer="he_normal")
     ]
@@ -104,6 +109,7 @@ def get_video_decoder(length: int,
                       code_size: int,
                       name="VideoDecoder",
                       n=24,
+                      kernel_size=3,
                       **kwargs
                       ) -> Sequential:
     input_shape = (length, code_size)
@@ -111,11 +117,11 @@ def get_video_decoder(length: int,
 
     layers = [
         Reshape(target_shape=(length, 1, 1, code_size), input_shape=input_shape),
-        ResBlock3DTranspose(filters=n * 8, kernel_size=(3, 2, 2), strides=(1, 2, 2), **shared_params),
-        ResBlock3DTranspose(filters=n * 8, kernel_size=3, strides=(1, 2, 2), **shared_params, ),
-        ResBlock3DTranspose(filters=n * 4, kernel_size=3, strides=(1, 2, 2), **shared_params),
-        ResBlock3DTranspose(filters=n * 2, kernel_size=3, strides=(1, 2, 2), **shared_params),
-        ResBlock3DTranspose(filters=n * 1, kernel_size=3, strides=(1, 2, 2), **shared_params),
+        ResBlock3DTranspose(filters=n * 8, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), **shared_params),
+        ResBlock3DTranspose(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params, ),
+        ResBlock3DTranspose(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
+        ResBlock3DTranspose(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
+        ResBlock3DTranspose(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
         Dense(units=channels, activation=None, kernel_initializer="he_normal"),
     ]
 
@@ -130,6 +136,7 @@ def get_video_generator(length: int,
                         noise_code_size: int,
                         name="VideoGenerator",
                         n=32,
+                        kernel_size=3,
                         **kwargs
                         ) -> Model:
     base_decoder = get_video_decoder(length=length,
@@ -137,6 +144,7 @@ def get_video_generator(length: int,
                                      code_size=code_size + noise_code_size,
                                      name="{}_BaseDecoder".format(name),
                                      n=n,
+                                     kernel_size=kernel_size,
                                      **kwargs)
     generator = get_generator(base_decoder=base_decoder,
                               length=length,
@@ -208,6 +216,8 @@ def get_fusion_autoencoder(length: int,
 
 
 def main():
+    initial_epoch = 0
+
     # region Constants
     video_length = 64
     video_height = video_width = 32
@@ -224,10 +234,10 @@ def main():
     batch_size = 12
     steps_per_epoch = 1000
     epochs = 100
-    initial_epoch = 0
     validation_steps = 64
+    seed = 0
 
-    from misc_utils.train_utils import WarmupSchedule
+    # from misc_utils.train_utils import WarmupSchedule
 
     autoencoder_lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=5e-5,
                                                                              decay_steps=100000,
@@ -309,7 +319,8 @@ def main():
                         dataset_name="emoly",
                         protocol_name="audio_video",
                         model_name="BMEG",
-                        output_range=(-1.0, 1.0)
+                        output_range=(-1.0, 1.0),
+                        seed=seed,
                         )
 
     # region Training
@@ -343,11 +354,11 @@ def main():
     def augment(inputs):
         audio, video = preprocess(inputs)
 
-        # video = tf.image.random_flip_up_down(video)
-        video = tf.image.random_flip_left_right(video)
+        # video = tf.image.random_flip_up_down(video, seed=seed)
+        video = tf.image.random_flip_left_right(video, seed=seed)
 
-        # audio += tf.random.normal(tf.shape(audio), stddev=0.1)
-        # audio += tf.random.normal(tf.shape(audio), stddev=0.1)
+        # audio += tf.random.normal(tf.shape(audio), stddev=0.1, seed = seed)
+        # audio += tf.random.normal(tf.shape(audio), stddev=0.1, seed = seed)
 
         return audio, video
 

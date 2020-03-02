@@ -52,5 +52,9 @@
             [1, 2, 2]
         ],
         "intermediate_size": 128
-    }
+    },
+    "seed": 0,
+    "epochs" : 100,
+    "steps_per_epoch" : 1000,
+    "validation_steps" : 128
 }

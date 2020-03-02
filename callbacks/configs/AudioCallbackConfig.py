@@ -27,7 +27,7 @@ class AudioCallbackConfig(ModalityCallbackConfig):
                                                   epoch_freq=epoch_freq,
                                                   inputs_are_outputs=inputs_are_outputs,
                                                   modality_indices=modality_indices,
-                                                  **kwargs
+                                                  **kwargs,
                                                   )
         self.sample_rate = sample_rate
         self.mel_spectrogram = mel_spectrogram
@@ -35,6 +35,7 @@ class AudioCallbackConfig(ModalityCallbackConfig):
     def to_callback(self,
                     tensorboard: TensorBoard,
                     dataset_loader: DatasetLoader,
+                    seed=None,
                     ) -> AudioCallback:
         audio_callbacks = AudioCallback.from_model_and_subset(autoencoder=self.autoencoder,
                                                               subset=self.get_subset(dataset_loader),
@@ -47,6 +48,7 @@ class AudioCallbackConfig(ModalityCallbackConfig):
                                                               epoch_freq=self.epoch_freq,
                                                               inputs_are_outputs=self.inputs_are_outputs,
                                                               modality_indices=self.modality_indices,
+                                                              seed=seed,
                                                               **self.kwargs
                                                               )
         return audio_callbacks

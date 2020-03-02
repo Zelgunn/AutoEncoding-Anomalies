@@ -33,5 +33,6 @@ class ModalityCallbackConfig(object):
     def to_callback(self,
                     tensorboard: TensorBoard,
                     dataset_loader: DatasetLoader,
+                    seed=None,
                     ) -> List:
         pass

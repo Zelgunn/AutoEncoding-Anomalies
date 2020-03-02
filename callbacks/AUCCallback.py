@@ -184,8 +184,10 @@ class AUCCallback(TensorBoardPlugin):
                     samples_count=512,
                     epoch_freq=1,
                     batch_size=32,
-                    prefix="") -> "AUCCallback":
-        batch = test_subset.get_batch(batch_size=samples_count, pattern=pattern)
+                    prefix="",
+                    seed=None
+                    ) -> "AUCCallback":
+        batch = test_subset.get_batch(batch_size=samples_count, pattern=pattern, seed=seed)
 
         if pattern.output_count == 2:
             inputs, labels = batch
@@ -195,7 +197,7 @@ class AUCCallback(TensorBoardPlugin):
         else:
             raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(pattern.output_count))
 
-        labels = SubsetLoader.tf_timestamps_labels_to_frame_labels(labels, labels_length)
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, labels_length)
 
         auc_callback = AUCCallback(predictions_model=predictions_model,
                                    tensorboard=tensorboard,

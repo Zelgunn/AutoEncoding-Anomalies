@@ -22,6 +22,7 @@ class LandmarksVideoCallback(TensorBoardPlugin):
                  line_thickness=1,
                  fps=25,
                  is_train_callback=False,
+                 seed=None,
                  prefix=""):
         super(LandmarksVideoCallback, self).__init__(tensorboard,
                                                      update_freq="epoch",
@@ -33,10 +34,11 @@ class LandmarksVideoCallback(TensorBoardPlugin):
         self.autoencoder = autoencoder
         self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
         self.prefix = prefix if (len(prefix) == 0) else (prefix + "_")
+        self.seed = seed
         self.ground_truth_images = None
 
         if isinstance(subset, SubsetLoader):
-            self.inputs, self.outputs = subset.get_batch(batch_size=4, pattern=pattern)
+            self.inputs, self.outputs = subset.get_batch(batch_size=4, pattern=pattern, seed=seed)
         else:
             for batch in subset.batch(batch_size=4).take(1):
                 inputs, outputs = batch

@@ -1,12 +1,12 @@
-from datasets.tfrecord_builders.SubwayTFRecordBuilder import SubwayVideo
-from protocols import VideoProtocol, ProtocolTrainConfig, ProtocolTestConfig
+from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
+from protocols import VideoProtocol, ProtocolTestConfig
 
 
 class SubwayProtocol(VideoProtocol):
     def __init__(self,
                  video_id: SubwayVideo,
                  initial_epoch=0,
-                 model_name=None,
+                 model_name=None
                  ):
         if video_id == SubwayVideo.EXIT:
             dataset_name = "subway_exit"
@@ -24,21 +24,6 @@ class SubwayProtocol(VideoProtocol):
         super(SubwayProtocol, self).__init__(dataset_name=dataset_name,
                                              initial_epoch=initial_epoch,
                                              model_name=model_name)
-
-    def get_train_config(self) -> ProtocolTrainConfig:
-        train_pattern = self.get_train_pattern()
-        image_callbacks_configs = self.get_image_callback_configs()
-        auc_callbacks_configs = self.get_auc_callbacks_configs()
-
-        return ProtocolTrainConfig(batch_size=self.batch_size,
-                                   pattern=train_pattern,
-                                   steps_per_epoch=1000,
-                                   epochs=100,
-                                   initial_epoch=self.initial_epoch,
-                                   validation_steps=128,
-                                   image_callbacks_configs=image_callbacks_configs,
-                                   auc_callbacks_configs=auc_callbacks_configs,
-                                   early_stopping_metric=self.model.metrics_names[0])
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()

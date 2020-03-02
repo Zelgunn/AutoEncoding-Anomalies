@@ -24,10 +24,12 @@ class VAEGAN(VAE):
                  reconstruction_loss_factor=100.0,
                  learned_reconstruction_loss_factor=1000.0,
                  kl_divergence_loss_factor=1.0,
+                 seed=None,
                  **kwargs):
         super(VAEGAN, self).__init__(encoder=encoder,
                                      decoder=decoder,
                                      kl_divergence_loss_factor=kl_divergence_loss_factor,
+                                     seed=seed,
                                      **kwargs)
 
         self.discriminator = discriminator
@@ -104,7 +106,7 @@ class VAEGAN(VAE):
         z = latent_distribution.sample()
         decoded = self.decoder(z)
 
-        noise = tf.random.normal(shape=z.shape, mean=0.0, stddev=1.0)
+        noise = tf.random.normal(shape=z.shape, mean=0.0, stddev=1.0, seed=self.seed)
         generated = self.decoder(noise)
 
         discriminated_inputs, inputs_high_level_features = self.discriminator(inputs)

@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.callbacks import Callback, TensorBoard, ModelCheckpoint
+from tensorflow.python.keras.callbacks import Callback, TensorBoard, ModelCheckpoint, TerminateOnNaN
 import time
 import os
 from typing import List, Callable
@@ -8,7 +8,7 @@ from typing import List, Callable
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig
 from callbacks.configs import AUCCallbackConfig
-from datasets import DatasetLoader, DatasetConfig
+from datasets import DatasetLoader, SingleSetConfig
 from misc_utils.train_utils import save_model_info
 from modalities import Pattern
 
@@ -60,7 +60,8 @@ class Protocol(object):
                  protocol_name: str,
                  autoencoder: Callable = None,
                  model_name: str = None,
-                 output_range=(0.0, 1.0)
+                 output_range=(0.0, 1.0),
+                 seed=None
                  ):
         self.model = model
         if autoencoder is None:
@@ -74,11 +75,13 @@ class Protocol(object):
 
         self.dataset_name = dataset_name
         self.dataset_folder = get_dataset_folder(dataset_name)
-        self.dataset_config = DatasetConfig(self.dataset_folder, output_range=output_range)
+        self.dataset_config = SingleSetConfig(self.dataset_folder, output_range=output_range)
         self.dataset_loader = DatasetLoader(self.dataset_config)
 
         self.base_log_dir = "../logs/AEA/protocols/{protocol_name}/{dataset_name}" \
             .format(protocol_name=protocol_name, dataset_name=dataset_name)
+
+        self.seed = seed
 
     def train_model(self, config: ProtocolTrainConfig, **kwargs):
         print("Protocol - Training : Loading weights ...")
@@ -92,12 +95,10 @@ class Protocol(object):
 
         print("Protocol - Training : Making datasets ...")
         subset = self.dataset_loader.train_subset
-        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern, split=0.9)
-        print("Protocol - Make Datasets : Train dataset ...")
-        train_dataset = train_dataset.batch(config.batch_size).prefetch(-1)
-        if val_dataset is not None:
-            print("Protocol - Make Datasets : Validation dataset ...")
-            val_dataset = val_dataset.batch(config.batch_size)
+        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern,
+                                                                    split=0.9,
+                                                                    batch_size=config.batch_size,
+                                                                    seed=self.seed)
 
         print("Protocol - Training : Fit loop ...")
         self.model.fit(train_dataset, steps_per_epoch=config.steps_per_epoch, epochs=config.epochs,
@@ -110,19 +111,27 @@ class Protocol(object):
                       ) -> List[Callback]:
         print("Protocol - Make Callbacks - Tensorboard ...")
         tensorboard = TensorBoard(log_dir=log_dir, update_freq=16, profile_batch=0)
-        callbacks = [tensorboard]
+        callbacks = [tensorboard, TerminateOnNaN()]
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
         weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
         model_checkpoint = ModelCheckpoint(weights_path)
         callbacks.append(model_checkpoint)
         # endregion
+        # region AUC
+        if config.auc_callback_configs is not None:
+            print("Protocol - Make Callbacks - AUC callbacks ...")
+            for acc in config.auc_callback_configs:
+                print("Protocol - Make AUC Callbacks - {} callback ...".format(acc.prefix))
+                callback = acc.to_callback(tensorboard, self.dataset_loader, self.seed)
+                callbacks.append(callback)
+        # endregion
         # region Modality Callbacks
         if config.modality_callback_configs is not None:
             print("Protocol - Make Callbacks - Modality callbacks")
             for mcc in config.modality_callback_configs:
                 print("Protocol - Make Modality Callbacks - {} callback ...".format(mcc.name))
-                callback = mcc.to_callback(tensorboard, self.dataset_loader)
+                callback = mcc.to_callback(tensorboard, self.dataset_loader, self.seed)
                 callbacks.append(callback)
         # endregion
         # region Early stopping
@@ -133,13 +142,6 @@ class Protocol(object):
         #                                    patience=5
         #                                    )
         #     callbacks.append(early_stopping)
-        # endregion
-        # region AUC
-        if config.auc_callback_configs is not None:
-            print("Protocol - Make Callbacks - AUC callbacks ...")
-            for acc in config.auc_callback_configs:
-                print("Protocol - Make AUC Callbacks - {} callback ...".format(acc.prefix))
-                callbacks += [acc.to_callback(tensorboard, self.dataset_loader)]
         # endregion
         return callbacks
 
