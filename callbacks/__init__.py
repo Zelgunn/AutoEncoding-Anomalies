@@ -6,4 +6,4 @@ from callbacks.modality_callbacks.AudioCallback import AudioCallback
 from callbacks.modality_callbacks.AudioVideoCallback import AudioVideoCallback
 from callbacks.MultipleModelsCheckpoint import MultipleModelsCheckpoint
 from callbacks.LandmarksVideoCallback import LandmarksVideoCallback
-from callbacks.EagerModelCheckpoint import EagerModelCheckpoint
+from callbacks.CustomModelCheckpoint import CustomModelCheckpoint

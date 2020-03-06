@@ -63,7 +63,7 @@ class IAE(AE):
         return total_loss, reconstruction_loss
 
     @tf.function
-    def train_step(self, inputs):
+    def train_step(self, inputs, *args, **kwargs):
         with tf.GradientTape() as tape:
             losses = self.compute_loss(inputs)
             total_loss = losses[0]

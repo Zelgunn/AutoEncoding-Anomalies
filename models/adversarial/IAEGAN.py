@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import Tuple, Dict
 
 from misc_utils.math_utils import lerp
@@ -16,7 +17,7 @@ class IAEGAN(IAE):
                  step_size: int,
                  autoencoder_learning_rate=1e-3,
                  discriminator_learning_rate=1e-3,
-                 wgan=False,
+                 wgan=True,
                  seed=None,
                  ):
         super(IAEGAN, self).__init__(encoder=encoder,
@@ -34,6 +35,16 @@ class IAEGAN(IAE):
 
     @tf.function
     def train_step(self, inputs):
+        losses, gradients = self.compute_gradients(inputs)
+        autoencoder_gradients, disc_gradients = gradients
+
+        self.optimizer.apply_gradients(zip(autoencoder_gradients, self.autoencoder_trainable_variables))
+        self.discriminator.optimizer.apply_gradients(zip(disc_gradients, self.discriminator_trainable_variables))
+
+        return losses
+
+    @tf.function
+    def compute_gradients(self, inputs, *args, **kwargs):
         with tf.GradientTape() as autoencoder_tape, \
                 tf.GradientTape() as discriminator_tape:
             losses = self.compute_loss(inputs)
@@ -48,13 +59,10 @@ class IAEGAN(IAE):
                 gradient_penalty_weight = tf.constant(1.0)
             discriminator_loss = discriminator_adversarial_loss + gradient_penalty * gradient_penalty_weight
 
-        autoencoder = autoencoder_tape.gradient(autoencoder_loss, self.autoencoder_trainable_variables)
+        autoencoder_gradients = autoencoder_tape.gradient(autoencoder_loss, self.autoencoder_trainable_variables)
         disc_gradients = discriminator_tape.gradient(discriminator_loss, self.discriminator_trainable_variables)
 
-        self.optimizer.apply_gradients(zip(autoencoder, self.autoencoder_trainable_variables))
-        self.discriminator.optimizer.apply_gradients(zip(disc_gradients, self.discriminator_trainable_variables))
-
-        return losses
+        return losses, (autoencoder_gradients, disc_gradients)
 
     @tf.function
     def compute_loss(self,
@@ -81,6 +89,7 @@ class IAEGAN(IAE):
         step_decoded = self.decode(self.encode(step))
         reconstruction_loss = tf.reduce_mean(tf.square(step - step_decoded))
 
+        # reconstruction_loss = interpolation_loss * 0.1 + reconstruction_loss * 1.9
         reconstruction_loss = interpolation_loss + reconstruction_loss
         # endregion
 
@@ -206,6 +215,13 @@ class IAEGAN(IAE):
         return {
             **super(IAEGAN, self).models_ids,
             self.discriminator: "discriminator"
+        }
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.optimizer: "autoencoder_optimizer",
+            self.discriminator.optimizer: "discriminator_optimizer",
         }
 
     @property

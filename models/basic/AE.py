@@ -1,6 +1,7 @@
 # AE : Autoencoder
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from tensorflow.python.keras.callbacks import CallbackList
 from typing import Dict
 
@@ -39,7 +40,7 @@ class AE(CustomModel):
         return ["reconstruction"]
 
     @tf.function
-    def train_step(self, inputs):
+    def train_step(self, inputs, *args, **kwargs):
         with tf.GradientTape() as tape:
             loss = self.compute_loss(inputs)
 
@@ -76,8 +77,16 @@ class AE(CustomModel):
 
     @property
     def models_ids(self) -> Dict[Model, str]:
-        return {self.encoder: "encoder",
-                self.decoder: "decoder"}
+        return {
+            self.encoder: "encoder",
+            self.decoder: "decoder"
+        }
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.optimizer: "optimizer"
+        }
 
     def set_optimizer(self, optimizer):
         self.optimizer = optimizer

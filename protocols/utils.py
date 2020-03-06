@@ -37,11 +37,10 @@ def make_residual_encoder(input_shape: Tuple[int, ...],
 
         layer = AveragePooling3D(pool_size=strides[i])
         layers.append(layer)
+        intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
 
         if i == 0:
             kwargs.pop("input_shape")
-
-        intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
 
     kwargs["kernel_size"] = 1
     kwargs["activation"] = code_activation
@@ -120,7 +119,6 @@ def make_discriminator(input_shape: Tuple[int, int, int, int],
         "seed": seed,
     }
 
-    dropout_rate = 0.0
     intermediate_shape = input_shape
 
     layers = []
@@ -130,14 +128,10 @@ def make_discriminator(input_shape: Tuple[int, int, int, int],
 
         layer = AveragePooling3D(pool_size=strides[i])
         layers.append(layer)
+        intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
 
         if i == 0:
             kwargs.pop("input_shape")
-
-        intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
-
-        layer = Dropout(rate=dropout_rate)
-        layers.append(layer)
 
     dense_initializer = VarianceScaling(seed=seed)
 

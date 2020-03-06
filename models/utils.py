@@ -1,5 +1,5 @@
 import tensorflow as tf
-from typing import Callable
+from typing import Callable, Tuple
 
 from misc_utils.general import get_known_shape
 from misc_utils.math_utils import diff
@@ -59,16 +59,44 @@ def gradient_difference_loss(y_true, y_pred, axis=(-2, -3), alpha=1):
     return total_grad_loss
 
 
-@tf.function
-def reduce_mean_from(inputs: tf.Tensor, start_axis=1):
-    return reduce_from(inputs, start_axis, tf.reduce_mean)
+def reduce_mean_from(inputs: tf.Tensor, start_axis=1, keepdims=False):
+    return reduce_from(inputs, start_axis, tf.reduce_mean, keepdims=keepdims)
 
 
-@tf.function
-def reduce_sum_from(inputs: tf.Tensor, start_axis=1):
-    return reduce_from(inputs, start_axis, tf.reduce_sum)
+def reduce_sum_from(inputs: tf.Tensor, start_axis=1, keepdims=False):
+    return reduce_from(inputs, start_axis, tf.reduce_sum, keepdims=keepdims)
 
 
-def reduce_from(inputs: tf.Tensor, start_axis, fn: Callable):
+def reduce_prod_from(inputs: tf.Tensor, start_axis=1, keepdims=False):
+    return reduce_from(inputs, start_axis, tf.reduce_prod, keepdims=keepdims)
+
+
+def reduce_std_from(inputs: tf.Tensor, start_axis=1, keepdims=False):
+    return reduce_from(inputs, start_axis, tf.math.reduce_std, keepdims=keepdims)
+
+
+def reduce_adjusted_std_from(inputs: tf.Tensor, start_axis=1, keepdims=False):
+    return reduce_from(inputs, start_axis, reduce_adjusted_stddev, keepdims=keepdims)
+
+
+def reduce_from(inputs: tf.Tensor, start_axis: int, fn: Callable, **kwargs):
+    if start_axis < 0:
+        start_axis = inputs.shape.rank + start_axis
     reduction_axis = tuple(range(start_axis, inputs.shape.rank))
-    return fn(inputs, axis=reduction_axis)
+    return fn(inputs, axis=reduction_axis, **kwargs)
+
+
+def reduce_adjusted_stddev(inputs: tf.Tensor, start_axis: int, keepdims=False):
+    inputs_shape = tf.shape(inputs)
+    sample_size = reduce_prod_from(inputs=inputs_shape, start_axis=start_axis, keepdims=False)
+    sample_stddev = reduce_std_from(inputs=inputs, start_axis=start_axis, keepdims=keepdims)
+    min_stddev = tf.math.rsqrt(tf.cast(sample_size, inputs.dtype))
+    adjusted_stddev = tf.maximum(sample_stddev, min_stddev)
+    return adjusted_stddev
+
+
+def standardize_from(inputs: tf.Tensor, start_axis=1):
+    sample_means = reduce_mean_from(inputs=inputs, start_axis=start_axis, keepdims=True)
+    sample_stddev = reduce_adjusted_std_from(inputs=inputs, start_axis=start_axis, keepdims=True)
+    outputs = (inputs - sample_means) / sample_stddev
+    return outputs

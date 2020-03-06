@@ -149,6 +149,7 @@ class AnomalyDetector(Model):
 
         predictions, labels = None, []
         for sample in dataset:
+            # TODO : Embed in a tf.function that is also able to return embeddings
             if get_outputs_from_inputs:
                 sample_inputs, sample_labels = sample
                 sample_outputs = sample_inputs
@@ -173,6 +174,7 @@ class AnomalyDetector(Model):
         from datasets.loaders import SubsetLoader
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
         mask = np.zeros_like(labels)
+        # mask = np.ones_like(labels)
         mask[:, 15] = 1
         # mask[:, 16] = 1
         labels = np.sum(labels.numpy() * mask, axis=-1) >= 1

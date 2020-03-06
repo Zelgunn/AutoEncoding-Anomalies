@@ -1,6 +1,7 @@
 # EBGAN : Bimodal Energy-based Generative Adversarial Network
 import tensorflow as tf
 from tensorflow_core.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import Dict, Union, List
 
 from models import CustomModel
@@ -72,7 +73,7 @@ class BMEG(CustomModel):
     # region Training
     @tf.function
     def train_step(self, inputs, *args, **kwargs):
-        metrics, gradients = self.get_gradients(inputs)
+        metrics, gradients = self.compute_gradients(inputs)
 
         encoders_gradients, discriminator_gradients, generators_gradients = gradients
 
@@ -83,7 +84,7 @@ class BMEG(CustomModel):
         return metrics
 
     @tf.function
-    def get_gradients(self, inputs):
+    def compute_gradients(self, inputs):
         with tf.GradientTape(watch_accessed_variables=False) as encoders_tape, \
                 tf.GradientTape(watch_accessed_variables=False) as discriminator_tape, \
                 tf.GradientTape(watch_accessed_variables=False) as generators_tape:
@@ -314,18 +315,27 @@ class BMEG(CustomModel):
         return {
             **self.models_1.models_ids,
             **self.models_2.models_ids,
-            self.fusion_autoencoder: "fusion_autoencoder"
+            self.fusion_autoencoder: "fusion_autoencoder",
+        }
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.autoencoder_optimizer: "autoencoder_optimizer",
+            self.generators_optimizer: "generators_optimizer",
         }
 
     @property
     def metrics_names(self):
-        return ["total_loss",
-                "encoders_loss",
-                "discriminator_loss",
-                "generators_loss",
-                "convergence",
-                "pull_away",
-                "adversarial_emphasis"]
+        return [
+            "total_loss",
+            "encoders_loss",
+            "discriminator_loss",
+            "generators_loss",
+            "convergence",
+            "pull_away",
+            "adversarial_emphasis"
+        ]
 
     def get_config(self):
         config = {

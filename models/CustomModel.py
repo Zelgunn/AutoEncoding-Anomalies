@@ -1,18 +1,27 @@
 import tensorflow as tf
+from tensorflow.python.keras import backend as keras_backend
 from tensorflow.python.keras import Model, regularizers
+from tensorflow.python.data.ops import iterator_ops
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from tensorflow.python.keras.callbacks import Callback, CallbackList, configure_callbacks, make_logs
 from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard, BaseLogger, ProgbarLogger
 from tensorflow.python.keras.utils.mode_keys import ModeKeys
+from tensorflow.python.keras.saving import hdf5_format
 from tensorflow.python.data.ops.dataset_ops import get_legacy_output_shapes
+import h5py
 from abc import abstractmethod
 from typing import List, Dict, Type, Optional, Union
-import os
 
-from misc_utils.train_utils import LossAggregator
+from misc_utils.train_utils import LossAggregator, SharedHDF5, save_model_to_hdf5
+from misc_utils.train_utils import save_optimizer_weights_to_hdf5_group, load_optimizer_weights_from_hdf5_group
 from misc_utils.summary_utils import tf_function_summary
 
 
 class CustomModel(Model):
+    def __init__(self, *args, **kwargs):
+        super(CustomModel, self).__init__(*args, **kwargs)
+        self.checkpoint = None
+
     # region Training
     def fit(self,
             x: tf.data.Dataset = None,
@@ -42,6 +51,9 @@ class CustomModel(Model):
         train_aggregator = LossAggregator(use_steps=True, num_samples=steps_per_epoch)
         val_aggregator = LossAggregator(use_steps=True, num_samples=validation_steps)
 
+        iterator = iterator_ops.IteratorV2(x)
+        self.train_step.get_concrete_function(iterator.next())
+
         self.on_train_begin(callbacks, initial_epoch, steps_per_epoch)
 
         for epoch in range(initial_epoch, epochs):
@@ -52,11 +64,12 @@ class CustomModel(Model):
             callbacks.on_epoch_begin(epoch, epoch_logs)
 
             # region Training
+            keras_backend.set_learning_phase(True)
             for step, batch in zip(range(steps_per_epoch), x):
-                batch_logs = {'batch': step, 'size': 1}
+                batch_logs = {"batch": step, "size": 1}
                 callbacks.on_batch_begin(step, batch_logs)
 
-                batch_outputs = self.train_step(batch, **kwargs)
+                batch_outputs = self.train_step(batch)
                 if not (isinstance(batch_outputs, tuple) or isinstance(batch_outputs, list)):
                     batch_outputs = [batch_outputs]
                 batch_outputs = [output.numpy() for output in batch_outputs]
@@ -74,6 +87,7 @@ class CustomModel(Model):
 
             train_aggregator.finalize()
             epoch_logs = make_logs(self, epoch_logs, train_aggregator.results, ModeKeys.TRAIN)
+            keras_backend.set_learning_phase(False)
             # endregion
 
             # region Validation
@@ -115,9 +129,15 @@ class CustomModel(Model):
     def on_train_begin(self, callbacks: CallbackList, initial_epoch: int, steps_per_epoch: int):
         self.reconfigure_callbacks(callbacks, initial_epoch, steps_per_epoch)
         callbacks.on_train_begin()
+        if initial_epoch > 0 and self.checkpoint is not None:
+            self.load_optimizers_weights()
 
     @abstractmethod
     def train_step(self, inputs, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def compute_gradients(self, inputs, *args, **kwargs):
         pass
 
     @abstractmethod
@@ -149,6 +169,11 @@ class CustomModel(Model):
     def models_ids(self) -> Dict[Model, str]:
         pass
 
+    @property
+    @abstractmethod
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        pass
+
     @abstractmethod
     def get_config(self):
         pass
@@ -169,45 +194,47 @@ class CustomModel(Model):
             tf_function_summary(self.forward, shapes, name="train_step")
 
     def save(self,
-             filepath: str,
+             filepath: Union[str, h5py.File],
              overwrite=True,
              include_optimizer=True,
              save_format=None,
              signatures=None,
              options=None
              ):
-        last_point_index = filepath.rindex(".")
-        filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
-        for model, model_id in self.models_ids.items():
-            model.save(filepath.format(model_id), overwrite=overwrite,
-                       include_optimizer=include_optimizer, save_format=save_format,
-                       signatures=signatures, options=options)
+        with SharedHDF5(filepath=filepath, mode="w") as file:
+            self.save_weights(filepath=file, overwrite=overwrite, save_format=save_format)
+            if include_optimizer:
+                self.save_optimizers(filepath=file)
 
-    def save_weights(self, filepath, overwrite=True, save_format=None):
-        last_point_index = filepath.rindex(".")
-        filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
-        for model, model_id in self.models_ids.items():
-            model.save_weights(filepath.format(model_id), overwrite=overwrite, save_format=save_format)
+    def save_weights(self, filepath: Union[str, h5py.File], overwrite=True, save_format=None):
+        with SharedHDF5(filepath=filepath, mode="w") as file:
+            for model, model_id in self.models_ids.items():
+                save_model_to_hdf5(hdf5_group=file, model=model, model_id=model_id)
+
+    def save_optimizers(self, filepath: Union[str, h5py.File]):
+        with SharedHDF5(filepath=filepath, mode="w") as file:
+            for optimizer, optimizer_id in self.optimizers_ids.items():
+                save_optimizer_weights_to_hdf5_group(hdf5_group=file, optimizer=optimizer, optimizer_id=optimizer_id)
 
     def load_weights(self,
                      filepath: str,
                      by_name=False):
-        # tmp = filepath
-        last_point_index = filepath.rindex(".")
-        base_filepath = filepath[:last_point_index] + "_{}" + filepath[last_point_index:]
-        result = None
-        for model, model_id in self.models_ids.items():
-            if isinstance(model, CustomModel):
-                result = model.load_weights(base_filepath.format(model_id), by_name=by_name)
-            else:
-                model_filepath = base_filepath.format(model_id)
-                if os.path.isfile(model_filepath):
-                    result = model.load_weights(model_filepath, by_name=by_name)
-                    print("Successfully loaded {} from {}.".format(model_id, model_filepath))
+        with SharedHDF5(filepath=filepath, mode="r") as file:
+            for model, model_id in self.models_ids.items():
+                model_group = file["model_{}_weights".format(model_id)]
+                if by_name:
+                    hdf5_format.load_weights_from_hdf5_group_by_name(model_group, model.layers)
                 else:
-                    print("Could not load {} - {} is not a valid filepath.".format(model_id, model_filepath))
-        # super(CustomModel, self).load_weights(tmp, by_name=by_name)
-        return result
+                    hdf5_format.load_weights_from_hdf5_group(model_group, model.layers)
+                print("CustomModel - Successfully loaded model `{}` from {}.".format(model_id, filepath))
+        self.checkpoint = filepath
+
+    def load_optimizers_weights(self):
+        with SharedHDF5(filepath=self.checkpoint, mode="r") as file:
+            for optimizer, optimizer_id in self.optimizers_ids.items():
+                load_optimizer_weights_from_hdf5_group(hdf5_group=file, optimizer=optimizer, optimizer_id=optimizer_id)
+                print("CustomModel - Successfully loaded optimizer `{}` from {}.".format(optimizer_id, self.checkpoint))
+
     # endregion
 
 

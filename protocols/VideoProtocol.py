@@ -1,4 +1,3 @@
-import tensorflow as tf
 from tensorflow.python.keras import Model
 from abc import abstractmethod
 from typing import List
@@ -13,7 +12,7 @@ from models.autoregressive import SAAM, AND
 from models.adversarial import IAEGAN, VAEGAN
 from models.energy_based import EBGAN
 from preprocessing.video_preprocessing import make_video_augmentation, make_video_preprocess
-from misc_utils.train_utils import ScaledSchedule
+# from misc_utils.train_utils import ScaledSchedule
 # from misc_utils.train_utils import WarmupSchedule
 
 

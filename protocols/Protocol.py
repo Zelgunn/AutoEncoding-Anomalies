@@ -1,13 +1,14 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.callbacks import Callback, TensorBoard, ModelCheckpoint, TerminateOnNaN
+from tensorflow.python.keras.callbacks import Callback, TensorBoard, TerminateOnNaN
 import time
 import os
 from typing import List, Callable
 
+from models import CustomModel
 from anomaly_detection import AnomalyDetector, known_metrics
-from callbacks.configs import ModalityCallbackConfig
-from callbacks.configs import AUCCallbackConfig
+from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig
+from callbacks import CustomModelCheckpoint
 from datasets import DatasetLoader, SingleSetConfig
 from misc_utils.train_utils import save_model_info
 from modalities import Pattern
@@ -115,7 +116,7 @@ class Protocol(object):
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
         weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
-        model_checkpoint = ModelCheckpoint(weights_path)
+        model_checkpoint = CustomModelCheckpoint(filepath=weights_path)
         callbacks.append(model_checkpoint)
         # endregion
         # region AUC
@@ -195,7 +196,8 @@ class Protocol(object):
     def load_weights(self, epoch: int):
         if epoch > 0:
             weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}.hdf5")
-            self.model.load_weights(weights_path.format(epoch=epoch))
+            weights_path = weights_path.format(epoch=epoch)
+            self.model.load_weights(weights_path)
 
 
 def get_dataset_folder(dataset_name: str) -> str:
