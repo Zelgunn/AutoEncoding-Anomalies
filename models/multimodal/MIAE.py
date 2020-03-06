@@ -1,5 +1,6 @@
 # MIAE : Multi-modal Interpolating Autoencoder
 import tensorflow as tf
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import List, Tuple
 
 from models import IAE

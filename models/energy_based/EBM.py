@@ -1,6 +1,7 @@
 # EBAE : Energy-based Model
 import tensorflow as tf
 from tensorflow_core.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import Dict, Tuple, Union, List
 
 from models import CustomModel
@@ -161,6 +162,12 @@ class EBM(CustomModel):
     @property
     def models_ids(self) -> Dict[Model, str]:
         return {self.energy_model: self.energy_model.name}
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.optimizer: "optimizer",
+        }
 
     @property
     def metrics_names(self):

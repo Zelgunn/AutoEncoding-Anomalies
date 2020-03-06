@@ -1,6 +1,7 @@
 # EBGAN : Energy-based Generative Adversarial Network
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import Tuple, Dict
 
 from models import CustomModel, AE
@@ -97,6 +98,13 @@ class EBGAN(CustomModel):
         return {
             **self.autoencoder.models_ids,
             self.generator: "generator"
+        }
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.autoencoder.optimizer: "autoencoder_optimizer",
+            self.generator.optimizer: "generator_optimizer",
         }
 
     @property

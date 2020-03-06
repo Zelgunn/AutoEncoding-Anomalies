@@ -66,6 +66,7 @@
       <w>pathlib</w>
       <w>pcolormesh</w>
       <w>pixar</w>
+      <w>preconditioner</w>
       <w>pwet</w>
       <w>pyplot</w>
       <w>resample</w>

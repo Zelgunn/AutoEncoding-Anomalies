@@ -1,6 +1,7 @@
 # MMAE : Multi-modal Autoencoder
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import List, Dict, Tuple
 
 from models import CustomModel, AE
@@ -102,6 +103,12 @@ class MMAE(CustomModel):
         ids = {ae: ae.name for ae in self.autoencoders}
         ids[self.fusion_model] = self.fusion_model.name
         return ids
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.optimizer: "optimizer",
+        }
 
     def set_optimizer(self, optimizer):
         self.optimizer = optimizer

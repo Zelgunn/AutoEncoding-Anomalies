@@ -44,7 +44,7 @@ class IAEGAN(IAE):
         return losses
 
     @tf.function
-    def compute_gradients(self, inputs, *args, **kwargs):
+    def compute_gradients(self, inputs):
         with tf.GradientTape() as autoencoder_tape, \
                 tf.GradientTape() as discriminator_tape:
             losses = self.compute_loss(inputs)

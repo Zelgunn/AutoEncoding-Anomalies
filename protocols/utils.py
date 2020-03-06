@@ -1,5 +1,5 @@
 from tensorflow.python.keras.models import Sequential, Model
-from tensorflow.python.keras.layers import Layer, Dense, AveragePooling3D, UpSampling3D, Dropout
+from tensorflow.python.keras.layers import Layer, Dense, AveragePooling3D, UpSampling3D
 from tensorflow.python.keras.initializers import VarianceScaling
 from typing import List, Tuple, Union
 

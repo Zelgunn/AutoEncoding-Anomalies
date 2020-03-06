@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import Dict
 
 from models import CustomModel
@@ -62,6 +63,12 @@ class AudioVideoUNet(CustomModel):
     @property
     def models_ids(self) -> Dict[Model, str]:
         return {self.image_unet: "ImageUNet", self.audio_unet: "AudioUNet", self.time_unet: "FusionUnet"}
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.optimizer: "optimizer",
+        }
 
     def get_config(self):
         return {

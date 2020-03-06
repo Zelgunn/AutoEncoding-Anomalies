@@ -5,7 +5,6 @@ import time
 import os
 from typing import List, Callable
 
-from models import CustomModel
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig
 from callbacks import CustomModelCheckpoint

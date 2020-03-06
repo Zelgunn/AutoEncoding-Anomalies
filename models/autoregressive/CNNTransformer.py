@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.layers import Lambda, TimeDistributed
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import Optional, Dict, Union, List
 
 from models import CustomModel, AE
@@ -179,6 +180,12 @@ class CNNTransformer(CustomModel):
         return {
             **autoencoder_ids,
             self.transformer: "transformer"
+        }
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.optimizer: "optimizer",
         }
 
     def split_steps(self, tensor, is_inputs: bool):

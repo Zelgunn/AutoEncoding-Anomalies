@@ -51,7 +51,7 @@ class CustomModel(Model):
         train_aggregator = LossAggregator(use_steps=True, num_samples=steps_per_epoch)
         val_aggregator = LossAggregator(use_steps=True, num_samples=validation_steps)
 
-        iterator = iterator_ops.IteratorV2(x)
+        iterator = iterator_ops.OwnedIterator(x)
         self.train_step.get_concrete_function(iterator.next())
 
         self.on_train_begin(callbacks, initial_epoch, steps_per_epoch)
@@ -137,10 +137,6 @@ class CustomModel(Model):
         pass
 
     @abstractmethod
-    def compute_gradients(self, inputs, *args, **kwargs):
-        pass
-
-    @abstractmethod
     def compute_loss(self, inputs, *args, **kwargs):
         pass
 
@@ -218,7 +214,8 @@ class CustomModel(Model):
 
     def load_weights(self,
                      filepath: str,
-                     by_name=False):
+                     by_name=False,
+                     skip_mismatch=False):
         with SharedHDF5(filepath=filepath, mode="r") as file:
             for model, model_id in self.models_ids.items():
                 model_group = file["model_{}_weights".format(model_id)]

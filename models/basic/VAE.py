@@ -49,7 +49,7 @@ class VAE(AE):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         reconstruction_loss /= self.reconstruction_loss_factor
-        kl_divergence /= self.cyclic_kl_divergence_factor()
+        # kl_divergence /= self.cyclic_kl_divergence_factor()
 
         self.training_step.assign_add(1)
         return reconstruction_loss, kl_divergence
@@ -66,7 +66,7 @@ class VAE(AE):
         reconstruction_loss = tf.reduce_mean(tf.square(inputs - decoded))
         reconstruction_loss *= self.reconstruction_loss_factor
         kl_divergence = tf.reduce_mean(tfp.distributions.kl_divergence(latent_distribution, reference_distribution))
-        kl_divergence *= self.cyclic_kl_divergence_factor()
+        # kl_divergence *= self.cyclic_kl_divergence_factor()
 
         return reconstruction_loss, kl_divergence
 

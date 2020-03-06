@@ -1,5 +1,5 @@
 import tensorflow as tf
-from typing import Callable, Tuple
+from typing import Callable
 
 from misc_utils.general import get_known_shape
 from misc_utils.math_utils import diff

@@ -1,10 +1,10 @@
 # ARIAE : Autoregressive Interpolating Autoencoder
 import tensorflow as tf
 from tensorflow_core.python.keras import Model
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from typing import Dict
 
 from transformers import Transformer
-
 from models import CustomModel, IAE
 
 
@@ -39,6 +39,12 @@ class ARIAE(CustomModel):
         return {
             **self.iae.models_ids,
             self.transformer: "transformer"
+        }
+
+    @property
+    def optimizers_ids(self) -> Dict[OptimizerV2, str]:
+        return {
+            self.optimizer: "optimizer",
         }
 
     def get_config(self):
