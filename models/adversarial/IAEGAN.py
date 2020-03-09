@@ -5,8 +5,7 @@ from typing import Tuple, Dict
 
 from misc_utils.math_utils import lerp
 from models import IAE
-from models.utils import reduce_sum_from
-from models.adversarial import gan_loss
+from models.adversarial import gan_loss, gradient_penalty
 
 
 class IAEGAN(IAE):
@@ -48,7 +47,12 @@ class IAEGAN(IAE):
         with tf.GradientTape() as autoencoder_tape, \
                 tf.GradientTape() as discriminator_tape:
             losses = self.compute_loss(inputs)
-            reconstruction_loss, generator_adversarial_loss, discriminator_adversarial_loss, gradient_penalty = losses
+            (
+                reconstruction_loss,
+                generator_adversarial_loss,
+                discriminator_adversarial_loss,
+                gradient_penalty_loss
+            ) = losses
 
             reconstruction_loss_weight = tf.constant(1e3)
             autoencoder_loss = reconstruction_loss * reconstruction_loss_weight + generator_adversarial_loss
@@ -57,7 +61,7 @@ class IAEGAN(IAE):
                 gradient_penalty_weight = tf.constant(10.0)
             else:
                 gradient_penalty_weight = tf.constant(1.0)
-            discriminator_loss = discriminator_adversarial_loss + gradient_penalty * gradient_penalty_weight
+            discriminator_loss = discriminator_adversarial_loss + gradient_penalty_loss * gradient_penalty_weight
 
         autoencoder_gradients = autoencoder_tape.gradient(autoencoder_loss, self.autoencoder_trainable_variables)
         disc_gradients = discriminator_tape.gradient(discriminator_loss, self.discriminator_trainable_variables)
@@ -118,27 +122,13 @@ class IAEGAN(IAE):
             )
         # endregion
 
-        gradient_penalty = self.gradient_penalty(real, fake)
+        gradient_penalty_loss = self.gradient_penalty(real, fake)
 
-        return reconstruction_loss, generator_adversarial_loss, discriminator_adversarial_loss, gradient_penalty
+        return reconstruction_loss, generator_adversarial_loss, discriminator_adversarial_loss, gradient_penalty_loss
 
     @tf.function
     def gradient_penalty(self, real, fake) -> tf.Tensor:
-        fake = tf.stop_gradient(fake)
-        batch_size = tf.shape(real)[0]
-        factors_shape = [batch_size] + [1] * (real.shape.rank - 1)
-        factors = tf.random.uniform(shape=factors_shape, minval=0.0, maxval=1.0, dtype=tf.float32, seed=self.seed)
-        x_hat = lerp(real, fake, factors)
-
-        with tf.GradientTape() as tape:
-            tape.watch(x_hat)
-            discriminated = self.discriminate(x_hat)
-
-        gradients = tape.gradient(discriminated, x_hat)
-        penalty = tf.sqrt(reduce_sum_from(tf.square(gradients)))
-        penalty = tf.reduce_mean(tf.square(penalty - 1.0))
-
-        return penalty
+        return gradient_penalty(real=real, fake=fake, discriminator=self.discriminator, seed=self.seed)
 
     # region select_two_latent_codes (from interpolated latent code)
     @tf.function

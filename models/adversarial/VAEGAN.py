@@ -5,6 +5,9 @@ from enum import IntEnum
 from typing import Tuple, Dict
 
 from models import VAE
+from models.basic.VAE import get_reference_distribution
+from misc_utils.math_utils import lerp
+from models.utils import reduce_sum_from
 
 
 class GANLossTarget(IntEnum):
@@ -176,17 +179,27 @@ class VAEGAN(VAE):
                 self.discriminator: "discriminator"}
 
 
-def get_reference_distribution(latent_distribution: tfp.distributions.MultivariateNormalDiag
-                               ) -> tfp.distributions.MultivariateNormalDiag:
-    event_size = latent_distribution.event_shape[-1]
-    mean = tf.zeros(shape=[event_size])
-    variance = tf.ones(shape=[event_size])
-    return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=variance)
-
-
 @tf.function
 def gan_loss(logits: tf.Tensor, is_real: bool) -> tf.Tensor:
     labels = tf.ones_like(logits) if is_real else tf.zeros_like(logits)
     loss = tf.nn.sigmoid_cross_entropy_with_logits(labels, logits)
     loss = tf.reduce_mean(loss)
     return loss
+
+
+def gradient_penalty(real: tf.Tensor, fake: tf.Tensor, discriminator: Model, seed=None) -> tf.Tensor:
+    fake = tf.stop_gradient(fake)
+    batch_size = tf.shape(real)[0]
+    factors_shape = [batch_size] + [1] * (real.shape.rank - 1)
+    factors = tf.random.uniform(shape=factors_shape, minval=0.0, maxval=1.0, dtype=tf.float32, seed=seed)
+    x_hat = lerp(real, fake, factors)
+
+    with tf.GradientTape() as tape:
+        tape.watch(x_hat)
+        discriminated = discriminator(x_hat)
+
+    gradients = tape.gradient(discriminated, x_hat)
+    penalty = tf.sqrt(reduce_sum_from(tf.square(gradients)))
+    penalty = tf.reduce_mean(tf.square(penalty - 1.0))
+
+    return penalty

@@ -11,9 +11,8 @@ class VAE(AE):
     def __init__(self,
                  encoder: Model,
                  decoder: Model,
-                 learning_rate=1e-3,
-                 reconstruction_loss_factor=100.0,
-                 kl_divergence_loss_factor=1.0,
+                 learning_rate=None,
+                 kl_divergence_loss_factor=1e-2,
                  seed=None,
                  **kwargs):
         super(VAE, self).__init__(encoder=encoder,
@@ -21,8 +20,6 @@ class VAE(AE):
                                   learning_rate=learning_rate,
                                   **kwargs)
         self.kl_divergence_loss_factor = kl_divergence_loss_factor
-        self.reconstruction_loss_factor = reconstruction_loss_factor
-        self.training_step = tf.Variable(initial_value=0, trainable=False, name="training_step")
         self.seed = seed
 
     @tf.function
@@ -49,9 +46,7 @@ class VAE(AE):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         reconstruction_loss /= self.reconstruction_loss_factor
-        # kl_divergence /= self.cyclic_kl_divergence_factor()
 
-        self.training_step.assign_add(1)
         return reconstruction_loss, kl_divergence
 
     @tf.function
@@ -64,21 +59,10 @@ class VAE(AE):
         decoded = self.decode(latent_code)
 
         reconstruction_loss = tf.reduce_mean(tf.square(inputs - decoded))
-        reconstruction_loss *= self.reconstruction_loss_factor
         kl_divergence = tf.reduce_mean(tfp.distributions.kl_divergence(latent_distribution, reference_distribution))
-        # kl_divergence *= self.cyclic_kl_divergence_factor()
+        kl_divergence *= self.kl_divergence_loss_factor
 
         return reconstruction_loss, kl_divergence
-
-    @tf.function
-    def cyclic_kl_divergence_factor(self):
-        step_size = 1000
-        step = tf.math.mod(self.training_step, step_size * 2)
-        if step < step_size:
-            factor = self.kl_divergence_loss_factor * tf.cast(step, tf.float32) / step_size
-        else:
-            factor = self.kl_divergence_loss_factor
-        return factor
 
     def get_config(self):
         return {

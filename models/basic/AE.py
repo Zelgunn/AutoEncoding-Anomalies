@@ -13,7 +13,7 @@ class AE(CustomModel):
     def __init__(self,
                  encoder: Model,
                  decoder: Model,
-                 learning_rate=1e-3,
+                 learning_rate=None,
                  **kwargs):
         super(AE, self).__init__(**kwargs)
 
@@ -22,7 +22,8 @@ class AE(CustomModel):
         self.learning_rate = learning_rate
 
         self.optimizer = None
-        self.set_optimizer(tf.keras.optimizers.Adam(learning_rate=learning_rate))
+        if self.learning_rate is not None:
+            self.set_optimizer(tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     def call(self, inputs, training=None, mask=None):
         return self.decode(self.encode(inputs))
