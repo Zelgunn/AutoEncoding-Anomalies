@@ -1,14 +1,14 @@
 from protocols import VideoProtocol, ProtocolTestConfig
 
 
-class EmolyProtocol(VideoProtocol):
+class EmolyVideoProtocol(VideoProtocol):
     def __init__(self,
                  initial_epoch=0,
                  model_name=None
                  ):
-        super(EmolyProtocol, self).__init__(dataset_name="emoly",
-                                            initial_epoch=initial_epoch,
-                                            model_name=model_name)
+        super(EmolyVideoProtocol, self).__init__(dataset_name="emoly",
+                                                 initial_epoch=initial_epoch,
+                                                 model_name=model_name)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()
@@ -24,3 +24,7 @@ class EmolyProtocol(VideoProtocol):
     @property
     def use_face(self) -> bool:
         return True
+
+    @property
+    def video_sample_rate(self) -> int:
+        return 25

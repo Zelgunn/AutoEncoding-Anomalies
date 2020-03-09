@@ -24,3 +24,7 @@ class ShanghaiTechProtocol(VideoProtocol):
     @property
     def use_face(self) -> bool:
         return False
+
+    @property
+    def video_sample_rate(self) -> int:
+        return 25

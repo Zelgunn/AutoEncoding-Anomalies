@@ -12,6 +12,8 @@ from models.autoregressive import SAAM, AND
 from models.adversarial import IAEGAN, VAEGAN
 from models.energy_based import EBGAN
 from preprocessing.video_preprocessing import make_video_augmentation, make_video_preprocess
+
+
 # from misc_utils.train_utils import ScaledSchedule
 # from misc_utils.train_utils import WarmupSchedule
 
@@ -249,13 +251,17 @@ class VideoProtocol(DatasetProtocol):
         image_pattern = self.get_image_pattern()
 
         image_callbacks_configs = [
-            ImageCallbackConfig(self.model, image_pattern, True, "train"),
-            ImageCallbackConfig(self.model, image_pattern, False, "test"),
+            ImageCallbackConfig(autoencoder=self.model, pattern=image_pattern, is_train_callback=True,
+                                name="train", video_sample_rate=self.video_sample_rate),
+            ImageCallbackConfig(autoencoder=self.model, pattern=image_pattern, is_train_callback=False,
+                                name="test", video_sample_rate=self.video_sample_rate),
         ]
 
         if isinstance(self.model, IAE):
-            image_callbacks_configs += \
-                [ImageCallbackConfig(self.model.interpolate, image_pattern, False, "interpolate_test")]
+            image_callback_config = ImageCallbackConfig(autoencoder=self.model.interpolate, pattern=image_pattern,
+                                                        is_train_callback=False, name="interpolate_test",
+                                                        video_sample_rate=self.video_sample_rate)
+            image_callbacks_configs.append(image_callback_config)
 
         return image_callbacks_configs
 
@@ -269,6 +275,11 @@ class VideoProtocol(DatasetProtocol):
     @property
     @abstractmethod
     def use_face(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def video_sample_rate(self) -> int:
         raise NotImplementedError
 
     # endregion

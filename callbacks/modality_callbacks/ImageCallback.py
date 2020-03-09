@@ -19,7 +19,7 @@ class ImageCallback(ModalityCallback):
                  logged_output_indices=0,
                  name: str = "ImageCallback",
                  max_outputs: int = 4,
-                 fps: List[int] = None,
+                 video_sample_rate: List[int] = None,
                  **kwargs
                  ):
         super(ImageCallback, self).__init__(inputs=inputs, model=model,
@@ -27,11 +27,11 @@ class ImageCallback(ModalityCallback):
                                             update_freq=update_freq, epoch_freq=epoch_freq,
                                             outputs=outputs, logged_output_indices=logged_output_indices,
                                             name=name, max_outputs=max_outputs, **kwargs)
-        if fps is None:
-            fps = [25, ]
-        elif isinstance(fps, int):
-            fps = [fps, ]
-        self.fps = fps
+        if video_sample_rate is None:
+            video_sample_rate = [25, ]
+        elif isinstance(video_sample_rate, int):
+            video_sample_rate = [video_sample_rate, ]
+        self.video_sample_rate = video_sample_rate
         self.compare_to_ground_truth = compare_to_ground_truth
 
         check_image_video_rank(self.true_outputs)
@@ -60,6 +60,6 @@ class ImageCallback(ModalityCallback):
             image_summary(name="{}_{}".format(self.name, suffix), data=data, step=step, max_outputs=self.max_outputs)
 
     def video_summary(self, data: tf.Tensor, step: int, suffix: str):
-        for fps in self.fps:
-            image_summary(name="{}_{}_{}".format(self.name, fps, suffix), data=data,
-                          step=step, max_outputs=self.max_outputs, fps=fps)
+        for video_sample_rate in self.video_sample_rate:
+            image_summary(name="{}_{}_{}".format(self.name, video_sample_rate, suffix), data=data,
+                          step=step, max_outputs=self.max_outputs, fps=video_sample_rate)
