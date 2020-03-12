@@ -1,5 +1,5 @@
 from tensorflow.python.keras.callbacks import TensorBoard
-from typing import Tuple, Callable
+from typing import Union, List, Callable
 
 from callbacks import ImageCallback
 from callbacks.configs import ModalityCallbackConfig
@@ -16,7 +16,7 @@ class ImageCallbackConfig(ModalityCallbackConfig):
                  epoch_freq: int = 1,
                  video_sample_rate: int = 25,
                  inputs_are_outputs: bool = True,
-                 modality_indices: Tuple[int, int] = None,
+                 modality_indices: Union[List[int], int] = None,
                  **kwargs,
                  ):
         super(ImageCallbackConfig, self).__init__(autoencoder=autoencoder,
@@ -44,7 +44,7 @@ class ImageCallbackConfig(ModalityCallbackConfig):
                                                               video_sample_rate=self.video_sample_rate,
                                                               epoch_freq=self.epoch_freq,
                                                               inputs_are_outputs=self.inputs_are_outputs,
-                                                              modality_index=self.modality_indices,
+                                                              modality_indices=self.modality_indices,
                                                               seed=seed,
                                                               **self.kwargs)
         return image_callbacks

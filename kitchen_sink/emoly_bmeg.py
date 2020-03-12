@@ -15,10 +15,9 @@ def get_audio_encoder(length: int,
                       code_size: int,
                       name="AudioEncoder",
                       n=96,
-                      kernel_size=3,
-                      **kwargs
+                      kernel_size=3
                       ) -> Sequential:
-    shared_params = {"kernel_size": kernel_size, **kwargs}
+    shared_params = {"kernel_size": kernel_size, "model_depth": 3}
     layers = [
         ResBlock1D(filters=n * 2, basic_block_count=1, strides=1, input_shape=(length, channels), **shared_params),
         ResBlock1D(filters=n * 2, basic_block_count=4, strides=2, **shared_params),
@@ -35,10 +34,9 @@ def get_audio_decoder(length: int,
                       code_size: int,
                       name="AudioDecoder",
                       n=192,
-                      kernel_size=3,
-                      **kwargs
+                      kernel_size=3
                       ) -> Sequential:
-    shared_params = {"kernel_size": kernel_size, **kwargs}
+    shared_params = {"kernel_size": kernel_size, "model_depth": 3}
     layers = [
         ResBlock1DTranspose(filters=code_size, basic_block_count=1, strides=1, input_shape=(length, code_size),
                             **shared_params),
@@ -57,23 +55,20 @@ def get_audio_generator(length: int,
                         noise_code_size: int,
                         name="AudioGenerator",
                         n=256,
-                        kernel_size=3,
-                        **kwargs
+                        kernel_size=3
                         ) -> Model:
     base_decoder = get_audio_decoder(length=length,
                                      channels=channels,
                                      code_size=code_size + noise_code_size,
                                      name="{}_BaseDecoder".format(name),
                                      n=n,
-                                     kernel_size=kernel_size,
-                                     **kwargs)
+                                     kernel_size=kernel_size)
     generator = get_generator(base_decoder=base_decoder,
                               length=length,
                               code_size=code_size,
                               noise_size=noise_size,
                               noise_code_size=noise_code_size,
-                              name=name,
-                              **kwargs)
+                              name=name)
     return generator
 
 
@@ -85,17 +80,18 @@ def get_video_encoder(length: int,
                       name="VideoEncoder",
                       n=32,
                       kernel_size=3,
-                      **kwargs
                       ) -> Sequential:
     input_shape = (length, height, width, channels)
-    shared_params = {**kwargs}
+
+    model_depth = 5
 
     layers = [
-        ResBlock3D(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), input_shape=input_shape, **shared_params),
-        ResBlock3D(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
-        ResBlock3D(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
-        ResBlock3D(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
-        ResBlock3D(filters=code_size, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), **shared_params),
+        ResBlock3D(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth,
+                   input_shape=input_shape),
+        ResBlock3D(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3D(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3D(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3D(filters=code_size, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), model_depth=model_depth),
         Reshape(target_shape=(length, code_size), name="FlattenVideoCode"),
         Dense(units=code_size, activation=None, kernel_initializer="he_normal")
     ]
@@ -109,19 +105,19 @@ def get_video_decoder(length: int,
                       code_size: int,
                       name="VideoDecoder",
                       n=24,
-                      kernel_size=3,
-                      **kwargs
+                      kernel_size=3
                       ) -> Sequential:
     input_shape = (length, code_size)
-    shared_params = {**kwargs}
+
+    model_depth = 5
 
     layers = [
         Reshape(target_shape=(length, 1, 1, code_size), input_shape=input_shape),
-        ResBlock3DTranspose(filters=n * 8, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), **shared_params),
-        ResBlock3DTranspose(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params, ),
-        ResBlock3DTranspose(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
-        ResBlock3DTranspose(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
-        ResBlock3DTranspose(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), **shared_params),
+        ResBlock3DTranspose(filters=n * 8, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3DTranspose(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3DTranspose(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3DTranspose(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3DTranspose(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
         Dense(units=channels, activation=None, kernel_initializer="he_normal"),
     ]
 
@@ -136,23 +132,20 @@ def get_video_generator(length: int,
                         noise_code_size: int,
                         name="VideoGenerator",
                         n=32,
-                        kernel_size=3,
-                        **kwargs
+                        kernel_size=3
                         ) -> Model:
     base_decoder = get_video_decoder(length=length,
                                      channels=channels,
                                      code_size=code_size + noise_code_size,
                                      name="{}_BaseDecoder".format(name),
                                      n=n,
-                                     kernel_size=kernel_size,
-                                     **kwargs)
+                                     kernel_size=kernel_size)
     generator = get_generator(base_decoder=base_decoder,
                               length=length,
                               code_size=code_size,
                               noise_size=noise_size,
                               noise_code_size=noise_code_size,
-                              name=name,
-                              **kwargs)
+                              name=name)
 
     return generator
 
@@ -162,21 +155,20 @@ def get_generator(base_decoder: Sequential,
                   code_size: int,
                   noise_size: int,
                   noise_code_size: int,
-                  name: str,
-                  **kwargs
-                  ) -> Model:
+                  name: str) -> Model:
     base_code_input = Input(shape=(length, code_size), name="{}_BaseCodeInput".format(name))
     noise_input = Input(shape=(noise_size,), name="{}_NoiseInput".format(name))
-    shared_params = {**kwargs}
 
     intermediate_size = noise_size // length
+
+    model_depth = 2
 
     noise_code = noise_input
     noise_code = Dense(units=noise_size, activation="elu", kernel_initializer="he_normal")(noise_code)
     noise_code = Dense(units=noise_size, activation="elu", kernel_initializer="he_normal")(noise_code)
     noise_code = Reshape(target_shape=(length, intermediate_size))(noise_code)
-    noise_code = ResBlock1D(filters=intermediate_size * 2, **shared_params)(noise_code)
-    noise_code = ResBlock1D(filters=noise_code_size, **shared_params)(noise_code)
+    noise_code = ResBlock1D(filters=intermediate_size * 2, model_depth=model_depth)(noise_code)
+    noise_code = ResBlock1D(filters=noise_code_size, model_depth=model_depth)(noise_code)
     full_code = Concatenate()([base_code_input, noise_code])
     outputs = base_decoder(full_code)
 
@@ -187,12 +179,10 @@ def get_generator(base_decoder: Sequential,
 def get_fusion_autoencoder(length: int,
                            audio_code_size: int,
                            video_code_size: int,
-                           n=128,
-                           **kwargs
-                           ) -> Model:
+                           n=128) -> Model:
     audio_input_shape = (length, audio_code_size)
     video_input_shape = (length, video_code_size)
-    shared_params = {"kernel_size": 3, **kwargs}
+    shared_params = {"kernel_size": 3, "model_depth": 7}
 
     audio_input = Input(shape=audio_input_shape, name="FusionAudioInput")
     video_input = Input(shape=video_input_shape, name="FusionVideoInput")
@@ -235,7 +225,7 @@ def main():
     steps_per_epoch = 1000
     epochs = 100
     validation_steps = 64
-    seed = 0
+    seed = 42
 
     # from misc_utils.train_utils import WarmupSchedule
 
@@ -255,31 +245,15 @@ def main():
     audio_noise_code_size = 32
     video_code_size = 128
     video_noise_code_size = 64
-
-    initializer = ResBlock1D.get_fixup_initializer(model_depth=30)
-    encoder_parameters = {
-        "use_batch_norm": False,
-        "activation": "elu",
-        "kernel_initializer": initializer,
-    }
-    decoder_parameters = {
-        **encoder_parameters,
-        "use_residual_bias": False,
-        "use_conv_bias": True,
-    }
-    generator_parameters = {
-        **decoder_parameters
-    }
-
     # endregion
 
     # region Model
 
     # region Audio models
-    audio_encoder = get_audio_encoder(audio_length, audio_channels, audio_code_size, n=96, **encoder_parameters)
+    audio_encoder = get_audio_encoder(audio_length, audio_channels, audio_code_size, n=96)
     audio_generator = get_audio_generator(video_length, audio_channels, video_code_size, noise_size,
-                                          audio_noise_code_size, n=256, **generator_parameters)
-    audio_decoder = get_audio_decoder(video_length, audio_channels, audio_code_size, n=196, **decoder_parameters)
+                                          audio_noise_code_size, n=256)
+    audio_decoder = get_audio_decoder(video_length, audio_channels, audio_code_size, n=196)
 
     audio_models = ModalityModels(encoder=audio_encoder,
                                   generator=audio_generator,
@@ -288,11 +262,10 @@ def main():
     # endregion
 
     # region Video models
-    video_encoder = get_video_encoder(video_length, video_height, video_width, video_channels, video_code_size, n=32,
-                                      **encoder_parameters)
+    video_encoder = get_video_encoder(video_length, video_height, video_width, video_channels, video_code_size, n=32)
     video_generator = get_video_generator(video_length, video_channels, audio_code_size, noise_size,
-                                          video_noise_code_size, n=32, **generator_parameters)
-    video_decoder = get_video_decoder(video_length, video_channels, video_code_size, n=24, **decoder_parameters)
+                                          video_noise_code_size, n=32)
+    video_decoder = get_video_decoder(video_length, video_channels, video_code_size, n=24)
 
     video_models = ModalityModels(encoder=video_encoder,
                                   generator=video_generator,
@@ -300,7 +273,7 @@ def main():
                                   name="Video")
     # endregion
 
-    fusion_autoencoder = get_fusion_autoencoder(video_length, audio_code_size, video_code_size, **encoder_parameters)
+    fusion_autoencoder = get_fusion_autoencoder(video_length, audio_code_size, video_code_size)
 
     autoencoder_optimizer = tf.keras.optimizers.Adam(learning_rate=autoencoder_lr_schedule)
     generators_optimizer = tf.keras.optimizers.Adam(learning_rate=generators_lr_schedule)

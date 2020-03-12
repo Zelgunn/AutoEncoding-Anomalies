@@ -37,8 +37,6 @@ def make_video_preprocess(height: int, width: int, to_grayscale: bool):
             video *= rgb_weights
             video = tf.reduce_sum(video, axis=-1, keepdims=True)
 
-        video = tf.image.per_image_standardization(video)
-
         if labels is None:
             return video
         else:

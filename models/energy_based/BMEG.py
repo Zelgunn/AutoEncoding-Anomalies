@@ -115,6 +115,7 @@ class BMEG(CustomModel):
 
     @tf.function
     def compute_loss(self, inputs, *args, **kwargs):
+        # inputs, _, _ = self.standardize_inputs(inputs)
         input_1, input_2 = inputs
 
         latent_codes = self.encode(inputs)
@@ -177,9 +178,13 @@ class BMEG(CustomModel):
     # region Encode/Decode/Generate
     @tf.function
     def autoencode(self, inputs):
+        # inputs, mean, stddev = self.standardize_inputs(inputs)
+
         latent_codes = self.encode(inputs)
         fused = self.fusion_autoencoder(latent_codes)
         reconstructed = self.decode(fused)
+
+        # reconstructed = self.unstandardize_outputs(reconstructed, mean, stddev)
         return reconstructed
 
     @tf.function
@@ -198,8 +203,12 @@ class BMEG(CustomModel):
 
     @tf.function
     def regenerate(self, inputs):
+        # inputs, mean, stddev = self.standardize_inputs(inputs)
+
         latent_codes = self.encode(inputs)
         generated = self.generate(latent_codes)
+
+        # generated = self.unstandardize_outputs(generated, mean, stddev)
         return generated
 
     # @tf.function

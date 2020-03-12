@@ -5,7 +5,7 @@ from typing import List
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
-from protocols.utils import make_residual_encoder, make_residual_decoder, make_discriminator
+from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from models import AE, IAE
 from models.autoregressive import SAAM, AND
@@ -145,29 +145,29 @@ class VideoProtocol(DatasetProtocol):
 
     # region Make sub-models
     def make_encoder(self, input_shape, name="ResidualEncoder") -> Model:
-        encoder = make_residual_encoder(input_shape=input_shape,
-                                        filters=self.encoder_filters,
-                                        kernel_size=self.kernel_size,
-                                        strides=self.encoder_strides,
-                                        code_size=self.code_size,
-                                        code_activation=self.code_activation,
-                                        model_depth=self.model_depth,
-                                        seed=self.seed,
-                                        name=name,
-                                        )
+        encoder = make_encoder(input_shape=input_shape,
+                               filters=self.encoder_filters,
+                               kernel_size=self.kernel_size,
+                               strides=self.encoder_strides,
+                               code_size=self.code_size,
+                               code_activation=self.code_activation,
+                               model_depth=self.model_depth,
+                               seed=self.seed,
+                               name=name,
+                               )
         return encoder
 
     def make_decoder(self, input_shape, name="ResidualDecoder") -> Model:
-        decoder = make_residual_decoder(input_shape=input_shape,
-                                        filters=self.decoder_filters,
-                                        kernel_size=self.kernel_size,
-                                        strides=self.decoder_strides,
-                                        channels=1,
-                                        output_activation=self.output_activation,
-                                        model_depth=self.model_depth,
-                                        seed=self.seed,
-                                        name=name,
-                                        )
+        decoder = make_decoder(input_shape=input_shape,
+                               filters=self.decoder_filters,
+                               kernel_size=self.kernel_size,
+                               strides=self.decoder_strides,
+                               channels=1,
+                               output_activation=self.output_activation,
+                               model_depth=self.model_depth,
+                               seed=self.seed,
+                               name=name,
+                               )
         return decoder
 
     def make_discriminator(self, input_shape) -> Model:

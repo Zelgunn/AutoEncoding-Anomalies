@@ -1,7 +1,7 @@
 import tensorflow as tf
-from tensorflow_core.python.keras import Model
-from tensorflow_core.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
-from typing import Dict
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
+from tensorflow.python.keras import Model
+from typing import Dict, Tuple
 
 from models import CustomModel, AE
 from models.adversarial import gradient_penalty
@@ -18,7 +18,7 @@ class CoupledVAEGANs(CustomModel):
                  base_reconstruction_loss_weight=1e+1,
                  base_divergence_loss_weight=1e-2,
                  cycle_reconstruction_loss_weight=1e+1,
-                 cycle_divergence_loss_weight=1e+1,
+                 cycle_divergence_loss_weight=1e-2,
                  adversarial_loss_weight=1e+0,
                  gradient_penalty_loss_weight=1e+1,
                  domain_1_name="1",
@@ -48,7 +48,9 @@ class CoupledVAEGANs(CustomModel):
 
         self.seed = seed
 
+    @tf.function
     def train_step(self, inputs, *args, **kwargs):
+        inputs, _, _ = self.standardize_inputs(inputs)
         x_1, x_2 = inputs
 
         with tf.GradientTape(watch_accessed_variables=False) as tape:
@@ -70,7 +72,9 @@ class CoupledVAEGANs(CustomModel):
         return (*generators_losses, *discriminators_losses)
 
     def compute_loss(self, inputs, *args, **kwargs):
+        inputs, _, _ = self.standardize_inputs(inputs)
         x_1, x_2 = inputs
+
         generators_losses = self.compute_generators_losses(x_1, x_2)
         discriminators_losses = self.compute_discriminators_losses(x_1, x_2)
         return (*generators_losses, *discriminators_losses)
@@ -104,6 +108,7 @@ class CoupledVAEGANs(CustomModel):
                 base_reconstruction_loss * self.base_reconstruction_loss_weight +
                 cycle_reconstruction_loss * self.cycle_reconstruction_loss_weight
         )
+
         # endregion
 
         # region Divergence loss
@@ -120,8 +125,8 @@ class CoupledVAEGANs(CustomModel):
         # endregion
 
         # region Adversarial loss
-        x_1_2_discriminated = self.discriminator_2(x_1_2)
-        x_2_1_discriminated = self.discriminator_1(x_2_1)
+        x_1_2_discriminated = tf.reduce_mean(self.discriminator_2(x_1_2))
+        x_2_1_discriminated = tf.reduce_mean(self.discriminator_1(x_2_1))
         adversarial_loss = (x_1_2_discriminated + x_2_1_discriminated) * self.adversarial_loss_weight
         # endregion
 
@@ -171,26 +176,63 @@ class CoupledVAEGANs(CustomModel):
 
     @staticmethod
     def discriminator_loss(real_discriminated, fake_discriminated):
-        return real_discriminated - fake_discriminated
+        return tf.reduce_mean(real_discriminated) - tf.reduce_mean(fake_discriminated)
 
     # endregion
 
     # region Encode / Decode
+    def autoencode(self, inputs: Tuple[tf.Tensor, tf.Tensor]) -> Tuple[tf.Tensor, tf.Tensor]:
+        inputs, means, stddevs = self.standardize_inputs(inputs)
+        x_1, x_2 = inputs
+
+        x_1_1 = self.autoencode_1_1(x_1)
+        x_2_2 = self.autoencode_2_2(x_2)
+
+        # x_1_1, x_2_2 = self.unstandardize_outputs((x_1_1, x_2_2), means, stddevs)
+        return x_1_1, x_2_2
+
+    def autoencode_1_1(self, inputs: tf.Tensor) -> tf.Tensor:
+        return self._autoencode(inputs=inputs, from_domain_1=True, to_domain_1=True)
+
+    def autoencode_1_2(self, inputs: tf.Tensor) -> tf.Tensor:
+        return self._autoencode(inputs=inputs, from_domain_1=True, to_domain_1=False)
+
+    def autoencode_2_1(self, inputs: tf.Tensor) -> tf.Tensor:
+        return self._autoencode(inputs=inputs, from_domain_1=False, to_domain_1=True)
+
+    def autoencode_2_2(self, inputs: tf.Tensor) -> tf.Tensor:
+        return self._autoencode(inputs=inputs, from_domain_1=False, to_domain_1=False)
+
+    def cross_autoencode(self, inputs: Tuple[tf.Tensor, tf.Tensor]) -> Tuple[tf.Tensor, tf.Tensor]:
+        x_1, x_2 = inputs
+        x_1_2 = self.autoencode_1_2(x_1)
+        x_2_1 = self.autoencode_2_1(x_2)
+        return x_2_1, x_1_2
+
+    def cycle_autoencode(self, inputs: Tuple[tf.Tensor, tf.Tensor]) -> Tuple[tf.Tensor, tf.Tensor]:
+        x_1, x_2 = inputs
+        x_2_1, x_1_2 = self.cross_autoencode((x_1, x_2))
+        x_1_2_1, x_2_1_2 = self.cross_autoencode((x_2_1, x_1_2))
+        return x_1_2_1, x_2_1_2
+
     def encode_1(self, inputs: tf.Tensor):
         return self._encode(inputs=inputs, from_domain_1=True)
 
     def encode_2(self, inputs: tf.Tensor):
         return self._encode(inputs=inputs, from_domain_1=False)
 
-    def _encode(self, inputs: tf.Tensor, from_domain_1: bool):
-        generator = self.generator_1 if from_domain_1 else self.generator_2
-        return generator.encode(inputs)
-
     def decode_1(self, latent_code: tf.Tensor):
         return self._decode(latent_code=latent_code, to_domain_1=True)
 
     def decode_2(self, latent_code: tf.Tensor):
         return self._decode(latent_code=latent_code, to_domain_1=False)
+
+    def _autoencode(self, inputs: tf.Tensor, from_domain_1: bool, to_domain_1: bool) -> tf.Tensor:
+        return self._decode(self._encode(inputs=inputs, from_domain_1=from_domain_1), to_domain_1=to_domain_1)
+
+    def _encode(self, inputs: tf.Tensor, from_domain_1: bool):
+        generator = self.generator_1 if from_domain_1 else self.generator_2
+        return generator.encode(inputs)
 
     def _decode(self, latent_code: tf.Tensor, to_domain_1: bool):
         code_shape = tf.shape(latent_code)

@@ -81,6 +81,7 @@
       <w>spectrograms</w>
       <w>sqrt</w>
       <w>ssim</w>
+      <w>stddevs</w>
       <w>subscale</w>
       <w>sujet</w>
       <w>surprisal</w>
@@ -92,6 +93,7 @@
       <w>unet</w>
       <w>unflatten</w>
       <w>unshifted</w>
+      <w>unstandardize</w>
       <w>upsample</w>
       <w>upsampled</w>
       <w>vaegans</w>
