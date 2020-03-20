@@ -50,7 +50,6 @@ class CoupledVAEGANs(CustomModel):
 
     @tf.function
     def train_step(self, inputs, *args, **kwargs):
-        inputs, _, _ = self.standardize_inputs(inputs)
         x_1, x_2 = inputs
 
         with tf.GradientTape(watch_accessed_variables=False) as tape:
@@ -71,8 +70,8 @@ class CoupledVAEGANs(CustomModel):
 
         return (*generators_losses, *discriminators_losses)
 
+    @tf.function
     def compute_loss(self, inputs, *args, **kwargs):
-        inputs, _, _ = self.standardize_inputs(inputs)
         x_1, x_2 = inputs
 
         generators_losses = self.compute_generators_losses(x_1, x_2)
@@ -182,13 +181,11 @@ class CoupledVAEGANs(CustomModel):
 
     # region Encode / Decode
     def autoencode(self, inputs: Tuple[tf.Tensor, tf.Tensor]) -> Tuple[tf.Tensor, tf.Tensor]:
-        inputs, means, stddevs = self.standardize_inputs(inputs)
         x_1, x_2 = inputs
 
         x_1_1 = self.autoencode_1_1(x_1)
         x_2_2 = self.autoencode_2_2(x_2)
 
-        # x_1_1, x_2_2 = self.unstandardize_outputs((x_1_1, x_2_2), means, stddevs)
         return x_1_1, x_2_2
 
     def autoencode_1_1(self, inputs: tf.Tensor) -> tf.Tensor:

@@ -38,7 +38,7 @@
             [1, 2, 2],
             [2, 2, 2]
         ],
-        "intermediate_size" : 32
+        "intermediate_size": 32
     },
     "output_activation": "linear",
     "batch_size": 8,
@@ -51,6 +51,6 @@
     },
     "seed": 42,
     "epochs": 100,
-    "steps_per_epoch": 1000,
+    "steps_per_epoch": 2000,
     "validation_steps": 256
 }

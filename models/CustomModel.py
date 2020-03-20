@@ -10,11 +10,12 @@ from tensorflow.python.keras.saving import hdf5_format
 from tensorflow.python.data.ops.dataset_ops import get_legacy_output_shapes
 import h5py
 from abc import abstractmethod
-from typing import List, Dict, Type, Optional, Union
+from typing import List, Tuple, Dict, Type, Optional, Union
 
 from misc_utils.train_utils import LossAggregator, SharedHDF5, save_model_to_hdf5
 from misc_utils.train_utils import save_optimizer_weights_to_hdf5_group, load_optimizer_weights_from_hdf5_group
 from misc_utils.summary_utils import tf_function_summary
+from models.utils import get_mean_and_stddev
 
 
 class CustomModel(Model):
@@ -51,7 +52,8 @@ class CustomModel(Model):
         train_aggregator = LossAggregator(use_steps=True, num_samples=steps_per_epoch)
         val_aggregator = LossAggregator(use_steps=True, num_samples=validation_steps)
 
-        iterator = iterator_ops.OwnedIterator(x)
+        iterator = iterator_ops.IteratorV2(x)
+        # noinspection PyUnresolvedReferences
         self.train_step.get_concrete_function(iterator.next())
 
         self.on_train_begin(callbacks, initial_epoch, steps_per_epoch)
@@ -155,9 +157,6 @@ class CustomModel(Model):
         return self(inputs)
 
     # endregion
-
-    def compute_output_signature(self, input_signature):
-        pass
 
     # region Summary/Save/Load
     @property

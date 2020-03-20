@@ -59,6 +59,7 @@ def make_discriminator(input_shape: Tuple[int, ...],
                        intermediate_size: int,
                        intermediate_activation: str,
                        include_intermediate_output: bool,
+                       basic_block_count=1,
                        seed=None,
                        name="Discriminator"
                        ):
@@ -71,6 +72,7 @@ def make_discriminator(input_shape: Tuple[int, ...],
         "rank": rank,
         "activation": "relu",
         "model_depth": len(filters),
+        "basic_block_count": basic_block_count,
         "seed": seed,
     }
 
@@ -78,7 +80,7 @@ def make_discriminator(input_shape: Tuple[int, ...],
 
     layers = []
     for i in range(len(filters)):
-        layer = ResBlockND(filters=filters[i], basic_block_count=1, kernel_size=kernel_size[i], **kwargs)
+        layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
         layers.append(layer)
 
         layer = average_pooling(rank=rank, pool_size=strides[i])
@@ -111,6 +113,7 @@ def get_encoder_layers(rank: int,
                        code_size: int,
                        code_activation: Union[str, Layer],
                        model_depth: int,
+                       basic_block_count=1,
                        seed=None) -> List[Layer]:
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * len(filters)
@@ -119,18 +122,20 @@ def get_encoder_layers(rank: int,
         "rank": rank,
         "activation": "relu",
         "model_depth": model_depth,
+        "basic_block_count": basic_block_count,
         "seed": seed,
     }
 
     layers = []
     for i in range(len(filters)):
-        layer = ResBlockND(filters=filters[i], basic_block_count=1, kernel_size=kernel_size[i], **kwargs)
+        layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
         layers.append(layer)
 
         layer = average_pooling(rank=rank, pool_size=strides[i])
         layers.append(layer)
 
     kwargs["activation"] = code_activation
+    kwargs.pop("basic_block_count")
     layers.append(ResBlockND(filters=code_size, basic_block_count=2, kernel_size=1, **kwargs))
     return layers
 
@@ -142,6 +147,7 @@ def get_decoder_layers(rank: int,
                        channels: int,
                        output_activation: Union[str, Layer],
                        model_depth: int,
+                       basic_block_count=1,
                        seed=None,
                        ) -> List[Layer]:
     if isinstance(kernel_size, int):
@@ -151,6 +157,7 @@ def get_decoder_layers(rank: int,
         "rank": rank,
         "activation": "relu",
         "model_depth": model_depth,
+        "basic_block_count": basic_block_count,
         "seed": seed,
     }
 
@@ -159,10 +166,11 @@ def get_decoder_layers(rank: int,
         layer = upsampling(rank=rank, size=strides[i])
         layers.append(layer)
 
-        layer = ResBlockND(filters=filters[i], basic_block_count=1, kernel_size=kernel_size[i], **kwargs)
+        layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
         layers.append(layer)
 
     kwargs["activation"] = output_activation
+    kwargs.pop("basic_block_count")
     layers.append(ResBlockND(filters=channels, basic_block_count=2, kernel_size=1, **kwargs))
     return layers
 

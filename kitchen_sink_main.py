@@ -1,4 +1,4 @@
-from kitchen_sink.emoly_bmeg import main
+from kitchen_sink.audioset_ebl3 import main
 
 if __name__ == "__main__":
     main()

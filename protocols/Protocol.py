@@ -211,8 +211,10 @@ def get_dataset_folder(dataset_name: str) -> str:
         "subway_mall3": "../datasets/subway/mall3",
 
         "shanghaitech": "../datasets/shanghaitech",
-        "emoly": "../datasets/emoly",
         "avenue": "../datasets/avenue",
+
+        "emoly": "../datasets/emoly",
+        "audioset": "../datasets/audioset",
     }
 
     if dataset_name in known_datasets:

@@ -14,7 +14,7 @@ def main():
 
     train = 0
     initial_epoch = 8
-    dataset = "ped1"
+    dataset = "ped2"
 
     if initial_epoch is None:
         if train:
