@@ -1,11 +1,11 @@
 {
-    "model_architecture": "iae",
+    "model_architecture": "iaegan",
     "step_size": 8,
     "step_count": 4,
     "height": 128,
     "width": 128,
     "code_size": 64,
-    "code_activation": "sigmoid",
+    "code_activation": "tanh",
     "kernel_size": 3,
     "encoder": {
         "filters": [8, 12, 18, 27, 40],
@@ -15,9 +15,7 @@
             [1, 2, 2],
             [2, 1, 1],
             [1, 2, 2]
-        ],
-        "use_residual_bias": true,
-        "use_conv_bias": false
+        ]
     },
     "decoder": {
         "filters": [64, 40, 27, 18, 12, 8],
@@ -28,21 +26,30 @@
             [2, 1, 1],
             [1, 2, 2],
             [2, 1, 1]
+        ]
+    },
+    "discriminator": {
+        "filters": [16, 32, 32, 64, 64],
+        "strides": [
+            [2, 2, 2],
+            [1, 2, 2],
+            [2, 1, 1],
+            [1, 2, 2],
+            [1, 2, 2]
         ],
-        "use_residual_bias": true,
-        "use_conv_bias": false
+        "intermediate_size": 32
     },
     "output_activation": "linear",
-    "use_batch_norm": true,
+    "batch_size": 8,
     "learning_rate": 1e-3,
     "data_augmentation": {
-        "crop_ratio": 0.0,
+        "crop_ratio": 0.2,
         "dropout_noise_ratio": 0.0,
         "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
     },
-    "seed": 0,
-    "epochs" : 100,
-    "steps_per_epoch" : 1000,
-    "validation_steps" : 128
+    "seed": 42,
+    "epochs": 100,
+    "steps_per_epoch": 2000,
+    "validation_steps": 128
 }

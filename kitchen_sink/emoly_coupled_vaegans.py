@@ -2,15 +2,13 @@ import tensorflow as tf
 from tensorflow.python.keras.layers import Layer, Reshape
 from typing import List
 
-from models import AE
-from models.adversarial import CoupledVAEGANs
+from custom_tf_models import AE
+from custom_tf_models.adversarial import CoupledVAEGANs
 from protocols.utils import get_encoder_layers, get_decoder_layers, make_discriminator, to_sequential
 from modalities import Pattern, ModalityLoadInfo, RawVideo, RawAudio, Faces
-from preprocessing.video_preprocessing import make_video_preprocess
+from data_processing.video_preprocessing import make_video_preprocess
 from protocols import Protocol, ProtocolTrainConfig
 from callbacks.configs import ImageCallbackConfig, AUCCallbackConfig
-
-from models.utils import standardize_from
 
 
 def compute_output_shape(layers: List[Layer], input_shape):

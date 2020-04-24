@@ -29,7 +29,7 @@ class SubwayProtocol(VideoProtocol):
         anomaly_pattern = self.get_anomaly_pattern()
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.initial_epoch,
-                                  detector_stride=1,
+                                  detector_stride=32,
                                   pre_normalize_predictions=True)
 
     @property

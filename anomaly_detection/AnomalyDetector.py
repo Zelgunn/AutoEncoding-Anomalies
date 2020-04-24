@@ -139,22 +139,30 @@ class AnomalyDetector(Model):
                                     ):
         dataset = subset.make_source_browser(pattern, sample_index, stride)
 
-        # modality_folder = os.path.join(subset.subset_folders[sample_index], "labels")
-        # modality_files = [os.path.join(modality_folder, file)
-        #                   for file in os.listdir(modality_folder) if file.endswith(".tfrecord")]
-        # file_count = len(modality_files)
-        # k = 0
+        modality_folder = os.path.join(subset.subset_folders[sample_index], "labels")
+        modality_files = [os.path.join(modality_folder, file)
+                          for file in os.listdir(modality_folder) if file.endswith(".tfrecord")]
+        file_count = len(modality_files)
 
-        get_outputs_from_inputs = len(dataset.element_spec) == 2
+        k = 0
 
         predictions, labels = None, []
         for sample in dataset:
+            k += 1
+            if stride > 1:
+                if (k % stride) != 1:
+                    continue
+
             # TODO : Embed in a tf.function that is also able to return embeddings
-            if get_outputs_from_inputs:
+            if len(sample) == 2:
                 sample_inputs, sample_labels = sample
                 sample_outputs = sample_inputs
             else:
                 sample_inputs, sample_outputs, sample_labels = sample
+
+            sample_inputs = tf.expand_dims(sample_inputs, axis=0)
+            sample_outputs = tf.expand_dims(sample_outputs, axis=0)
+            # sample_labels = tf.expand_dims(sample_labels, axis=0)
 
             sample_predictions = self([sample_inputs, sample_outputs])
 
@@ -165,18 +173,21 @@ class AnomalyDetector(Model):
                 for i in range(len(predictions)):
                     predictions[i].append(sample_predictions[i])
 
-            # print("{}/{}".format(k, file_count))
-            # k += 1
+            print("{}/{}".format(k, file_count * 32))
 
         predictions = [np.concatenate(metric_prediction, axis=0) for metric_prediction in predictions]
-        labels = np.concatenate(labels, axis=0)
+        max_label_length = max([len(label) for label in labels])
+        labels_array = np.ones(shape=(len(labels), max_label_length, 2), dtype=np.float32)
+        for i, label in enumerate(labels):
+            labels_array[i][:len(label)] = label
+        labels = labels_array
 
         from datasets.loaders import SubsetLoader
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
         mask = np.zeros_like(labels)
-        # mask = np.ones_like(labels)
         mask[:, 15] = 1
         # mask[:, 16] = 1
+        # mask = np.ones_like(labels)
         labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
 
         if normalize_predictions:

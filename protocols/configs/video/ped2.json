@@ -50,7 +50,7 @@
         "use_random_negative": false
     },
     "seed": 42,
-    "epochs": 100,
+    "epochs": 20,
     "steps_per_epoch": 2000,
     "validation_steps": 256
 }

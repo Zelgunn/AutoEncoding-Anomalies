@@ -13,8 +13,8 @@ def main():
     }
 
     train = 0
-    initial_epoch = 8
-    dataset = "ped2"
+    initial_epoch = 20
+    dataset = "entrance"
 
     if initial_epoch is None:
         if train:
@@ -43,10 +43,10 @@ def main():
     else:
         raise ValueError(dataset)
 
-    # root = r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\subway"
+    # root = r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped1"
     #
-    # input_video = root + r"\exit\Subway_Exit.avi"
-    # output_video = root + r"\subway_exit.avi"
+    # input_video = root + r"\Test\Test014"
+    # output_video = root + r"\output.avi"
     #
     # protocol.autoencode_video(video_source=input_video,
     #                           target_path=output_video,

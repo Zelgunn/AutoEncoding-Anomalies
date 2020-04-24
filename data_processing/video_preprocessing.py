@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from preprocessing.common import dropout_noise
+from data_processing.common import dropout_noise
 
 
 def make_video_augmentation(length: int, height: int, width: int, channels: int,
@@ -36,6 +36,8 @@ def make_video_preprocess(height: int, width: int, to_grayscale: bool):
             rgb_weights = tf.reshape(rgb_weights, [1, 1, 1, 3])
             video *= rgb_weights
             video = tf.reduce_sum(video, axis=-1, keepdims=True)
+
+        video = tf.image.per_image_standardization(video)
 
         if labels is None:
             return video

@@ -2,13 +2,13 @@ import tensorflow as tf
 from tensorflow.python.keras.models import Model, Sequential
 from tensorflow.python.keras.layers import Input, Reshape, Concatenate, Lambda, AveragePooling1D, UpSampling1D
 
-from models import AE
-from models.auxiliary.EBL3 import EBL3
+from custom_tf_models import AE
+from custom_tf_models.auxiliary.EBL3 import EBL3
 from protocols.utils import get_encoder_layers, get_decoder_layers, to_sequential
 from modalities import Pattern, ModalityLoadInfo, RawVideo, MelSpectrogram
-from preprocessing.video_preprocessing import make_video_preprocess
+from data_processing.video_preprocessing import make_video_preprocess
 from protocols import Protocol, ProtocolTrainConfig
-from callbacks.configs import ImageCallbackConfig, AUCCallbackConfig
+from callbacks.configs import ImageCallbackConfig
 from CustomKerasLayers import ResBlock1D
 
 

@@ -1,17 +1,20 @@
+import tensorflow as tf
 from tensorflow.python.keras import Model
 from abc import abstractmethod
-from typing import List
+import numpy as np
+import cv2
+from typing import List, Tuple
 
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
-from models import AE, IAE
-from models.autoregressive import SAAM, AND
-from models.adversarial import IAEGAN, VAEGAN
-from models.energy_based import EBGAN
-from preprocessing.video_preprocessing import make_video_augmentation, make_video_preprocess
+from custom_tf_models import AE, IAE
+from custom_tf_models.autoregressive import SAAM, AND
+from custom_tf_models.adversarial import IAEGAN, VAEGAN
+from custom_tf_models.energy_based import EBGAN
+from data_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
 
 
 # from misc_utils.train_utils import ScaledSchedule
@@ -361,7 +364,7 @@ class VideoProtocol(DatasetProtocol):
     @property
     def base_learning_rate_schedule(self):
         learning_rate = self.learning_rate
-        # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.9, staircase=True)
+        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
         # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         return learning_rate
 
@@ -411,40 +414,70 @@ class VideoProtocol(DatasetProtocol):
 
     def autoencode_video(self, video_source, target_path: str, load_epoch: int, fps=25.0):
         from datasets.data_readers import VideoReader
+        from custom_tf_models.utils import reduce_std_from, reduce_mean_from
         from tqdm import tqdm
-        import numpy as np
-        import cv2
 
         self.load_weights(epoch=load_epoch)
 
         video_reader = VideoReader(video_source)
         output_size = (self.width, self.height)
-        video_writer = cv2.VideoWriter(target_path, cv2.VideoWriter.fourcc(*"H264"),
-                                       fps, output_size)
-        frames = []
+        video_writer = cv2.VideoWriter(target_path, cv2.VideoWriter.fourcc(*"H264"), fps, output_size)
 
+        frames = []
+        i = 0
         for frame in tqdm(video_reader, total=video_reader.frame_count):
-            if frame.dtype == np.uint8:
-                frame = frame.astype(np.float32)
-                frame /= 255
-            frame = cv2.resize(frame, dsize=(self.width, self.height))
-            if frame.ndim == 2:
-                frame = np.expand_dims(frame, axis=-1)
-            else:
-                frame = np.mean(frame, axis=-1, keepdims=True)
             frames.append(frame)
+            i += 1
 
             if len(frames) == self.output_length:
-                inputs = np.expand_dims(np.stack(frames, axis=0), axis=0)
+                inputs = np.stack(frames, axis=0)
+
+                if inputs.ndim == 3:
+                    inputs = np.expand_dims(inputs, axis=-1)
+
+                inputs = tf.image.resize(inputs, output_size)
+
+                std = reduce_std_from(inputs, keepdims=True)
+                mean = reduce_mean_from(inputs, keepdims=True)
+                inputs = (inputs - mean) / std
+                inputs = tf.expand_dims(inputs, axis=0)
+
                 outputs = self.autoencoder(inputs)
-                for output in outputs.numpy()[0]:
-                    output = cv2.resize(output, output_size)
-                    output = np.clip(output, 0.0, 1.0)
-                    output = (output * 255).astype(np.uint8)
-                    if output.ndim == 2:
-                        output = np.expand_dims(output, axis=-1)
-                        output = np.tile(output, reps=[1, 1, 3])
-                    video_writer.write(output)
-                frames = []
+                outputs = tf.squeeze(outputs, axis=0)
+                outputs = outputs * std + mean
+                outputs = outputs.numpy()
+
+                if i < video_reader.frame_count:
+                    write_frame(video_writer, outputs[0], output_size)
+                else:
+                    for output in outputs:
+                        write_frame(video_writer, output, output_size)
+
+                frames.pop(0)
 
         video_writer.release()
+
+    def process_frame(self, frame):
+        if frame.dtype == np.uint8:
+            frame = frame.astype(np.float32)
+            frame /= 255
+
+        frame = cv2.resize(frame, dsize=(self.width, self.height))
+
+        if frame.ndim == 2:
+            frame = np.expand_dims(frame, axis=-1)
+        else:
+            frame = np.mean(frame, axis=-1, keepdims=True)
+
+        return frame
+
+
+def write_frame(video_writer: cv2.VideoWriter, frame: np.ndarray, output_size: Tuple[int, int]):
+    frame = cv2.resize(frame, output_size)
+    frame = frame.astype(np.uint8)
+
+    if frame.ndim == 2:
+        frame = np.expand_dims(frame, axis=-1)
+        frame = np.tile(frame, reps=[1, 1, 3])
+
+    video_writer.write(frame)

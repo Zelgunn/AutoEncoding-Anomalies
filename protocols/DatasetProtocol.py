@@ -4,11 +4,13 @@ from abc import abstractmethod
 from typing import Callable, Dict, Optional, List
 import json
 import os
+from shutil import copyfile
 
+from datasets.tfrecord_builders import tfrecords_config_filename
+from modalities import Pattern
 from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
 from callbacks.configs import AUCCallbackConfig
-from modalities import Pattern
-from models import IAE
+from custom_tf_models import IAE
 
 
 class DatasetProtocol(Protocol):
@@ -116,7 +118,8 @@ class DatasetProtocol(Protocol):
 
     def make_log_dir(self, sub_folder: str) -> str:
         log_dir = super(DatasetProtocol, self).make_log_dir(sub_folder)
-        self.save_config(log_dir)
+        self.save_model_config(log_dir)
+        self.save_dataset_config(log_dir)
         return log_dir
 
     # region Config
@@ -139,10 +142,15 @@ class DatasetProtocol(Protocol):
             config = json.load(config_file)
         return config
 
-    def save_config(self, log_dir: str):
+    def save_model_config(self, log_dir: str):
         config_path = os.path.join(log_dir, "main_config.json")
         with open(config_path, 'w') as config_file:
             json.dump(self.config, config_file)
+
+    def save_dataset_config(self, log_dir: str):
+        source_path = os.path.join(self.dataset_folder, tfrecords_config_filename)
+        target_path = os.path.join(log_dir, "dataset_{}".format(tfrecords_config_filename))
+        copyfile(src=source_path, dst=target_path)
 
     @property
     def epochs(self) -> int:

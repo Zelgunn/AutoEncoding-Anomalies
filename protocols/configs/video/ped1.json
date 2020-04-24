@@ -2,55 +2,54 @@
     "model_architecture": "iaegan",
     "step_size": 8,
     "step_count": 4,
-    "height": 160,
-    "width": 240,
+    "height": 96,
+    "width": 160,
     "code_size": 64,
     "code_activation": "tanh",
     "kernel_size": 3,
     "encoder": {
-        "filters": [8, 16, 32, 32, 64, 64],
+        "filters": [8, 32, 32, 64, 64],
         "strides": [
             [1, 2, 2],
             [1, 2, 2],
             [2, 1, 1],
             [1, 2, 2],
-            [2, 1, 1],
-            [1, 2, 2]
+            [2, 1, 1]
         ]
     },
     "decoder": {
-        "filters": [64, 64, 32, 32, 16, 8],
+        "filters": [64, 64, 32, 32, 8],
         "strides": [
             [1, 2, 2],
             [2, 1, 1],
             [1, 2, 2],
-            [2, 1, 1],
             [1, 2, 2],
-            [1, 2, 2]
+            [2, 1, 1]
         ]
     },
     "discriminator": {
-        "filters": [8, 16, 32, 64, 64],
+        "filters": [8, 16, 32, 64, 64, 32],
         "strides": [
             [2, 2, 2],
             [1, 2, 2],
             [2, 2, 2],
             [1, 2, 2],
-            [2, 2, 2]
+            [2, 1, 1],
+            [1, 1, 1]
         ],
-        "intermediate_size" : 32
+        "intermediate_size": 32
     },
     "output_activation": "linear",
-    "batch_size": 4,
-    "learning_rate": 1e-3,
+    "batch_size": 6,
+    "learning_rate": 1e-4,
     "data_augmentation": {
-        "crop_ratio": 0.0,
+        "crop_ratio": 0.2,
         "dropout_noise_ratio": 0.0,
         "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
     },
     "seed": 42,
-    "epochs": 100,
+    "epochs": 20,
     "steps_per_epoch": 2000,
-    "validation_steps": 128
+    "validation_steps": 256
 }
