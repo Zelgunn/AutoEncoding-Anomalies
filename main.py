@@ -12,9 +12,9 @@ def main():
         "entrance": 97,
     }
 
-    train = 0
-    initial_epoch = 20
-    dataset = "entrance"
+    train = 1
+    initial_epoch = 0
+    dataset = "ped2"
 
     if initial_epoch is None:
         if train:

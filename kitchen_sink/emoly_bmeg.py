@@ -341,7 +341,7 @@ def main():
             ModalityLoadInfo(RawVideo, length=video_length),
             ModalityLoadInfo(Faces, length=video_length),
         ),
-        output_map=augment
+        preprocessor=augment
     )
     # endregion
 
@@ -352,7 +352,7 @@ def main():
             ModalityLoadInfo(RawVideo, length=video_length),
             ModalityLoadInfo(Faces, length=video_length),
         ),
-        output_map=preprocess
+        preprocessor=preprocess
     )
 
     # region AUC callback

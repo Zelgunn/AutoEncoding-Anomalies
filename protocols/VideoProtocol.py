@@ -213,7 +213,7 @@ class VideoProtocol(DatasetProtocol):
 
         pattern = Pattern(
             ModalityLoadInfo(RawVideo, self.output_length),
-            output_map=augment_video
+            preprocessor=augment_video
         )
         return pattern
 
@@ -222,7 +222,7 @@ class VideoProtocol(DatasetProtocol):
 
         pattern = Pattern(
             ModalityLoadInfo(RawVideo, self.output_length),
-            output_map=video_preprocess
+            preprocessor=video_preprocess
         )
         return pattern
 

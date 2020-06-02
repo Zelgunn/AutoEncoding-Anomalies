@@ -283,7 +283,7 @@ def main():
             ModalityLoadInfo(MelSpectrogram, length=audio_load_length),
             ModalityLoadInfo(RawVideo, length=video_load_length),
         ),
-        output_map=preprocess
+        preprocessor=preprocess
     )
     # endregion
 
@@ -296,7 +296,7 @@ def main():
                                     ModalityLoadInfo(MelSpectrogram, length=audio_step_length),
                                     ModalityLoadInfo(RawVideo, length=video_step_length),
                                 ),
-                                output_map=preprocess
+                                preprocessor=preprocess
                             ),
                             is_train_callback=True,
                             name="FocusPreview",
