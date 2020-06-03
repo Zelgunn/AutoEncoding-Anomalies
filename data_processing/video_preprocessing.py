@@ -5,15 +5,13 @@ from data_processing.common import dropout_noise
 
 def make_video_augmentation(length: int, height: int, width: int, channels: int,
                             seed,
-                            crop_ratio=0.0,
                             dropout_noise_ratio=0.0,
                             negative_prob=0.0,
                             ):
-    preprocess_video = make_video_preprocess(height=height, width=width, to_grayscale=channels == 3)
+    to_grayscale = channels == 3
 
     def augment_video(video: tf.Tensor) -> tf.Tensor:
-        if crop_ratio > 0.0:
-            video = video_random_cropping(video, crop_ratio, length, seed=seed)
+        video = tf.image.random_crop(video, size=(length, height, width, channels), seed=seed)
 
         if dropout_noise_ratio > 0.0:
             video = video_dropout_noise(video, dropout_noise_ratio, spatial_prob=0.1, seed=seed)
@@ -21,7 +19,10 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
         if negative_prob > 0.0:
             video = random_image_negative(video, negative_prob=negative_prob, seed=seed)
 
-        video = preprocess_video(video)
+        if to_grayscale:
+            video = convert_to_grayscale(video)
+
+        video = tf.image.per_image_standardization(video)
         return video
 
     return augment_video
@@ -29,13 +30,10 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
 
 def make_video_preprocess(height: int, width: int, to_grayscale: bool):
     def preprocess(video: tf.Tensor, labels: tf.Tensor = None):
-        video = tf.image.resize(video, (height, width))
+        # video = tf.image.resize(video, (height, width))
 
         if to_grayscale:
-            rgb_weights = [0.2989, 0.5870, 0.1140]
-            rgb_weights = tf.reshape(rgb_weights, [1, 1, 1, 3])
-            video *= rgb_weights
-            video = tf.reduce_sum(video, axis=-1, keepdims=True)
+            video = convert_to_grayscale(video)
 
         video = tf.image.per_image_standardization(video)
 
@@ -75,3 +73,11 @@ def random_image_negative(image, negative_prob=0.5, seed=None):
                     true_fn=lambda: 1.0 - image,
                     false_fn=lambda: image)
     return image
+
+
+def convert_to_grayscale(images: tf.Tensor):
+    rgb_weights = [0.2989, 0.5870, 0.1140]
+    rgb_weights = tf.reshape(rgb_weights, [1, 1, 1, 3])
+    images *= rgb_weights
+    images = tf.reduce_sum(images, axis=-1, keepdims=True)
+    return images

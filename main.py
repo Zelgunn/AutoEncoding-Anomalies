@@ -43,15 +43,16 @@ def main():
     else:
         raise ValueError(dataset)
 
-    # root = r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped1"
+    # root = r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped2"
     #
-    # input_video = root + r"\Test\Test014"
+    # input_video = root + r"\Test\Test004"
     # output_video = root + r"\output.avi"
     #
     # protocol.autoencode_video(video_source=input_video,
     #                           target_path=output_video,
     #                           load_epoch=initial_epoch,
-    #                           fps=25.0)
+    #                           fps=25.0,
+    #                           output_size=(128, 128))
     #
     # exit()
 

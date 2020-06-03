@@ -15,6 +15,7 @@ def make_encoder(input_shape: Tuple[int, ...],
                  code_size: int,
                  code_activation: Union[str, Layer],
                  model_depth: int,
+                 basic_block_count=1,
                  seed=None,
                  name="ResidualEncoder"
                  ) -> Sequential:
@@ -25,6 +26,7 @@ def make_encoder(input_shape: Tuple[int, ...],
                                 code_size=code_size,
                                 code_activation=code_activation,
                                 model_depth=model_depth,
+                                basic_block_count=basic_block_count,
                                 seed=seed)
 
     return to_sequential(layers=layers, input_shape=input_shape, name=name)
@@ -37,6 +39,7 @@ def make_decoder(input_shape: Tuple[int, ...],
                  channels: int,
                  output_activation: Union[str, Layer],
                  model_depth: int,
+                 basic_block_count=1,
                  seed=None,
                  name="ResidualDecoder"
                  ) -> Sequential:
@@ -47,6 +50,7 @@ def make_decoder(input_shape: Tuple[int, ...],
                                 channels=channels,
                                 output_activation=output_activation,
                                 model_depth=model_depth,
+                                basic_block_count=basic_block_count,
                                 seed=seed)
 
     return to_sequential(layers=layers, input_shape=input_shape, name=name)

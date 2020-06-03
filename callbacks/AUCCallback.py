@@ -2,10 +2,12 @@ import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras import metrics
 from tensorflow.python.keras.callbacks import TensorBoard
+from tensorflow.python.ops import summary_ops_v2
+from tensorflow.python.eager import context
 import numpy as np
 import cv2
 from time import time
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Callable
 
 from anomaly_detection import IOCompareModel
 from callbacks import TensorBoardPlugin
@@ -60,7 +62,8 @@ class AUCWrapper(object):
         self.reset_states()
         self.update_state(y_true, y_pred)
         auc_scalar = self.result()
-        tf.summary.scalar(name=self.base_name + "_scalar", data=auc_scalar, step=step)
+        tf.print(self.base_name, auc_scalar)
+        summary_ops_v2.scalar(name=self.base_name + "_scalar", tensor=auc_scalar, step=step)
 
     def write_plot_summary(self, step):
         if self.plot_size is None:
@@ -149,9 +152,10 @@ class AUCCallback(TensorBoardPlugin):
         pred_min = predictions.min()
         predictions = (predictions - pred_min) / (predictions.max() - pred_min)
 
-        with self.validation_run_writer.as_default():
-            self._write_auc_summary(predictions, index)
-            # self.roc.write_plot_summary(index)
+        with context.eager_mode():
+            with summary_ops_v2.always_record_summaries():
+                with self.validation_run_writer.as_default():
+                    self._write_auc_summary(predictions, index)
         print("AUCCallback `{}` took {:.2f} seconds.".format(self.name, time() - start_time))
 
     def _write_auc_summary(self, predictions, step):
@@ -170,9 +174,23 @@ class AUCCallback(TensorBoardPlugin):
                         resized_predictions[j] = cv2.resize(predictions[j], dsize, interpolation=cv2.INTER_AREA)
                     predictions = resized_predictions
                 else:
-                    predictions = np.reshape(predictions, self.labels.shape)
+                    predictions = self.reshape_predictions_to_labels(predictions)
             else:
-                predictions = np.reshape(predictions, self.labels.shape)
+                predictions = self.reshape_predictions_to_labels(predictions)
+        return predictions
+
+    def reshape_predictions_to_labels(self, predictions):
+        labels_size = np.prod(self.labels.shape)
+        if predictions.size == labels_size:
+            predictions = np.reshape(predictions, self.labels.shape)
+        else:
+            ratio = predictions.size // labels_size
+            if int(predictions.size / labels_size) != ratio or ratio < 1:
+                raise ValueError("Could not reshape predictions with shape {} to match labels with shape {}"
+                                 .format(predictions.shape, self.labels.shape))
+            predictions = np.reshape(predictions, [self.labels.shape[0], ratio, *self.labels.shape[1:]])
+            predictions = np.sum(predictions, axis=1)
+
         return predictions
 
     @staticmethod

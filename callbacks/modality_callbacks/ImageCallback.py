@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
-from typing import List, Union
+from typing import List, Union, Callable
 
 from callbacks import ModalityCallback
 from misc_utils.summary_utils import image_summary, convert_tensors_uint8, check_image_video_rank, use_video_summary
@@ -17,6 +17,7 @@ class ImageCallback(ModalityCallback):
                  outputs: Union[tf.Tensor, List[tf.Tensor]] = None,
                  compare_to_ground_truth=True,
                  logged_output_indices=0,
+                 postprocessor: Callable = None,
                  name: str = "ImageCallback",
                  max_outputs: int = 4,
                  video_sample_rate: List[int] = None,
@@ -26,7 +27,8 @@ class ImageCallback(ModalityCallback):
                                             tensorboard=tensorboard, is_train_callback=is_train_callback,
                                             update_freq=update_freq, epoch_freq=epoch_freq,
                                             outputs=outputs, logged_output_indices=logged_output_indices,
-                                            name=name, max_outputs=max_outputs, **kwargs)
+                                            name=name, max_outputs=max_outputs, postprocessor=postprocessor,
+                                            **kwargs)
         if video_sample_rate is None:
             video_sample_rate = [25, ]
         elif isinstance(video_sample_rate, int):
@@ -39,6 +41,8 @@ class ImageCallback(ModalityCallback):
 
     def write_model_summary(self, step: int):
         pred_outputs = self.summary_model(self.inputs)
+        if self.postprocessor is not None:
+            pred_outputs = self.postprocessor(pred_outputs)
 
         pred_outputs = self.extract_logged_modalities(pred_outputs)
         pred_outputs = convert_tensors_uint8(pred_outputs)

@@ -153,12 +153,13 @@ class Protocol(object):
         if config.additional_metrics is not None:
             additional_metrics = [*additional_metrics, *config.additional_metrics]
 
+        pattern = config.pattern  # .with_added_depth().with_added_depth()
         anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
+                                           pattern=pattern,
                                            compare_metrics=compare_metrics,
                                            additional_metrics=additional_metrics)
 
         log_dir = self.make_log_dir("anomaly_detection")
-        pattern = config.pattern  # .with_added_depth().with_added_depth()
 
         if self.dataset_name is "emoly":
             folders = self.dataset_loader.test_subset.subset_folders
@@ -166,7 +167,6 @@ class Protocol(object):
             self.dataset_loader.test_subset.subset_folders = folders
 
         anomaly_detector.predict_and_evaluate(dataset=self.dataset_loader,
-                                              pattern=pattern,
                                               log_dir=log_dir,
                                               stride=config.detector_stride,
                                               pre_normalize_predictions=config.pre_normalize_predictions,

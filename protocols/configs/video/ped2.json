@@ -1,14 +1,14 @@
 {
-    "model_architecture": "iaegan",
+    "model_architecture": "iae",
     "step_size": 8,
     "step_count": 4,
-    "height": 128,
-    "width": 128,
+    "height": 32,
+    "width": 32,
     "code_size": 64,
     "code_activation": "tanh",
     "kernel_size": 3,
     "encoder": {
-        "filters": [8, 16, 32, 64, 64, 64],
+        "filters": [8, 12, 18, 27, 40, 64],
         "strides": [
             [1, 2, 2],
             [1, 2, 2],
@@ -19,7 +19,7 @@
         ]
     },
     "decoder": {
-        "filters": [64, 64, 64, 32, 32, 8],
+        "filters": [64, 40, 27, 18, 12, 8],
         "strides": [
             [1, 2, 2],
             [1, 2, 2],
@@ -41,7 +41,7 @@
         "intermediate_size": 32
     },
     "output_activation": "linear",
-    "batch_size": 8,
+    "batch_size": 32,
     "learning_rate": 1e-3,
     "data_augmentation": {
         "crop_ratio": 0.2,

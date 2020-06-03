@@ -1,3 +1,4 @@
+import tensorflow as tf
 from tensorflow.python.keras import Model
 from typing import Union, List, Callable
 
@@ -7,10 +8,12 @@ from anomaly_detection import IOCompareLayer
 class IOCompareModel(Model):
     def __init__(self,
                  autoencoder: Callable,
+                 postprocessor: Callable = None,
                  metrics: List[Union[str, Callable]] = "mse",
                  **kwargs):
         super(IOCompareModel, self).__init__(**kwargs)
         self.autoencoder = autoencoder
+        self.postprocessor = postprocessor
 
         if not isinstance(metrics, list):
             metrics = [metrics]
@@ -33,6 +36,9 @@ class IOCompareModel(Model):
             ground_truth = ground_truth[0]
 
         decoded = self.autoencoder(inputs)
+        if self.postprocessor is not None:
+            decoded = self.postprocessor(decoded)
+            ground_truth = self.postprocessor(ground_truth)
 
         predictions = []
         for io_compare_layer in self.io_compare_layers:

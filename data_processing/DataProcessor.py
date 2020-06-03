@@ -4,14 +4,17 @@ from typing import Union, List, Tuple
 
 
 class DataProcessor(ABC):
-    @abstractmethod
     def pre_process(self,
                     inputs: Union[tf.Tensor, List, Tuple]
                     ) -> Union[tf.Tensor, List, Tuple]:
-        raise NotImplementedError
+        return inputs
 
-    @abstractmethod
+    def batch_process(self,
+                      inputs: Union[tf.Tensor, List, Tuple]
+                      ) -> Union[tf.Tensor, List, Tuple]:
+        return inputs
+
     def post_process(self,
                      inputs: Union[tf.Tensor, List, Tuple]
                      ) -> Union[tf.Tensor, List, Tuple]:
-        raise NotImplementedError
+        return inputs

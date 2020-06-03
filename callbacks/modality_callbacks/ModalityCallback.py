@@ -19,6 +19,7 @@ class ModalityCallback(TensorBoardPlugin, ABC):
                  epoch_freq: int = None,
                  outputs: Union[tf.Tensor, List[tf.Tensor]] = None,
                  logged_output_indices=0,
+                 postprocessor: Callable = None,
                  name: str = "ModalityCallback",
                  max_outputs: int = 4,
                  **kwargs
@@ -28,6 +29,7 @@ class ModalityCallback(TensorBoardPlugin, ABC):
 
         self.inputs = inputs
         self.outputs = inputs if outputs is None else outputs
+        self.postprocessor = postprocessor
         self.summary_model = model
         self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
 
@@ -37,6 +39,8 @@ class ModalityCallback(TensorBoardPlugin, ABC):
         self.name = name
         self.max_outputs = max_outputs
 
+        if self.postprocessor is not None:
+            self.outputs = self.postprocessor(self.outputs)
         self.true_outputs = self.extract_logged_modalities(self.outputs)
 
     def _write_logs(self, index):
@@ -94,8 +98,8 @@ class ModalityCallback(TensorBoardPlugin, ABC):
         if modality_indices is None:
             modality_indices = 0
 
-        one_shot_callback = cls(inputs=inputs, outputs=outputs, model=autoencoder,
-                                tensorboard=tensorboard, is_train_callback=is_train_callback,
+        one_shot_callback = cls(inputs=inputs, outputs=outputs, postprocessor=pattern.postprocessor,
+                                model=autoencoder, tensorboard=tensorboard, is_train_callback=is_train_callback,
                                 update_freq=update_freq, epoch_freq=epoch_freq,
                                 logged_output_indices=modality_indices,
                                 name=name, max_outputs=max_outputs,

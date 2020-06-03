@@ -3,7 +3,7 @@ from tensorflow.python.keras import Model
 from abc import abstractmethod
 import numpy as np
 import cv2
-from typing import List, Tuple
+from typing import List, Tuple, Callable, Union
 
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
@@ -15,6 +15,7 @@ from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN
 from data_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
+from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
 
 # from misc_utils.train_utils import ScaledSchedule
@@ -155,6 +156,7 @@ class VideoProtocol(DatasetProtocol):
                                code_size=self.code_size,
                                code_activation=self.code_activation,
                                model_depth=self.model_depth,
+                               basic_block_count=2,
                                seed=self.seed,
                                name=name,
                                )
@@ -168,6 +170,7 @@ class VideoProtocol(DatasetProtocol):
                                channels=1,
                                output_activation=self.output_activation,
                                model_depth=self.model_depth,
+                               basic_block_count=2,
                                seed=self.seed,
                                name=name,
                                )
@@ -219,10 +222,13 @@ class VideoProtocol(DatasetProtocol):
 
     def get_image_pattern(self) -> Pattern:
         video_preprocess = self.make_video_preprocess()
+        video_patch_extractor = VideoPatchExtractor(patch_size=self.height)
 
         pattern = Pattern(
             ModalityLoadInfo(RawVideo, self.output_length),
-            preprocessor=video_preprocess
+            preprocessor=video_preprocess,
+            batch_processor=video_patch_extractor.batch_process,
+            postprocessor=video_patch_extractor.post_process,
         )
         return pattern
 
@@ -231,22 +237,24 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
-    # region Pre-processes
-    def make_video_augmentation(self):
+    # region Pre-processes / Post-process
+    def make_video_augmentation(self) -> Callable:
         negative_prob = 0.5 if self.use_random_negative else 0.0
         return make_video_augmentation(length=self.output_length,
                                        height=self.height,
                                        width=self.width,
                                        channels=self.dataset_channels,
-                                       crop_ratio=self.crop_ratio,
                                        dropout_noise_ratio=self.dropout_noise_ratio,
                                        negative_prob=negative_prob,
                                        seed=self.seed)
 
-    def make_video_preprocess(self):
+    def make_video_preprocess(self) -> Callable:
         return make_video_preprocess(height=self.height,
                                      width=self.width,
                                      to_grayscale=self.dataset_channels == 3)
+
+    def make_video_post_process(self) -> Callable:
+        pass
 
     # endregion
 
@@ -412,7 +420,13 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
-    def autoencode_video(self, video_source, target_path: str, load_epoch: int, fps=25.0):
+    def autoencode_video(self,
+                         video_source,
+                         target_path: str,
+                         load_epoch: int,
+                         fps=25.0,
+                         output_size: Tuple[int, int] = None
+                         ):
         from datasets.data_readers import VideoReader
         from custom_tf_models.utils import reduce_std_from, reduce_mean_from
         from tqdm import tqdm
@@ -420,8 +434,10 @@ class VideoProtocol(DatasetProtocol):
         self.load_weights(epoch=load_epoch)
 
         video_reader = VideoReader(video_source)
-        output_size = (self.width, self.height)
+        output_size = output_size if output_size is not None else (self.width, self.height)
         video_writer = cv2.VideoWriter(target_path, cv2.VideoWriter.fourcc(*"H264"), fps, output_size)
+
+        pattern = self.get_image_pattern()
 
         frames = []
         i = 0
@@ -442,7 +458,14 @@ class VideoProtocol(DatasetProtocol):
                 inputs = (inputs - mean) / std
                 inputs = tf.expand_dims(inputs, axis=0)
 
+                if pattern.batch_processor is not None:
+                    inputs = pattern.batch_processor(inputs)
+
                 outputs = self.autoencoder(inputs)
+
+                if pattern.postprocessor is not None:
+                    outputs = pattern.postprocessor(outputs)
+
                 outputs = tf.squeeze(outputs, axis=0)
                 outputs = outputs * std + mean
                 outputs = outputs.numpy()

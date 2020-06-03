@@ -15,6 +15,7 @@ from modalities import Pattern
 class AnomalyDetector(Model):
     def __init__(self,
                  autoencoder: Callable,
+                 pattern: Pattern,
                  compare_metrics: List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]] = "mse",
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
                  **kwargs
@@ -22,13 +23,19 @@ class AnomalyDetector(Model):
         """
 
         :param autoencoder:
+        :param pattern:
         :param compare_metrics:
         :param additional_metrics:
         :param kwargs:
         """
         super(AnomalyDetector, self).__init__(**kwargs)
 
+        self.autoencoder = autoencoder
+        self.pattern = pattern
+        self.compare_metrics = compare_metrics
+
         self.io_compare_model = IOCompareModel(autoencoder=autoencoder,
+                                               postprocessor=self.pattern.postprocessor,
                                                metrics=compare_metrics)
         self.additional_metrics = to_list(additional_metrics) if additional_metrics is not None else []
 
@@ -43,16 +50,25 @@ class AnomalyDetector(Model):
     @tf.function
     def call(self, inputs, training=None, mask=None):
         inputs, ground_truth = inputs
+
+        inputs = tf.expand_dims(inputs, axis=0)
+        ground_truth = tf.expand_dims(ground_truth, axis=0)
+
+        if self.pattern.batch_processor is not None:
+            inputs = self.pattern.batch_processor(inputs)
+            ground_truth = self.pattern.batch_processor(ground_truth)
+
         predictions = self.io_compare_model([inputs, ground_truth])
 
         for additional_metric in self.additional_metrics:
-            predictions.append(additional_metric(inputs))
+            prediction = additional_metric(inputs)
+            prediction = tf.reduce_mean(prediction, axis=0, keepdims=True)
+            predictions.append(prediction)
 
         return predictions
 
     def predict_and_evaluate(self,
                              dataset: DatasetLoader,
-                             pattern: Pattern,
                              log_dir: str,
                              stride=1,
                              pre_normalize_predictions=True,
@@ -60,7 +76,6 @@ class AnomalyDetector(Model):
                              additional_config: Dict[str, Any] = None,
                              ):
         predictions, labels = self.predict_anomalies(dataset=dataset,
-                                                     pattern=pattern,
                                                      stride=stride,
                                                      pre_normalize_predictions=pre_normalize_predictions,
                                                      max_samples=max_samples)
@@ -91,13 +106,11 @@ class AnomalyDetector(Model):
     # region Predict anomaly scores
     def predict_anomalies(self,
                           dataset: DatasetLoader,
-                          pattern: Pattern,
                           stride=1,
                           pre_normalize_predictions=True,
                           max_samples=10
                           ) -> Tuple[List[np.ndarray], np.ndarray]:
         predictions, labels = self.predict_anomalies_on_subset(subset=dataset.test_subset,
-                                                               pattern=pattern,
                                                                stride=stride,
                                                                pre_normalize_predictions=pre_normalize_predictions,
                                                                max_samples=max_samples)
@@ -106,7 +119,6 @@ class AnomalyDetector(Model):
 
     def predict_anomalies_on_subset(self,
                                     subset: SubsetLoader,
-                                    pattern: Pattern,
                                     stride: int,
                                     pre_normalize_predictions: bool,
                                     max_samples=10
@@ -120,8 +132,7 @@ class AnomalyDetector(Model):
         for sample_index in range(sample_count):
             sample_name = subset.subset_folders[sample_index]
             print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name))
-            sample_results = self.predict_anomalies_on_sample(subset, pattern,
-                                                              sample_index, stride,
+            sample_results = self.predict_anomalies_on_sample(subset, sample_index, stride,
                                                               normalize_predictions=pre_normalize_predictions)
             sample_predictions, sample_labels = sample_results
             for i in range(self.metric_count):
@@ -132,12 +143,11 @@ class AnomalyDetector(Model):
 
     def predict_anomalies_on_sample(self,
                                     subset: SubsetLoader,
-                                    pattern: Pattern,
                                     sample_index: int,
                                     stride: int,
                                     normalize_predictions=False,
                                     ):
-        dataset = subset.make_source_browser(pattern, sample_index, stride)
+        dataset = subset.make_source_browser(self.pattern, sample_index, stride)
 
         modality_folder = os.path.join(subset.subset_folders[sample_index], "labels")
         modality_files = [os.path.join(modality_folder, file)
@@ -145,7 +155,6 @@ class AnomalyDetector(Model):
         file_count = len(modality_files)
 
         k = 0
-
         predictions, labels = None, []
         for sample in dataset:
             k += 1
@@ -159,10 +168,6 @@ class AnomalyDetector(Model):
                 sample_outputs = sample_inputs
             else:
                 sample_inputs, sample_outputs, sample_labels = sample
-
-            sample_inputs = tf.expand_dims(sample_inputs, axis=0)
-            sample_outputs = tf.expand_dims(sample_outputs, axis=0)
-            # sample_labels = tf.expand_dims(sample_labels, axis=0)
 
             sample_predictions = self([sample_inputs, sample_outputs])
 
@@ -182,7 +187,6 @@ class AnomalyDetector(Model):
             labels_array[i][:len(label)] = label
         labels = labels_array
 
-        from datasets.loaders import SubsetLoader
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
         mask = np.zeros_like(labels)
         mask[:, 15] = 1
