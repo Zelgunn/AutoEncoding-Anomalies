@@ -5,16 +5,17 @@ from scipy.optimize import brentq
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import os
-from typing import Union, List, Callable, Dict, Any, Tuple
+from typing import Union, List, Callable, Dict, Any, Tuple, Sequence
 
 from anomaly_detection import IOCompareModel
 from datasets import DatasetLoader, SubsetLoader
 from modalities import Pattern
+from custom_tf_models import AE
 
 
 class AnomalyDetector(Model):
     def __init__(self,
-                 autoencoder: Callable,
+                 autoencoder: Union[Callable, AE],
                  pattern: Pattern,
                  compare_metrics: List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]] = "mse",
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
@@ -54,9 +55,8 @@ class AnomalyDetector(Model):
         inputs = tf.expand_dims(inputs, axis=0)
         ground_truth = tf.expand_dims(ground_truth, axis=0)
 
-        if self.pattern.batch_processor is not None:
-            inputs = self.pattern.batch_processor(inputs)
-            ground_truth = self.pattern.batch_processor(ground_truth)
+        inputs = self.pattern.process_batch(inputs)
+        ground_truth = self.pattern.process_batch(ground_truth)
 
         predictions = self.io_compare_model([inputs, ground_truth])
 
@@ -108,7 +108,7 @@ class AnomalyDetector(Model):
                           dataset: DatasetLoader,
                           stride=1,
                           pre_normalize_predictions=True,
-                          max_samples=10
+                          max_samples=-1
                           ) -> Tuple[List[np.ndarray], np.ndarray]:
         predictions, labels = self.predict_anomalies_on_subset(subset=dataset.test_subset,
                                                                stride=stride,
@@ -121,13 +121,13 @@ class AnomalyDetector(Model):
                                     subset: SubsetLoader,
                                     stride: int,
                                     pre_normalize_predictions: bool,
-                                    max_samples=10
+                                    max_samples=-1
                                     ) -> Tuple[List[List[np.ndarray]], List[np.ndarray]]:
         labels = []
         predictions = [[] for _ in range(self.metric_count)]
 
         sample_count = min(max_samples, len(subset.subset_folders)) if max_samples > 0 else len(subset.subset_folders)
-        print("Making predictions for {} videos".format(sample_count))
+        print("Making predictions for {} samples".format(sample_count))
 
         for sample_index in range(sample_count):
             sample_name = subset.subset_folders[sample_index]
@@ -147,28 +147,12 @@ class AnomalyDetector(Model):
                                     stride: int,
                                     normalize_predictions=False,
                                     ):
-        dataset = subset.make_source_browser(self.pattern, sample_index, stride)
+        dataset = subset.make_source_browser(self.pattern, sample_index, stride=stride)
 
-        modality_folder = os.path.join(subset.subset_folders[sample_index], "labels")
-        modality_files = [os.path.join(modality_folder, file)
-                          for file in os.listdir(modality_folder) if file.endswith(".tfrecord")]
-        file_count = len(modality_files)
-
-        k = 0
         predictions, labels = None, []
         for sample in dataset:
-            k += 1
-            if stride > 1:
-                if (k % stride) != 1:
-                    continue
 
-            # TODO : Embed in a tf.function that is also able to return embeddings
-            if len(sample) == 2:
-                sample_inputs, sample_labels = sample
-                sample_outputs = sample_inputs
-            else:
-                sample_inputs, sample_outputs, sample_labels = sample
-
+            sample_inputs, sample_outputs, sample_labels = self.unpack_sample(sample)
             sample_predictions = self([sample_inputs, sample_outputs])
 
             labels.append(sample_labels)
@@ -178,21 +162,8 @@ class AnomalyDetector(Model):
                 for i in range(len(predictions)):
                     predictions[i].append(sample_predictions[i])
 
-            print("{}/{}".format(k, file_count * 32))
-
         predictions = [np.concatenate(metric_prediction, axis=0) for metric_prediction in predictions]
-        max_label_length = max([len(label) for label in labels])
-        labels_array = np.ones(shape=(len(labels), max_label_length, 2), dtype=np.float32)
-        for i, label in enumerate(labels):
-            labels_array[i][:len(label)] = label
-        labels = labels_array
-
-        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
-        mask = np.zeros_like(labels)
-        mask[:, 15] = 1
-        # mask[:, 16] = 1
-        # mask = np.ones_like(labels)
-        labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
+        labels = self.timestamps_labels_to_frame_labels(labels)
 
         if normalize_predictions:
             for i in range(self.metric_count):
@@ -393,9 +364,117 @@ class AnomalyDetector(Model):
                 for key, value in additional_config.items():
                     file.write("{}: {}\n".format(key, value))
 
+    # region Latent space visualization
+
+    def compute_latent_codes_on_dataset(self,
+                                        dataset: DatasetLoader,
+                                        stride=1,
+                                        ) -> Tuple[tf.Tensor, Dict[str, Sequence]]:
+        if not hasattr(self.autoencoder, "encode"):
+            raise ValueError("self.autoencoder doesn't have an `encode` method, thus it cannot provide latent codes.")
+
+        train_latent_codes, train_samples_infos = self.compute_latent_codes_on_subset(subset=dataset.train_subset,
+                                                                                      stride=stride)
+
+        test_latent_codes, test_samples_infos = self.compute_latent_codes_on_subset(subset=dataset.test_subset,
+                                                                                    stride=stride)
+
+        latent_codes = tf.concat([train_latent_codes, test_latent_codes], axis=0)
+        samples_infos = {}
+        for info_names in train_samples_infos:
+            infos = np.concatenate([train_samples_infos[info_names], test_samples_infos[info_names]], axis=0)
+            samples_infos[info_names] = infos
+
+        return latent_codes, samples_infos
+
+    def compute_latent_codes_on_subset(self,
+                                       subset: SubsetLoader,
+                                       stride=1,
+                                       ) -> Tuple[tf.Tensor, Dict[str, Sequence]]:
+        latent_codes: Union[tf.Tensor, List[tf.Tensor]] = []
+        names, labels = [], []
+
+        sample_count = len(subset.subset_folders)
+        print("Computing latent codes for {} samples".format(sample_count))
+
+        for sample_index in range(sample_count):
+            sample_folder = subset.subset_folders[sample_index]
+            print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_folder))
+
+            sample_latent_codes, sample_labels = self.compute_latent_codes_on_sample(subset, sample_index, stride)
+            latent_codes.append(sample_latent_codes)
+
+            sample_name = os.path.split(sample_folder)[-1]
+            names += [sample_name] * len(sample_latent_codes)
+
+            labels.append(sample_labels)
+
+        latent_codes: tf.Tensor = tf.concat(latent_codes, axis=0)
+        labels = np.concatenate(labels, axis=0)
+        samples_infos = {"__name__": names, "__label__": labels}
+        return latent_codes, samples_infos
+
+    def compute_latent_codes_on_sample(self,
+                                       subset: SubsetLoader,
+                                       sample_index: int,
+                                       stride=1,
+                                       ) -> Tuple[tf.Tensor, np.ndarray]:
+        dataset = subset.make_source_browser(self.pattern, sample_index, stride=stride)
+
+        latent_codes, labels = [], []
+
+        for sample in dataset:
+            sample_inputs, _, sample_labels = self.unpack_sample(sample)
+
+            sample_inputs = tf.expand_dims(sample_inputs, axis=0)
+            sample_inputs = self.pattern.process_batch(sample_inputs)
+
+            latent_code = self.autoencoder.encode(sample_inputs)
+            latent_code = tf.reduce_mean(latent_code, axis=[1, 2, 3])
+            latent_code = tf.reshape(latent_code, shape=[-1])
+            latent_codes.append(latent_code)
+            labels.append(sample_labels)
+
+        latent_codes = tf.stack(latent_codes, axis=0)
+        labels = self.timestamps_labels_to_frame_labels(labels)
+        return latent_codes, labels
+
+    # endregion
+
     @property
     def metric_count(self) -> int:
         return len(self.anomaly_metrics_names)
+
+    @staticmethod
+    def unpack_sample(sample: Union[Tuple[tf.Tensor, tf.Tensor], Tuple[tf.Tensor, tf.Tensor, tf.Tensor]]
+                      ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        if len(sample) == 2:
+            sample_inputs, sample_labels = sample
+            sample_outputs = sample_inputs
+
+        elif len(sample) == 3:
+            sample_inputs, sample_outputs, sample_labels = sample
+
+        else:
+            raise ValueError("Length of sample must either be 2 or 3. Found {}".format(len(sample)))
+
+        return sample_inputs, sample_outputs, sample_labels
+
+    @staticmethod
+    def timestamps_labels_to_frame_labels(labels: List[np.ndarray]) -> np.ndarray:
+        max_label_length = max([len(label) for label in labels])
+        labels_array = np.ones(shape=(len(labels), max_label_length, 2), dtype=np.float32)
+        for i, label in enumerate(labels):
+            labels_array[i][:len(label)] = label
+        labels = labels_array
+
+        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
+        mask = np.zeros_like(labels)
+        mask[:, 15] = 1
+        # mask[:, 16] = 1
+        # mask = np.ones_like(labels)
+        labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
+        return labels
 
 
 def adjust_figure_aspect(fig, aspect=1.0):

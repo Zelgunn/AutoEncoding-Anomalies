@@ -1,13 +1,13 @@
-import tensorflow as tf
 from tensorflow.python.keras import Model
 from typing import Union, List, Callable
 
 from anomaly_detection import IOCompareLayer
+from custom_tf_models import AE
 
 
 class IOCompareModel(Model):
     def __init__(self,
-                 autoencoder: Callable,
+                 autoencoder: Union[Callable, AE],
                  postprocessor: Callable = None,
                  metrics: List[Union[str, Callable]] = "mse",
                  **kwargs):
@@ -35,7 +35,7 @@ class IOCompareModel(Model):
             inputs = inputs[0]
             ground_truth = ground_truth[0]
 
-        decoded = self.autoencoder(inputs)
+        decoded = self.autoencode(inputs)
         if self.postprocessor is not None:
             decoded = self.postprocessor(decoded)
             ground_truth = self.postprocessor(ground_truth)
@@ -46,6 +46,12 @@ class IOCompareModel(Model):
             predictions.append(layer_predictions)
 
         return predictions
+
+    def autoencode(self, inputs):
+        if isinstance(self.autoencoder, AE) or hasattr(self.autoencoder, "autoencode"):
+            return self.autoencoder.autoencode(inputs)
+        else:
+            return self.autoencoder(inputs)
 
     def compute_output_signature(self, input_signature):
         raise NotImplementedError

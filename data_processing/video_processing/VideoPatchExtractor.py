@@ -26,7 +26,7 @@ class VideoPatchExtractor(DataProcessor):
         self.original_width.assign(original_width)
         # endregion
 
-        # videos : [batch_size, length, original_height, original_width, channels]
+        # videos : [batch_size, length, original_height, original_wid th, channels]
         videos = tf.reshape(videos, [batch_size * length, original_height, original_width, channels])
         patches = tf.image.extract_patches(videos, sizes=self.patch_shape, strides=self.patch_shape,
                                            rates=(1, 1, 1, 1), padding="VALID")

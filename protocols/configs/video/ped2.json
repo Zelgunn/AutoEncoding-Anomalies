@@ -1,14 +1,14 @@
 {
-    "model_architecture": "iae",
+    "model_architecture": "minimalist_descriptor",
     "step_size": 8,
     "step_count": 4,
     "height": 32,
     "width": 32,
-    "code_size": 64,
+    "code_size": 16,
     "code_activation": "tanh",
     "kernel_size": 3,
     "encoder": {
-        "filters": [8, 12, 18, 27, 40, 64],
+        "filters": [8, 8, 16, 32, 32, 32],
         "strides": [
             [1, 2, 2],
             [1, 2, 2],
@@ -19,7 +19,7 @@
         ]
     },
     "decoder": {
-        "filters": [64, 40, 27, 18, 12, 8],
+        "filters": [32, 32, 32, 16, 8, 8],
         "strides": [
             [1, 2, 2],
             [1, 2, 2],
@@ -41,8 +41,8 @@
         "intermediate_size": 32
     },
     "output_activation": "linear",
-    "batch_size": 32,
-    "learning_rate": 1e-3,
+    "batch_size": 8,
+    "learning_rate": 0.001,
     "data_augmentation": {
         "crop_ratio": 0.2,
         "dropout_noise_ratio": 0.0,
@@ -50,7 +50,7 @@
         "use_random_negative": false
     },
     "seed": 42,
-    "epochs": 20,
-    "steps_per_epoch": 2000,
+    "epochs": 100,
+    "steps_per_epoch": 1000,
     "validation_steps": 256
 }

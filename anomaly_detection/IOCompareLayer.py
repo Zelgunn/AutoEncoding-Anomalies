@@ -48,7 +48,7 @@ known_metrics = {
 
 class IOCompareLayer(Layer):
     """
-    Layer class for making raw predictions for anomaly detection, by using a comparison metric.
+    Layer class for making raw predictions for anomaly detection, using a comparison metric.
 
     Arguments:
         metric: Either a string ("mse", "mae", "ssim", "psnr") or a function that takes two arguments

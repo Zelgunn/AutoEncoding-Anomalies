@@ -43,7 +43,7 @@ def main():
     else:
         raise ValueError(dataset)
 
-    # root = r"D:\Users\Degva\Documents\_PhD\Tensorflow\datasets\ucsd\ped2"
+    # root = r"..\datasets\ucsd\ped2"
     #
     # input_video = root + r"\Test\Test004"
     # output_video = root + r"\output.avi"
@@ -54,6 +54,9 @@ def main():
     #                           fps=25.0,
     #                           output_size=(128, 128))
     #
+    # exit()
+
+    # protocol.log_model_latent_codes(config=protocol.get_test_config())
     # exit()
 
     if train:

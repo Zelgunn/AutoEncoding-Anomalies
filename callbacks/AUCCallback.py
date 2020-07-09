@@ -62,7 +62,7 @@ class AUCWrapper(object):
         self.reset_states()
         self.update_state(y_true, y_pred)
         auc_scalar = self.result()
-        tf.print(self.base_name, auc_scalar)
+        tf.print("\n==== ", self.base_name, auc_scalar, "====")
         summary_ops_v2.scalar(name=self.base_name + "_scalar", tensor=auc_scalar, step=step)
 
     def write_plot_summary(self, step):

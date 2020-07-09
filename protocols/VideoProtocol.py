@@ -3,7 +3,7 @@ from tensorflow.python.keras import Model
 from abc import abstractmethod
 import numpy as np
 import cv2
-from typing import List, Tuple, Callable, Union
+from typing import List, Tuple, Callable
 
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
@@ -14,7 +14,10 @@ from custom_tf_models import AE, IAE
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN
+from custom_tf_models.basic.MinimalistDescriptor import MinimalistDescriptor
 from data_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
+
+
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
 
@@ -47,12 +50,14 @@ class VideoProtocol(DatasetProtocol):
             return self.make_ebgan()
         elif self.model_architecture == "and":
             return self.make_and()
+        elif self.model_architecture == "minimalist_descriptor":
+            return self.make_minimalist_descriptor()
         else:
             raise ValueError("Unknown architecture : {}.".format(self.model_architecture))
 
     def make_ae(self) -> AE:
-        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
         model = AE(encoder=encoder,
                    decoder=decoder,
@@ -60,8 +65,8 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_iae(self) -> IAE:
-        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
         model = IAE(encoder=encoder,
                     decoder=decoder,
@@ -71,10 +76,10 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_iaegan(self) -> IAEGAN:
-        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
-        discriminator_input_shape = self.get_encoder_input_shape()[1:]
+        discriminator_input_shape = self.get_encoder_input_shape()
         discriminator = self.make_discriminator(discriminator_input_shape)
 
         model = IAEGAN(encoder=encoder,
@@ -88,9 +93,9 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_vaegan(self) -> VAEGAN:
-        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
-        discriminator = self.make_discriminator(self.get_encoder_input_shape()[1:])
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+        discriminator = self.make_discriminator(self.get_encoder_input_shape())
 
         model = VAEGAN(encoder=encoder,
                        decoder=decoder,
@@ -116,8 +121,8 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_and(self) -> AND:
-        encoder = self.make_encoder(self.get_encoder_input_shape()[1:])
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder)[1:])
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
         conv_am = self.make_conv_am(self.get_saam_input_shape()[1:])
 
         model = AND(encoder=encoder,
@@ -128,18 +133,54 @@ class VideoProtocol(DatasetProtocol):
 
         return model
 
+    def make_minimalist_descriptor(self):
+        from tensorflow.python.keras.models import Sequential
+        from tensorflow.python.keras.layers import Dense, Flatten
+
+        base_encoder_shape = self.get_encoder_input_shape()
+        channels = base_encoder_shape[-1]
+        encoder_shape = (*base_encoder_shape[:-1], channels * 2)
+        encoder = self.make_encoder(encoder_shape)
+
+        latent_code_shape = self.get_latent_code_shape(encoder)
+        decoder = self.make_decoder(latent_code_shape)
+
+        stop_encoder = Sequential(
+            layers=
+            [
+                Flatten(input_shape=latent_code_shape),
+                Dense(units=64, activation="relu"),
+                Dense(units=1, activation="sigmoid", use_bias=False)
+            ],
+            name="StopEncoder"
+        )
+
+        model = MinimalistDescriptor(encoder=encoder,
+                                     decoder=decoder,
+                                     stop_encoder=stop_encoder,
+                                     max_steps=16,
+                                     learning_rate=self.base_learning_rate_schedule)
+        return model
+
     # endregion
 
     # region Sub-models input shapes
-    def get_encoder_input_shape(self):
+    def get_encoder_input_batch_shape(self) -> Tuple[None, int, int, int, int]:
         shape = (None, self.step_size, self.height, self.width, 1)
         return shape
 
-    def get_latent_code_shape(self, encoder: Model):
-        shape = encoder.compute_output_shape(self.get_encoder_input_shape())
+    def get_encoder_input_shape(self) -> Tuple[int, int, int, int]:
+        shape = self.get_encoder_input_batch_shape()[1:]
+        return shape
+
+    def get_latent_code_batch_shape(self, encoder: Model):
+        shape = encoder.compute_output_shape(self.get_encoder_input_batch_shape())
         if self.model_architecture in ["vaegan"]:
             shape = (*shape[:-1], shape[-1] // 2)
         return shape
+
+    def get_latent_code_shape(self, encoder: Model):
+        return self.get_latent_code_batch_shape(encoder=encoder)[1:]
 
     def get_saam_input_shape(self):
         shape = (None, self.step_count, self.code_size)
@@ -156,7 +197,7 @@ class VideoProtocol(DatasetProtocol):
                                code_size=self.code_size,
                                code_activation=self.code_activation,
                                model_depth=self.model_depth,
-                               basic_block_count=2,
+                               basic_block_count=1,
                                seed=self.seed,
                                name=name,
                                )
@@ -170,7 +211,7 @@ class VideoProtocol(DatasetProtocol):
                                channels=1,
                                output_activation=self.output_activation,
                                model_depth=self.model_depth,
-                               basic_block_count=2,
+                               basic_block_count=1,
                                seed=self.seed,
                                name=name,
                                )
@@ -458,8 +499,7 @@ class VideoProtocol(DatasetProtocol):
                 inputs = (inputs - mean) / std
                 inputs = tf.expand_dims(inputs, axis=0)
 
-                if pattern.batch_processor is not None:
-                    inputs = pattern.batch_processor(inputs)
+                inputs = pattern.process_batch(inputs)
 
                 outputs = self.autoencoder(inputs)
 

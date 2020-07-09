@@ -1,9 +1,10 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.callbacks import Callback, TensorBoard, TerminateOnNaN
+from tensorboard.plugins import projector
 import time
 import os
-from typing import List, Callable
+from typing import List, Callable, Dict, Sequence
 
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig
@@ -153,9 +154,8 @@ class Protocol(object):
         if config.additional_metrics is not None:
             additional_metrics = [*additional_metrics, *config.additional_metrics]
 
-        pattern = config.pattern  # .with_added_depth().with_added_depth()
         anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
-                                           pattern=pattern,
+                                           pattern=config.pattern,
                                            compare_metrics=compare_metrics,
                                            additional_metrics=additional_metrics)
 
@@ -181,9 +181,51 @@ class Protocol(object):
     def additional_test_metrics(self) -> List[Callable[[tf.Tensor], tf.Tensor]]:
         return getattr(self.model, "additional_test_metrics", [])
 
-    def multi_test_model(self, configs: List[ProtocolTestConfig]):
-        for config in configs:
-            self.test_model(config)
+    def log_model_latent_codes(self, config: ProtocolTestConfig):
+        self.load_weights(epoch=config.epoch)
+
+        anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
+                                           pattern=config.pattern,
+                                           compare_metrics=[],
+                                           additional_metrics=None)
+
+        log_dir = self.make_log_dir("latent_codes")
+
+        latent_codes, samples_infos = anomaly_detector.compute_latent_codes_on_dataset(dataset=self.dataset_loader,
+                                                                                       stride=4)
+
+        self.log_latent_codes_metadata(samples_infos, log_dir)
+
+        embeddings = tf.Variable(initial_value=latent_codes)
+        checkpoint = tf.train.Checkpoint(embedding=embeddings)
+        checkpoint.save(os.path.join(log_dir, "embeddings.ckpt"))
+
+        projector_config = projector.ProjectorConfig()
+        config_embeddings = projector_config.embeddings.add()
+        config_embeddings.tensor_name = "embedding/.ATTRIBUTES/VARIABLE_VALUE"
+        # config_embeddings.tensor_name = "{}/latent_codes".format(self.dataset_name)
+        config_embeddings.metadata_path = 'metadata.tsv'
+        projector.visualize_embeddings(log_dir, projector_config)
+
+    @staticmethod
+    def log_latent_codes_metadata(samples_infos: Dict[str, Sequence], log_dir: str):
+        info_names = list(samples_infos.keys())
+        info_values = [samples_infos[info_name] for info_name in info_names]
+
+        info_count = len(info_names)
+        values_count = len(info_values[0])
+
+        with open(os.path.join(log_dir, "metadata.tsv"), "w") as metadata_file:
+            for info_index in range(info_count):
+                space = "\t" if ((info_index + 1) != info_count) else "\n"
+                header = info_names[info_index]
+                metadata_file.write("{}{}".format(header, space))
+
+            for value_index in range(values_count):
+                for info_index in range(info_count):
+                    space = "\t" if ((info_index + 1) != info_count) else "\n"
+                    value = info_values[info_index][value_index]
+                    metadata_file.write("{}{}".format(value, space))
 
     def make_log_dir(self, sub_folder: str) -> str:
         timestamp = int(time.time())
