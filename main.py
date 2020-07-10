@@ -1,8 +1,20 @@
+import argparse
+
 from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
 from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTechProtocol, SubwayProtocol
 
 
 def main():
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--dataset", default="ped2")
+    arg_parser.add_argument("--mode", default="train")
+    arg_parser.add_argument("--initial_epoch", default=None)
+
+    args = arg_parser.parse_args()
+    dataset: str = args.dataset
+    mode: str = args.mode
+    initial_epoch = args.initial_epoch
+
     best_weights = {
         "ped2": 16,
         "ped1": 50,
@@ -12,15 +24,15 @@ def main():
         "entrance": 97,
     }
 
-    train = 1
-    initial_epoch = 0
-    dataset = "ped2"
-
     if initial_epoch is None:
-        if train:
+        if mode == "train":
             initial_epoch = 0
         else:
             initial_epoch = best_weights[dataset]
+    elif initial_epoch == "best":
+        initial_epoch = best_weights[dataset]
+    else:
+        initial_epoch = int(initial_epoch)
 
     if dataset == "ped2":
         protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=2)
@@ -59,7 +71,7 @@ def main():
     # protocol.log_model_latent_codes(config=protocol.get_test_config())
     # exit()
 
-    if train:
+    if mode == "train":
         protocol.train_model()
     else:
         protocol.test_model()
