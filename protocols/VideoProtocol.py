@@ -133,15 +133,15 @@ class VideoProtocol(DatasetProtocol):
     def make_minimalist_descriptor(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
-        # from tensorflow.python.keras.initializers import VarianceScaling
-        from tensorflow.python.keras.initializers import GlorotUniform
+        from tensorflow.python.keras.initializers import VarianceScaling
+        # from tensorflow.python.keras.initializers import GlorotUniform
 
         encoder = self.make_encoder(self.get_encoder_input_shape())
         latent_code_shape = self.get_latent_code_shape(encoder)
         decoder = self.make_decoder(latent_code_shape)
 
-        # stop_init = VarianceScaling(seed=self.seed, scale=0.1)
-        stop_init = GlorotUniform(seed=self.seed)
+        stop_init = VarianceScaling(seed=self.seed, scale=0.1)
+        # stop_init = GlorotUniform(seed=self.seed)
         stop_encoder = Sequential(
             layers=[
                 Flatten(input_shape=latent_code_shape),
@@ -177,8 +177,8 @@ class VideoProtocol(DatasetProtocol):
     def make_minimalist_descriptor_v3(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
-        # from tensorflow.python.keras.initializers import VarianceScaling
-        from tensorflow.python.keras.initializers import GlorotUniform
+        from tensorflow.python.keras.initializers import VarianceScaling
+        # from tensorflow.python.keras.initializers import GlorotUniform
 
         max_steps = 8
         encoders = [self.make_encoder(self.get_encoder_input_shape(), name="Encoder_{}".format(i))
@@ -186,8 +186,8 @@ class VideoProtocol(DatasetProtocol):
         latent_code_shape = self.get_latent_code_shape(encoders[0])
         decoders = [self.make_decoder(latent_code_shape, name="Decoder_{}".format(i)) for i in range(max_steps)]
 
-        # stop_init = VarianceScaling(seed=self.seed, scale=0.1)
-        stop_init = GlorotUniform(seed=self.seed)
+        stop_init = VarianceScaling(seed=self.seed, scale=0.1)
+        # stop_init = GlorotUniform(seed=self.seed)
         stop_encoder = Sequential(
             layers=[
                 Flatten(input_shape=latent_code_shape),
