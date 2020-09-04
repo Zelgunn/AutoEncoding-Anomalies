@@ -7,12 +7,13 @@ from tensorflow.python.eager import context
 import numpy as np
 import cv2
 from time import time
-from typing import Tuple, Optional, Callable
+from typing import Tuple, Optional, Callable, Union
 
 from anomaly_detection import IOCompareModel
 from callbacks import TensorBoardPlugin
 from misc_utils.plot_utils import plot_line2d_to_array
 from misc_utils.general import to_constant_list
+from misc_utils.numpy_utils import normalize
 from datasets import SubsetLoader
 from modalities import Pattern
 
@@ -62,8 +63,8 @@ class AUCWrapper(object):
         self.reset_states()
         self.update_state(y_true, y_pred)
         auc_scalar = self.result()
-        tf.print("\n==== ", self.base_name, auc_scalar, "====")
         summary_ops_v2.scalar(name=self.base_name + "_scalar", tensor=auc_scalar, step=step)
+        return auc_scalar
 
     def write_plot_summary(self, step):
         if self.plot_size is None:
@@ -117,13 +118,16 @@ class AUCCallback(TensorBoardPlugin):
         self.batch_size = batch_size
         self.num_thresholds = num_thresholds
         self.name = name
+        self.prefix = prefix
 
         with tf.name_scope(self.name):
             self.inputs = to_constant_list(inputs, name="input")
             if inputs is outputs:
                 self.outputs = self.inputs
-            else:
+            elif outputs is not None:
                 self.outputs = to_constant_list(outputs, name="outputs")
+            else:
+                self.outputs = None
 
             if labels.shape[-1] == 1:
                 if isinstance(labels, np.ndarray):
@@ -145,22 +149,36 @@ class AUCCallback(TensorBoardPlugin):
 
     def _write_logs(self, index):
         start_time = time()
-        predictions = self.predictions_model.predict(self.inputs + self.outputs, batch_size=self.batch_size)
+
+        model_inputs = self.get_model_inputs()
+        predictions = self.predictions_model.predict(model_inputs, batch_size=self.batch_size)
         predictions = np.array(predictions)
         predictions = self.reformat_predictions(predictions)
-
-        pred_min = predictions.min()
-        predictions = (predictions - pred_min) / (predictions.max() - pred_min)
+        predictions = normalize(predictions)
 
         with context.eager_mode():
             with summary_ops_v2.always_record_summaries():
                 with self.validation_run_writer.as_default():
                     self._write_auc_summary(predictions, index)
-        print("AUCCallback `{}` took {:.2f} seconds.".format(self.name, time() - start_time))
+        print("AUCCallback `{}_{}` took {:.2f} seconds.".format(self.prefix, self.name, time() - start_time))
+
+    def get_model_inputs(self):
+        if isinstance(self.predictions_model, IOCompareModel):
+            model_inputs = self.inputs + self.outputs
+        else:
+            model_inputs = self.inputs
+            if len(model_inputs) == 1:
+                model_inputs = model_inputs[0]
+        return model_inputs
 
     def _write_auc_summary(self, predictions, step):
-        self.roc.auc_summary(self.labels, predictions, step)
-        self.pr.auc_summary(self.labels, predictions, step)
+        roc = self.roc.auc_summary(self.labels, predictions, step)
+        roc = roc.numpy()
+
+        pr = self.pr.auc_summary(self.labels, predictions, step)
+        pr = pr.numpy()
+
+        print("\n==== {}_{} - ROC : {} | PR : {} ====".format(self.prefix, self.name, round(roc, 3), round(pr, 3)))
 
     def reformat_predictions(self, predictions):
         if predictions.shape != self.labels.shape:
@@ -184,17 +202,18 @@ class AUCCallback(TensorBoardPlugin):
         if predictions.size == labels_size:
             predictions = np.reshape(predictions, self.labels.shape)
         else:
+            # Useful when multiple predictions are made from a single input (e.g. several patches from one image)
             ratio = predictions.size // labels_size
             if int(predictions.size / labels_size) != ratio or ratio < 1:
                 raise ValueError("Could not reshape predictions with shape {} to match labels with shape {}"
                                  .format(predictions.shape, self.labels.shape))
             predictions = np.reshape(predictions, [self.labels.shape[0], ratio, *self.labels.shape[1:]])
-            predictions = np.sum(predictions, axis=1)
+            predictions = np.mean(predictions, axis=1)
 
         return predictions
 
     @staticmethod
-    def from_subset(predictions_model: IOCompareModel,
+    def from_subset(predictions_model: Union[IOCompareModel, Callable],
                     tensorboard: TensorBoard,
                     test_subset: SubsetLoader,
                     pattern: Pattern,
@@ -214,6 +233,9 @@ class AUCCallback(TensorBoardPlugin):
             inputs, outputs, labels = batch
         else:
             raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(pattern.output_count))
+
+        if not isinstance(predictions_model, IOCompareModel):
+            outputs = None
 
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, labels_length)
 

@@ -17,7 +17,7 @@ def get_audio_encoder(length: int,
                       n=96,
                       kernel_size=3
                       ) -> Sequential:
-    shared_params = {"kernel_size": kernel_size, "model_depth": 3}
+    shared_params = {"kernel_size": kernel_size}
     layers = [
         ResBlock1D(filters=n * 2, basic_block_count=1, strides=1, input_shape=(length, channels), **shared_params),
         ResBlock1D(filters=n * 2, basic_block_count=4, strides=2, **shared_params),
@@ -36,7 +36,7 @@ def get_audio_decoder(length: int,
                       n=192,
                       kernel_size=3
                       ) -> Sequential:
-    shared_params = {"kernel_size": kernel_size, "model_depth": 3}
+    shared_params = {"kernel_size": kernel_size}
     layers = [
         ResBlock1DTranspose(filters=code_size, basic_block_count=1, strides=1, input_shape=(length, code_size),
                             **shared_params),
@@ -83,15 +83,12 @@ def get_video_encoder(length: int,
                       ) -> Sequential:
     input_shape = (length, height, width, channels)
 
-    model_depth = 5
-
     layers = [
-        ResBlock3D(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth,
-                   input_shape=input_shape),
-        ResBlock3D(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
-        ResBlock3D(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
-        ResBlock3D(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
-        ResBlock3D(filters=code_size, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3D(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), input_shape=input_shape),
+        ResBlock3D(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2)),
+        ResBlock3D(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2)),
+        ResBlock3D(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2)),
+        ResBlock3D(filters=code_size, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2)),
         Reshape(target_shape=(length, code_size), name="FlattenVideoCode"),
         Dense(units=code_size, activation=None, kernel_initializer="he_normal")
     ]
@@ -109,15 +106,13 @@ def get_video_decoder(length: int,
                       ) -> Sequential:
     input_shape = (length, code_size)
 
-    model_depth = 5
-
     layers = [
         Reshape(target_shape=(length, 1, 1, code_size), input_shape=input_shape),
-        ResBlock3DTranspose(filters=n * 8, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2), model_depth=model_depth),
-        ResBlock3DTranspose(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
-        ResBlock3DTranspose(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
-        ResBlock3DTranspose(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
-        ResBlock3DTranspose(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2), model_depth=model_depth),
+        ResBlock3DTranspose(filters=n * 8, kernel_size=(kernel_size, 2, 2), strides=(1, 2, 2)),
+        ResBlock3DTranspose(filters=n * 8, kernel_size=kernel_size, strides=(1, 2, 2)),
+        ResBlock3DTranspose(filters=n * 4, kernel_size=kernel_size, strides=(1, 2, 2)),
+        ResBlock3DTranspose(filters=n * 2, kernel_size=kernel_size, strides=(1, 2, 2)),
+        ResBlock3DTranspose(filters=n * 1, kernel_size=kernel_size, strides=(1, 2, 2)),
         Dense(units=channels, activation=None, kernel_initializer="he_normal"),
     ]
 
@@ -161,14 +156,12 @@ def get_generator(base_decoder: Sequential,
 
     intermediate_size = noise_size // length
 
-    model_depth = 2
-
     noise_code = noise_input
     noise_code = Dense(units=noise_size, activation="elu", kernel_initializer="he_normal")(noise_code)
     noise_code = Dense(units=noise_size, activation="elu", kernel_initializer="he_normal")(noise_code)
     noise_code = Reshape(target_shape=(length, intermediate_size))(noise_code)
-    noise_code = ResBlock1D(filters=intermediate_size * 2, model_depth=model_depth)(noise_code)
-    noise_code = ResBlock1D(filters=noise_code_size, model_depth=model_depth)(noise_code)
+    noise_code = ResBlock1D(filters=intermediate_size * 2)(noise_code)
+    noise_code = ResBlock1D(filters=noise_code_size)(noise_code)
     full_code = Concatenate()([base_code_input, noise_code])
     outputs = base_decoder(full_code)
 
@@ -182,7 +175,7 @@ def get_fusion_autoencoder(length: int,
                            n=128) -> Model:
     audio_input_shape = (length, audio_code_size)
     video_input_shape = (length, video_code_size)
-    shared_params = {"kernel_size": 3, "model_depth": 7}
+    shared_params = {"kernel_size": 3}
 
     audio_input = Input(shape=audio_input_shape, name="FusionAudioInput")
     video_input = Input(shape=video_input_shape, name="FusionVideoInput")
@@ -384,12 +377,11 @@ def main():
         error.set_shape((None, video_length))
         return error
 
-    auc_callback_config = AUCCallbackConfig(autoencoder=model.autoencode,
-                                            pattern=auc_pattern,
-                                            labels_length=video_length,
-                                            prefix="",
-                                            metrics=audio_video_reconstruction_score,
-                                            sample_count=2048)
+    auc_callback_config = AUCCallbackConfig(base_model=model.autoencode, pattern=auc_pattern,
+                                            labels_length=video_length, prefix="", sample_count=2048,
+                                            convert_to_io_compare_model=True,
+                                            io_compare_metrics=audio_video_reconstruction_score)
+
     auc_callback_configs = [auc_callback_config]
     # endregion
     # region Modality callbacks

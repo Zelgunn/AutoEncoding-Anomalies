@@ -59,8 +59,6 @@ def main():
     video_load_length = video_step_length * step_count
     # endregion
 
-    model_depth = 10
-
     # region Energy model
 
     # region Audio
@@ -70,19 +68,19 @@ def main():
 
     # region Wave
     # x = audio_input
-    # x = ResBlock1D(filters=64, kernel_size=21, strides=5, model_depth=model_depth)(x)
+    # x = ResBlock1D(filters=64, kernel_size=21, strides=5)(x)
     # x = MaxPooling1D(pool_size=4)(x)
-    # x = ResBlock1D(filters=128, kernel_size=5, strides=4, model_depth=model_depth)(x)
-    # x = ResBlock1D(filters=256, kernel_size=5, strides=4, model_depth=model_depth)(x)
-    # x = ResBlock1D(filters=256, kernel_size=5, strides=3, model_depth=model_depth)(x)
-    # x = ResBlock1D(filters=256, kernel_size=3, strides=2, model_depth=model_depth)(x)
+    # x = ResBlock1D(filters=128, kernel_size=5, strides=4)(x)
+    # x = ResBlock1D(filters=256, kernel_size=5, strides=4)(x)
+    # x = ResBlock1D(filters=256, kernel_size=5, strides=3)(x)
+    # x = ResBlock1D(filters=256, kernel_size=3, strides=2)(x)
     # endregion
 
     # region Mel Spectrogram
     x = audio_input
-    x = ResBlock1D(filters=128, kernel_size=3, strides=1, model_depth=model_depth)(x)
-    x = ResBlock1D(filters=128, basic_block_count=4, kernel_size=3, strides=2, model_depth=model_depth)(x)
-    x = ResBlock1D(filters=64, basic_block_count=4, kernel_size=3, strides=2, model_depth=model_depth)(x)
+    x = ResBlock1D(filters=128, kernel_size=3, strides=1)(x)
+    x = ResBlock1D(filters=128, basic_block_count=4, kernel_size=3, strides=2)(x)
+    x = ResBlock1D(filters=64, basic_block_count=4, kernel_size=3, strides=2)(x)
     # endregion
 
     audio_output = x
@@ -101,10 +99,10 @@ def main():
 
     x = video_input
     x = AveragePooling3D(pool_size=(1, 4, 4))(x)
-    x = ResBlock3D(filters=4, kernel_size=(1, 3, 3), strides=(1, 2, 2), model_depth=model_depth)(x)
-    x = ResBlock3D(filters=8, kernel_size=(1, 3, 3), strides=(1, 2, 2), model_depth=model_depth)(x)
-    x = ResBlock3D(filters=16, kernel_size=(1, 3, 3), strides=(1, 2, 2), model_depth=model_depth)(x)
-    x = ResBlock3D(filters=32, kernel_size=(1, 3, 3), strides=(1, 2, 2), model_depth=model_depth)(x)
+    x = ResBlock3D(filters=4, kernel_size=(1, 3, 3), strides=(1, 2, 2))(x)
+    x = ResBlock3D(filters=8, kernel_size=(1, 3, 3), strides=(1, 2, 2))(x)
+    x = ResBlock3D(filters=16, kernel_size=(1, 3, 3), strides=(1, 2, 2))(x)
+    x = ResBlock3D(filters=32, kernel_size=(1, 3, 3), strides=(1, 2, 2))(x)
     x = TimeDistributed(GlobalAveragePooling2D())(x)
 
     video_self_attention_output = x
@@ -150,11 +148,11 @@ def main():
 
     focused_video_input = Input(batch_shape=joint_attention_model.output_shape, name="FocusedVideoInputLayer")
     x = focused_video_input
-    x = ResBlock3D(filters=8, kernel_size=3, strides=(1, 2, 2), model_depth=model_depth)(x)
-    x = ResBlock3D(filters=16, kernel_size=3, strides=(1, 2, 2), model_depth=model_depth)(x)
-    x = ResBlock3D(filters=32, kernel_size=3, strides=(1, 2, 2), model_depth=model_depth)(x)
-    x = ResBlock3D(filters=64, kernel_size=3, strides=(1, 2, 2), model_depth=model_depth)(x)
-    x = ResBlock3D(filters=128, kernel_size=3, strides=(1, 2, 2), model_depth=model_depth)(x)
+    x = ResBlock3D(filters=8, kernel_size=3, strides=(1, 2, 2))(x)
+    x = ResBlock3D(filters=16, kernel_size=3, strides=(1, 2, 2))(x)
+    x = ResBlock3D(filters=32, kernel_size=3, strides=(1, 2, 2))(x)
+    x = ResBlock3D(filters=64, kernel_size=3, strides=(1, 2, 2))(x)
+    x = ResBlock3D(filters=128, kernel_size=3, strides=(1, 2, 2))(x)
     x = Reshape(target_shape=(video_step_length, 128))(x)
     focused_video_output = x
 
@@ -170,12 +168,12 @@ def main():
     audio_latent_code_input = Input(batch_shape=audio_model.output_shape, name="AudioLatentCodeInputLayer")
     video_latent_code_input = Input(batch_shape=focused_video_model.output_shape, name="VideoLatentCodeInputLayer")
     x = Concatenate()([audio_latent_code_input, video_latent_code_input])
-    x = ResBlock1D(filters=128, kernel_size=3, model_depth=model_depth)(x)
-    x = ResBlock1D(filters=256, kernel_size=3, model_depth=model_depth)(x)
-    x = ResBlock1D(filters=128, kernel_size=3, model_depth=model_depth)(x)
+    x = ResBlock1D(filters=128, kernel_size=3)(x)
+    x = ResBlock1D(filters=256, kernel_size=3)(x)
+    x = ResBlock1D(filters=128, kernel_size=3)(x)
     intermediate_fusion_output = x
-    x = ResBlock1D(filters=64, kernel_size=3, model_depth=model_depth)(x)
-    x = ResBlock1D(filters=32, kernel_size=3, model_depth=model_depth)(x)
+    x = ResBlock1D(filters=64, kernel_size=3)(x)
+    x = ResBlock1D(filters=32, kernel_size=3)(x)
     x = Dense(units=1, activation=None, kernel_initializer="he_normal")(x)
     x = Flatten()(x)
     fusion_output = x
@@ -205,8 +203,8 @@ def main():
 
     # region Mel Spectrogram
     x = reconstruction_input
-    x = ResBlock1DTranspose(filters=128, basic_block_count=4, kernel_size=3, strides=2, model_depth=model_depth)(x)
-    x = ResBlock1DTranspose(filters=128, basic_block_count=4, kernel_size=3, strides=2, model_depth=model_depth)(x)
+    x = ResBlock1DTranspose(filters=128, basic_block_count=4, kernel_size=3, strides=2)(x)
+    x = ResBlock1DTranspose(filters=128, basic_block_count=4, kernel_size=3, strides=2)(x)
     x = Conv1D(filters=audio_channels, kernel_size=1, strides=1, kernel_initializer="he_normal")(x)
     reconstructed_audio = x
     # endregion
@@ -217,10 +215,10 @@ def main():
 
     x = reconstruction_input
     x = ExpandDims(dims=[1, 2])(x)
-    x = ResBlock3DTranspose(filters=128, kernel_size=(1, 5, 5), strides=(1, 4, 4), model_depth=model_depth)(x)
-    x = ResBlock3DTranspose(filters=64, kernel_size=(1, 5, 5), strides=(1, 4, 4), model_depth=model_depth)(x)
-    x = ResBlock3DTranspose(filters=32, kernel_size=5, strides=(1, 4, 4), model_depth=model_depth)(x)
-    x = ResBlock3DTranspose(filters=16, kernel_size=3, strides=(1, 2, 2), model_depth=model_depth)(x)
+    x = ResBlock3DTranspose(filters=128, kernel_size=(1, 5, 5), strides=(1, 4, 4))(x)
+    x = ResBlock3DTranspose(filters=64, kernel_size=(1, 5, 5), strides=(1, 4, 4))(x)
+    x = ResBlock3DTranspose(filters=32, kernel_size=5, strides=(1, 4, 4))(x)
+    x = ResBlock3DTranspose(filters=16, kernel_size=3, strides=(1, 2, 2))(x)
     x = Conv3D(filters=video_channels, kernel_size=1, strides=1, kernel_initializer="he_normal")(x)
     reconstructed_video = x
 

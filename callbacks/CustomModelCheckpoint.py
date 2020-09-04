@@ -1,3 +1,4 @@
+import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.callbacks import Callback
 from tensorflow.python.platform import tf_logging as logging
@@ -33,11 +34,16 @@ class CustomModelCheckpoint(Callback):
 
         self.model: Optional[Model] = None
         self._chief_worker_only = False
+        self._batch_seen_since_last_save = 0
+        self._current_epoch = 0
 
-    def on_epoch_end(self, epoch, logs=None):
-        save_now = (self.save_frequency == "epoch") or (epoch % self.save_frequency) == 1
-        filepath = self.filepath.format(epoch=epoch + 1, **logs)
-        if save_now and self.save_best_only:
+    def save_model(self, logs=None):
+        if logs is None:
+            logs = {}
+
+        filepath = self.filepath.format(epoch=self._current_epoch, **logs)
+        save_now = True
+        if self.save_best_only:
             current = logs.get(self.monitor)
 
             if current is None:
@@ -48,17 +54,33 @@ class CustomModelCheckpoint(Callback):
                     if self.verbose > 0:
                         print("\nEpoch {epoch:05d}: {monitor} improve from {previous_best:0.5f} to {new_best}. "
                               "Saving model to {filepath}.".
-                              format(epoch=epoch + 1, monitor=self.monitor, previous_best=self.best, new_best=current,
-                                     filepath=filepath))
+                              format(epoch=self._current_epoch, monitor=self.monitor, previous_best=self.best,
+                                     new_best=current, filepath=filepath))
                     self.best = current
                 else:
                     save_now = False
                     if self.verbose > 0:
                         print("\nEpoch {epoch:05d}: {monitor} did not improve from {best:0.5f}".
-                              format(epoch=epoch + 1, monitor=self.monitor, best=self.best))
+                              format(epoch=self._current_epoch, monitor=self.monitor, best=self.best))
 
         if save_now:
             self.model.save(filepath=filepath, overwrite=True, include_optimizer=not self.save_weights_only)
+
+    def on_batch_end(self, batch, logs=None):
+        if not isinstance(self.save_frequency, int):
+            return
+
+        self._batch_seen_since_last_save += 1
+        save_now = self._batch_seen_since_last_save == self.save_frequency
+        if save_now:
+            self.save_model(logs)
+            self._batch_seen_since_last_save = 0
+
+    def on_epoch_end(self, epoch, logs=None):
+        self._current_epoch = epoch + 1
+        save_now = (self.save_frequency == "epoch") or (epoch % self.save_frequency) == 1
+        if save_now:
+            self.save_model(logs)
 
     # region Static helpers
     @staticmethod

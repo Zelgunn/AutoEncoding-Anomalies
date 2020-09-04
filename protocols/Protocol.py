@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.callbacks import Callback, TensorBoard, TerminateOnNaN
+from tensorflow.python.keras.callbacks import Callback, TensorBoard, TerminateOnNaN, ModelCheckpoint
 from tensorboard.plugins import projector
 import time
 import os
@@ -24,7 +24,6 @@ class ProtocolTrainConfig(object):
                  validation_steps: int,
                  modality_callback_configs: List[ModalityCallbackConfig] = None,
                  auc_callback_configs: List[AUCCallbackConfig] = None,
-                 early_stopping_metric: str = None,
                  ):
         self.batch_size = batch_size
         self.pattern = pattern
@@ -34,7 +33,6 @@ class ProtocolTrainConfig(object):
         self.validation_steps = validation_steps
         self.modality_callback_configs = modality_callback_configs
         self.auc_callback_configs = auc_callback_configs
-        self.early_stopping_metric = early_stopping_metric
 
 
 class ProtocolTestConfig(object):
@@ -79,7 +77,7 @@ class Protocol(object):
         self.dataset_config = SingleSetConfig(self.dataset_folder, output_range=output_range)
         self.dataset_loader = DatasetLoader(self.dataset_config)
 
-        self.base_log_dir = "../logs/AEA/protocols/{protocol_name}/{dataset_name}" \
+        self.base_log_dir = "../logs/AEA/{protocol_name}/{dataset_name}" \
             .format(protocol_name=protocol_name, dataset_name=dataset_name)
 
         self.seed = seed
@@ -115,9 +113,11 @@ class Protocol(object):
         callbacks = [tensorboard, TerminateOnNaN()]
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
-        weights_path = os.path.join(log_dir, "weights_{epoch:03d}.hdf5")
-        model_checkpoint = CustomModelCheckpoint(filepath=weights_path)
+        weights_path = os.path.join(log_dir, "weights_{epoch:03d}")
+        model_checkpoint = ModelCheckpoint(filepath=weights_path, save_frequency=100)
         callbacks.append(model_checkpoint)
+        callbacks.append(CustomModelCheckpoint(filepath=os.path.join(log_dir, "full_checkpoint_{epoch:03d}"),
+                                               save_weights_only=False))
         # endregion
         # region AUC
         if config.auc_callback_configs is not None:
@@ -228,15 +228,15 @@ class Protocol(object):
                     metadata_file.write("{}{}".format(value, space))
 
     def make_log_dir(self, sub_folder: str) -> str:
-        timestamp = int(time.time())
-        log_dir = os.path.join(self.base_log_dir, sub_folder, "{}_{}".format(timestamp, self.model_name))
+        timestamp = str(int(time.time()))
+        log_dir = os.path.join(self.base_log_dir, sub_folder, self.model_name, timestamp)
         os.makedirs(log_dir)
         save_model_info(self.model, log_dir)
         return log_dir
 
     def load_weights(self, epoch: int):
         if epoch > 0:
-            weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}.hdf5")
+            weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}")
             weights_path = weights_path.format(epoch=epoch)
             self.model.load_weights(weights_path)
 

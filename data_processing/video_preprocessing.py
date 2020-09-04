@@ -23,6 +23,7 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
             video = convert_to_grayscale(video)
 
         video = tf.image.per_image_standardization(video)
+        # video = normalize_tanh(video)
         return video
 
     return augment_video
@@ -36,6 +37,7 @@ def make_video_preprocess(height: int, width: int, to_grayscale: bool):
             video = convert_to_grayscale(video)
 
         video = tf.image.per_image_standardization(video)
+        # video = normalize_tanh(video)
 
         if labels is None:
             return video
@@ -81,3 +83,18 @@ def convert_to_grayscale(images: tf.Tensor):
     images *= rgb_weights
     images = tf.reduce_sum(images, axis=-1, keepdims=True)
     return images
+
+
+@tf.function
+def normalize_sigmoid(x: tf.Tensor) -> tf.Tensor:
+    x_min = tf.reduce_min(x)
+    x_max = tf.reduce_max(x)
+    x = (x - x_min) / (x_max - x_min)
+    return x
+
+
+@tf.function
+def normalize_tanh(x: tf.Tensor) -> tf.Tensor:
+    x = normalize_sigmoid(x)
+    x = tf.constant(2.0) * x - tf.constant(1.0)
+    return x

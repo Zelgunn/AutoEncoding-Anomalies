@@ -1,4 +1,5 @@
-from tensorflow.python.keras import Model
+from tensorflow.python.keras.models import Model, Sequential
+from tensorflow.python.keras.layers import Lambda
 import numpy as np
 from abc import abstractmethod
 from typing import Callable, Dict, Optional, List
@@ -10,7 +11,8 @@ from datasets.tfrecord_builders import tfrecords_config_filename
 from modalities import Pattern
 from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
 from callbacks.configs import AUCCallbackConfig
-from custom_tf_models import IAE
+from custom_tf_models import AE, IAE, MinimalistDescriptor
+from custom_tf_models.energy_based import EBAE
 
 
 class DatasetProtocol(Protocol):
@@ -70,8 +72,7 @@ class DatasetProtocol(Protocol):
                                    initial_epoch=self.initial_epoch,
                                    validation_steps=self.validation_steps,
                                    modality_callback_configs=modality_callback_configs,
-                                   auc_callback_configs=auc_callbacks_configs,
-                                   early_stopping_metric=self.model.metrics_names[0])
+                                   auc_callback_configs=auc_callbacks_configs)
 
     def get_modality_callback_configs(self):
         return None
@@ -102,19 +103,36 @@ class DatasetProtocol(Protocol):
 
     # endregion
 
+    # region Callbacks
     def get_auc_callbacks_configs(self) -> List[AUCCallbackConfig]:
         anomaly_pattern = self.get_anomaly_pattern()
+        auc_callbacks_configs = []
 
-        auc_callbacks_configs = [
-            AUCCallbackConfig(self.model, anomaly_pattern, self.output_length, prefix=""),
+        model = self.model
+        if isinstance(model, EBAE):
+            model = model.autoencoder
 
-        ]
+        if isinstance(model, AE):
+            auc_callbacks_configs += [
+                AUCCallbackConfig(model, anomaly_pattern, labels_length=self.output_length, prefix="",
+                                  convert_to_io_compare_model=True),
+            ]
 
-        if isinstance(self.model, IAE):
+        if isinstance(model, IAE):
             auc_callbacks_configs += \
-                [AUCCallbackConfig(self.model.interpolate, anomaly_pattern, self.output_length, prefix="iae")]
+                [AUCCallbackConfig(model.interpolate, anomaly_pattern, labels_length=self.output_length,
+                                   prefix="iae", convert_to_io_compare_model=True)
+                 ]
+
+        if isinstance(model, MinimalistDescriptor):
+            auc_callbacks_configs += \
+                [AUCCallbackConfig(model.compute_description_length, anomaly_pattern, labels_length=1,
+                                   prefix="desc_length", epoch_freq=1)
+                 ]
 
         return auc_callbacks_configs
+
+    # endregion
 
     def make_log_dir(self, sub_folder: str) -> str:
         log_dir = super(DatasetProtocol, self).make_log_dir(sub_folder)

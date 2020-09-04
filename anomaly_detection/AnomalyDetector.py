@@ -11,6 +11,7 @@ from anomaly_detection import IOCompareModel
 from datasets import DatasetLoader, SubsetLoader
 from modalities import Pattern
 from custom_tf_models import AE
+from misc_utils.numpy_utils import normalize
 
 
 class AnomalyDetector(Model):
@@ -166,10 +167,7 @@ class AnomalyDetector(Model):
         labels = self.timestamps_labels_to_frame_labels(labels)
 
         if normalize_predictions:
-            for i in range(self.metric_count):
-                metric_pred = predictions[i]
-                metric_pred = (metric_pred - metric_pred.min()) / (metric_pred.max() - metric_pred.min())
-                predictions[i] = metric_pred
+            predictions = [normalize(metric_prediction) for metric_prediction in predictions]
 
         return predictions, labels
 
@@ -177,10 +175,12 @@ class AnomalyDetector(Model):
 
     def save_predictions(self, predictions: List[np.ndarray], labels: np.ndarray, log_dir: str):
         for i in range(self.metric_count):
+            np.save(os.path.join(log_dir, "predictions_{}.npy".format(i)), predictions[i])
+
             if predictions[i].ndim > 1:
                 predictions[i] = np.mean(predictions[i], axis=tuple(range(1, predictions[i].ndim)))
 
-        np.save(os.path.join(log_dir, "predictions.npy"), predictions)
+        np.save(os.path.join(log_dir, "predictions_mean.npy"), predictions)
         np.save(os.path.join(log_dir, "labels.npy"), labels)
 
     @staticmethod
@@ -201,8 +201,7 @@ class AnomalyDetector(Model):
     def evaluate_predictions(predictions: List[np.ndarray],
                              labels: np.ndarray
                              ) -> Dict[str, List[float]]:
-        predictions = [(metric_pred - metric_pred.min()) / (metric_pred.max() - metric_pred.min())
-                       for metric_pred in predictions]
+        predictions = [normalize(metric_predictions) for metric_predictions in predictions]
 
         results = None
         for i in range(len(predictions)):
@@ -230,7 +229,7 @@ class AnomalyDetector(Model):
         if predictions.ndim > 1 and labels.ndim == 1:
             predictions = predictions.mean(axis=tuple(range(1, predictions.ndim)))
 
-        predictions = (predictions - predictions.min()) / (predictions.max() - predictions.min())
+        predictions = normalize(predictions)
 
         roc.update_state(labels, predictions)
         pr.update_state(labels, predictions)
@@ -371,7 +370,7 @@ class AnomalyDetector(Model):
                                         stride=1,
                                         ) -> Tuple[tf.Tensor, Dict[str, Sequence]]:
         if not hasattr(self.autoencoder, "encode"):
-            raise ValueError("self.autoencoder doesn't have an `encode` method, thus it cannot provide latent codes.")
+            raise ValueError("self.autoencoder must have an `encode` method.")
 
         train_latent_codes, train_samples_infos = self.compute_latent_codes_on_subset(subset=dataset.train_subset,
                                                                                       stride=stride)

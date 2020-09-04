@@ -1,3 +1,4 @@
+# from tensorflow.keras.mixed_precision import experimental as mixed_precision
 import argparse
 
 from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
@@ -34,6 +35,9 @@ def main():
     else:
         initial_epoch = int(initial_epoch)
 
+    # policy = mixed_precision.Policy("mixed_float16")
+    # mixed_precision.set_policy(policy)
+
     if dataset == "ped2":
         protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=2)
     elif dataset == "ped1":
@@ -68,13 +72,12 @@ def main():
     #
     # exit()
 
-    # protocol.log_model_latent_codes(config=protocol.get_test_config())
-    # exit()
-
     if mode == "train":
         protocol.train_model()
-    else:
+    elif mode == "test":
         protocol.test_model()
+    else:
+        protocol.log_model_latent_codes(config=protocol.get_test_config())
 
 
 if __name__ == "__main__":

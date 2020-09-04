@@ -1,36 +1,52 @@
 from kitchen_sink.audioset_ebl3 import main
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-
-def test(scale):
-    dec = 3
-
-    x = np.random.normal(loc=1.0, scale=scale, size=[2 ** 18])
-    x = np.clip(x, 0.0, 2.0)
-    y = 2.0 - x
-
-    cond = x < 1.0
-    z = np.where(cond, x, y)
-    z = np.round(z, decimals=dec) * 10 ** dec
-    z = z.astype(np.int32)
-    z = np.clip(z, 0, 10 ** dec - 1)
-
-    h = np.zeros(shape=[10 ** dec], dtype=np.int32)
-
-    for value in z:
-        h[value] += 1
-
-    return h
+import tensorflow as tf
+from time import time
 
 
 def tmp_main():
-    for i in range(2):
-        h = test(0.25 / (i + 1))
-        plt.plot(h)
+    x = tf.Variable(initial_value=0.1)
+    y = tf.Variable(initial_value=1.0)
 
-    plt.show()
+    with tf.GradientTape() as tape:
+        z = x * y
+        loss = tf.abs(z + 0.5)
+
+    print(tape.gradient(loss, [x, y]))
+
+
+def compare_einsum_matmul():
+    batch_size = 8
+    count = 16 ** 2
+    heads = 8
+    head_size = 16
+    k = 3
+
+    x = tf.random.normal(shape=[batch_size, heads, head_size, k ** 2, count])
+    y = tf.random.normal(shape=[batch_size, count, heads, 1, k ** 2])
+
+    t0 = time()
+    for _ in range(100):
+        _ = test_einsum(x, y)
+
+    t1 = time()
+    print("einsum : {}".format(round(t1 - t0, 2)))
+
+    for _ in range(100):
+        _ = test_matmul_transpose(x, y)
+
+    t2 = time()
+    print("matmul_transpose : {}".format(round(t2 - t1, 2)))
+
+
+@tf.function
+def test_einsum(x, y):
+    # noinspection SpellCheckingInspection
+    return tf.einsum("bhskc,bchsk->bhsc", x, y)
+
+
+@tf.function
+def test_matmul_transpose(x, y):
+    x = tf.transpose(x, perm=[0, ])
 
 
 if __name__ == "__main__":

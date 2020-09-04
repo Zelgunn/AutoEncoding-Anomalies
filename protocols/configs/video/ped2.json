@@ -1,47 +1,33 @@
 {
-    "model_architecture": "minimalist_descriptor",
-    "step_size": 8,
-    "step_count": 4,
+    "model_architecture": "minimalist_descriptor_v3",
+    "step_size": 32,
+    "step_count": 1,
     "height": 32,
     "width": 32,
-    "code_size": 16,
-    "code_activation": "tanh",
+    "code_size": 4,
+    "code_activation": "relu",
     "kernel_size": 3,
+    "basic_block_count": 2,
     "encoder": {
-        "filters": [8, 8, 16, 32, 32, 32],
+        "filters": [64, 64, 64, 64],
         "strides": [
-            [1, 2, 2],
-            [1, 2, 2],
-            [2, 1, 1],
-            [1, 2, 2],
-            [2, 1, 1],
-            [1, 2, 2]
+            [2, 2, 2],
+            [2, 2, 2],
+            [2, 2, 2],
+            [2, 2, 2]
         ]
     },
     "decoder": {
-        "filters": [32, 32, 32, 16, 8, 8],
+        "filters": [64, 64, 64, 64],
         "strides": [
-            [1, 2, 2],
-            [1, 2, 2],
-            [2, 1, 1],
-            [1, 2, 2],
-            [1, 2, 2],
-            [2, 1, 1]
+            [2, 2, 2],
+            [2, 2, 2],
+            [2, 2, 2],
+            [2, 2, 2]
         ]
     },
-    "discriminator": {
-        "filters": [8, 16, 32, 64, 64],
-        "strides": [
-            [2, 2, 2],
-            [1, 2, 2],
-            [2, 2, 2],
-            [1, 2, 2],
-            [2, 2, 2]
-        ],
-        "intermediate_size": 32
-    },
     "output_activation": "linear",
-    "batch_size": 8,
+    "batch_size": 4,
     "learning_rate": 0.001,
     "data_augmentation": {
         "crop_ratio": 0.2,
@@ -52,5 +38,5 @@
     "seed": 42,
     "epochs": 100,
     "steps_per_epoch": 1000,
-    "validation_steps": 256
+    "validation_steps": 128
 }

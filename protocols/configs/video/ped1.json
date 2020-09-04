@@ -50,6 +50,6 @@
     },
     "seed": 42,
     "epochs": 20,
-    "steps_per_epoch": 2000,
+    "steps_per_epoch": 10000,
     "validation_steps": 256
 }

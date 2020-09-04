@@ -40,7 +40,6 @@ def get_audio_encoder(length: int,
                                 ],
                                 code_size=n * 8,
                                 code_activation="linear",
-                                model_depth=16,
                                 basic_block_count=1,
                                 seed=seed
                                 )
@@ -84,7 +83,6 @@ def get_audio_decoder(length: int,
                                 ],
                                 channels=1,
                                 output_activation="linear",
-                                model_depth=10,
                                 basic_block_count=1,
                                 seed=seed
                                 )
@@ -124,7 +122,6 @@ def get_video_encoder(length: int,
                                 ],
                                 code_size=n * 8,
                                 code_activation="linear",
-                                model_depth=14,
                                 basic_block_count=1,
                                 seed=seed
                                 )
@@ -155,7 +152,6 @@ def get_video_decoder(length: int,
                                 ],
                                 channels=channels,
                                 output_activation="linear",
-                                model_depth=14,
                                 basic_block_count=1,
                                 seed=seed
                                 )
@@ -177,13 +173,13 @@ def get_fusion_autoencoder(length: int, audio_n: int, video_n: int) -> Model:
     n = audio_n + video_n
 
     fused_codes = Concatenate(axis=-1, name="ConcatCodes")([audio_input_layer, video_input_layer])
-    fused_codes = ResBlock1D(filters=n * 8, model_depth=4, basic_block_count=1, kernel_size=3)(fused_codes)
+    fused_codes = ResBlock1D(filters=n * 8, basic_block_count=1, kernel_size=3)(fused_codes)
     fused_codes = AveragePooling1D()(fused_codes)
-    fused_codes = ResBlock1D(filters=n * 8, model_depth=4, basic_block_count=1, kernel_size=3)(fused_codes)
+    fused_codes = ResBlock1D(filters=n * 8, basic_block_count=1, kernel_size=3)(fused_codes)
     fused_codes = AveragePooling1D()(fused_codes)
-    fused_codes = ResBlock1D(filters=n * 8, model_depth=4, basic_block_count=1, kernel_size=3)(fused_codes)
+    fused_codes = ResBlock1D(filters=n * 8, basic_block_count=1, kernel_size=3)(fused_codes)
     fused_codes = UpSampling1D()(fused_codes)
-    fused_codes = ResBlock1D(filters=n * 8, model_depth=4, basic_block_count=1, kernel_size=3)(fused_codes)
+    fused_codes = ResBlock1D(filters=n * 8, basic_block_count=1, kernel_size=3)(fused_codes)
     fused_codes = UpSampling1D()(fused_codes)
 
     def output_function(inputs):

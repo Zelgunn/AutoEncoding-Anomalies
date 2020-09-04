@@ -92,7 +92,6 @@ def main():
                                               strides=video_encoder_strides,
                                               code_size=code_size,
                                               code_activation="tanh",
-                                              model_depth=len(video_encoder_filters),
                                               seed=seed)
     video_code_shape = compute_output_shape(video_encoder_layers, video_shape)
     video_encoder_layers.append(reshape_to_common_code)
@@ -106,7 +105,6 @@ def main():
                                               strides=video_decoder_strides,
                                               channels=video_channels,
                                               output_activation="linear",
-                                              model_depth=len(video_encoder_filters),
                                               seed=seed)
     reshape_to_video_code = Reshape(target_shape=video_code_shape, name="ReshapeToVideoCodeShape")
     video_decoder_layers.insert(0, reshape_to_video_code)
@@ -138,7 +136,6 @@ def main():
                                               strides=audio_encoder_strides,
                                               code_size=code_size,
                                               code_activation="tanh",
-                                              model_depth=len(audio_encoder_filters),
                                               seed=seed)
     audio_code_shape = compute_output_shape(audio_encoder_layers, audio_shape)
     audio_encoder_layers.append(reshape_to_common_code)
@@ -152,7 +149,6 @@ def main():
                                               strides=audio_decoder_strides,
                                               channels=audio_channels,
                                               output_activation="linear",
-                                              model_depth=len(audio_encoder_filters),
                                               seed=seed)
     reshape_to_audio_code = Reshape(target_shape=audio_code_shape, name="ReshapeToAudioCodeShape")
     audio_decoder_layers.insert(0, reshape_to_audio_code)
@@ -293,12 +289,10 @@ def main():
         error.set_shape((None, video_length))
         return error
 
-    auc_callback_config = AUCCallbackConfig(autoencoder=model.autoencode,
-                                            pattern=auc_pattern,
-                                            labels_length=video_length,
-                                            prefix="",
-                                            metrics=audio_video_reconstruction_score,
-                                            sample_count=2048)
+    auc_callback_config = AUCCallbackConfig(base_model=model.autoencode, pattern=auc_pattern,
+                                            labels_length=video_length, prefix="", sample_count=2048,
+                                            convert_to_io_compare_model=True,
+                                            io_compare_metrics=audio_video_reconstruction_score)
     auc_callback_configs = [auc_callback_config]
     # endregion
     # region Modality callbacks

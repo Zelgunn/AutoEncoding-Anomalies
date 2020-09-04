@@ -10,13 +10,11 @@ from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
-from custom_tf_models import AE, IAE
+from custom_tf_models import AE, IAE, MinimalistDescriptor, MinimalistDescriptorV3
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
-from custom_tf_models.energy_based import EBGAN
-from custom_tf_models.basic.MinimalistDescriptor import MinimalistDescriptor
+from custom_tf_models.energy_based import EBGAN, EBM, EBAE
 from data_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
-
 
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
@@ -39,21 +37,31 @@ class VideoProtocol(DatasetProtocol):
     # region Make model
     def make_model(self) -> Model:
         if self.model_architecture == "ae":
-            return self.make_ae()
+            model = self.make_ae()
         elif self.model_architecture == "iae":
-            return self.make_iae()
+            model = self.make_iae()
         elif self.model_architecture == "iaegan":
-            return self.make_iaegan()
+            model = self.make_iaegan()
         elif self.model_architecture == "vaegan":
-            return self.make_vaegan()
-        elif self.model_architecture == "ebgan":
-            return self.make_ebgan()
+            model = self.make_vaegan()
         elif self.model_architecture == "and":
-            return self.make_and()
+            model = self.make_and()
         elif self.model_architecture == "minimalist_descriptor":
-            return self.make_minimalist_descriptor()
+            model = self.make_minimalist_descriptor()
+        elif self.model_architecture == "minimalist_descriptor_v3":
+            model = self.make_minimalist_descriptor_v3()
+        elif self.model_architecture == "ebm":
+            model = self.make_ebm()
+        elif self.model_architecture == "ebae":
+            model = self.make_ebae()
+        elif self.model_architecture == "ebgan":
+            model = self.make_ebgan()
         else:
             raise ValueError("Unknown architecture : {}.".format(self.model_architecture))
+
+        model.build(self.get_encoder_input_batch_shape())
+        model.compile()
+        return model
 
     def make_ae(self) -> AE:
         encoder = self.make_encoder(self.get_encoder_input_shape())
@@ -109,17 +117,6 @@ class VideoProtocol(DatasetProtocol):
 
         return model
 
-    def make_ebgan(self) -> EBGAN:
-        autoencoder = self.make_ae()
-        generator = self.make_decoder(autoencoder.decoder.input_shape[1:], name="Generator")
-
-        model = EBGAN(autoencoder=autoencoder,
-                      generator=generator,
-                      margin=1e-3,
-                      seed=self.seed,
-                      )
-        return model
-
     def make_and(self) -> AND:
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
@@ -136,30 +133,137 @@ class VideoProtocol(DatasetProtocol):
     def make_minimalist_descriptor(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
+        # from tensorflow.python.keras.initializers import VarianceScaling
+        from tensorflow.python.keras.initializers import GlorotUniform
 
-        base_encoder_shape = self.get_encoder_input_shape()
-        channels = base_encoder_shape[-1]
-        encoder_shape = (*base_encoder_shape[:-1], channels * 2)
-        encoder = self.make_encoder(encoder_shape)
-
+        encoder = self.make_encoder(self.get_encoder_input_shape())
         latent_code_shape = self.get_latent_code_shape(encoder)
         decoder = self.make_decoder(latent_code_shape)
 
+        # stop_init = VarianceScaling(seed=self.seed, scale=0.1)
+        stop_init = GlorotUniform(seed=self.seed)
         stop_encoder = Sequential(
-            layers=
-            [
+            layers=[
                 Flatten(input_shape=latent_code_shape),
-                Dense(units=64, activation="relu"),
-                Dense(units=1, activation="sigmoid", use_bias=False)
+                Dense(units=64, activation="relu", kernel_initializer=stop_init),
+                Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, use_bias=False),
+                # Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, bias_initializer="ones"),
             ],
             name="StopEncoder"
         )
 
+        # ebae: EBAE = tf.keras.models.load_model(r"D:\Users\Degva\Documents\_PhD\Tensorflow\logs\AEA\video\ped2\train"
+        #                                         r"\ebae\1596102387\tmp_weights_004")
+        # perceptual_encoder = ebae.energy_model.autoencoder.encoder
+
+        # iaegan: IAEGAN = tf.keras.models.load_model(r"D:\Users\Degva\Documents\_PhD\Tensorflow\logs\AEA\video\ped2"
+        #                                             r"\train\iaegan\1597838199\tmp_weights_009")
+        # perceptual_encoder = iaegan.encoder
+        # perceptual_encoder.trainable = False
+
         model = MinimalistDescriptor(encoder=encoder,
                                      decoder=decoder,
                                      stop_encoder=stop_encoder,
-                                     max_steps=16,
-                                     learning_rate=self.base_learning_rate_schedule)
+                                     max_steps=8,
+                                     stop_lambda=1e-4,
+                                     learning_rate=self.base_learning_rate_schedule,
+                                     stop_residual_gradients=True,
+                                     noise_factor_distribution="normal",
+                                     noise_type="sparse",
+                                     train_stride=None,
+                                     seed=self.seed)
+        return model
+
+    def make_minimalist_descriptor_v3(self):
+        from tensorflow.python.keras.models import Sequential
+        from tensorflow.python.keras.layers import Dense, Flatten
+        # from tensorflow.python.keras.initializers import VarianceScaling
+        from tensorflow.python.keras.initializers import GlorotUniform
+
+        max_steps = 8
+        encoders = [self.make_encoder(self.get_encoder_input_shape(), name="Encoder_{}".format(i))
+                    for i in range(max_steps)]
+        latent_code_shape = self.get_latent_code_shape(encoders[0])
+        decoders = [self.make_decoder(latent_code_shape, name="Decoder_{}".format(i)) for i in range(max_steps)]
+
+        # stop_init = VarianceScaling(seed=self.seed, scale=0.1)
+        stop_init = GlorotUniform(seed=self.seed)
+        stop_encoder = Sequential(
+            layers=[
+                Flatten(input_shape=latent_code_shape),
+                Dense(units=64, activation="relu", kernel_initializer=stop_init),
+                Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, use_bias=False),
+                # Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, bias_initializer="ones"),
+            ],
+            name="StopEncoder"
+        )
+
+        model = MinimalistDescriptorV3(encoders=encoders,
+                                       decoders=decoders,
+                                       stop_encoder=stop_encoder,
+                                       max_steps=max_steps,
+                                       stop_lambda=1e-4,
+                                       learning_rate=self.base_learning_rate_schedule,
+                                       stop_residual_gradients=True,
+                                       noise_factor_distribution="normal",
+                                       noise_type="sparse",
+                                       train_stride=None,
+                                       seed=self.seed)
+        return model
+
+    def make_ebm(self):
+        from tensorflow.python.keras.models import Sequential
+        from tensorflow.python.keras.layers import Dense, Flatten
+        from tensorflow.python.keras.initializers import VarianceScaling
+        from custom_tf_models.energy_based.energy_state_functions.FlipSequence import FlipSequence
+        from custom_tf_models.energy_based.energy_state_functions.IdentityESF import IdentityESF
+
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        kernel_initializer = VarianceScaling(seed=self.seed)
+        energy_model = Sequential(
+            layers=[
+                encoder,
+                Flatten(),
+                Dense(units=64, activation="relu", kernel_initializer=kernel_initializer),
+                Dense(units=1, activation="linear", kernel_initializer=kernel_initializer, use_bias=False),
+            ],
+            name="EnergyModel"
+        )
+
+        model = EBM(energy_model=energy_model,
+                    energy_state_functions=[FlipSequence(), IdentityESF()],
+                    optimizer=tf.keras.optimizers.Adam(),
+                    energy_margin=1.0,
+                    seed=self.seed)
+
+        return model
+
+    def make_ebae(self) -> EBAE:
+        from custom_tf_models.energy_based.energy_state_functions.FlipSequence import FlipSequence
+        from custom_tf_models.energy_based.energy_state_functions.IdentityESF import IdentityESF
+
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+
+        model = EBAE(encoder=encoder,
+                     decoder=decoder,
+                     energy_state_functions=[FlipSequence(), IdentityESF()],
+                     energy_margin=2e-1,
+                     weights_decay=0.0,
+                     learning_rate=self.base_learning_rate_schedule,
+                     seed=self.seed)
+
+        return model
+
+    def make_ebgan(self) -> EBGAN:
+        autoencoder = self.make_ae()
+        generator = self.make_decoder(autoencoder.decoder.input_shape[1:], name="Generator")
+
+        model = EBGAN(autoencoder=autoencoder,
+                      generator=generator,
+                      margin=1e-3,
+                      seed=self.seed,
+                      )
         return model
 
     # endregion
@@ -196,8 +300,7 @@ class VideoProtocol(DatasetProtocol):
                                strides=self.encoder_strides,
                                code_size=self.code_size,
                                code_activation=self.code_activation,
-                               model_depth=self.model_depth,
-                               basic_block_count=1,
+                               basic_block_count=self.basic_block_count,
                                seed=self.seed,
                                name=name,
                                )
@@ -210,8 +313,7 @@ class VideoProtocol(DatasetProtocol):
                                strides=self.decoder_strides,
                                channels=1,
                                output_activation=self.output_activation,
-                               model_depth=self.model_depth,
-                               basic_block_count=1,
+                               basic_block_count=self.basic_block_count,
                                seed=self.seed,
                                name=name,
                                )
@@ -299,23 +401,32 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
+    # region Callbacks
     def get_modality_callback_configs(self):
         image_pattern = self.get_image_pattern()
+        image_callbacks_configs = []
 
-        image_callbacks_configs = [
-            ImageCallbackConfig(autoencoder=self.model, pattern=image_pattern, is_train_callback=True,
-                                name="train", video_sample_rate=self.video_sample_rate),
-            ImageCallbackConfig(autoencoder=self.model, pattern=image_pattern, is_train_callback=False,
-                                name="test", video_sample_rate=self.video_sample_rate),
-        ]
+        model = self.model
+        if isinstance(model, EBAE):
+            model = model.autoencoder
 
-        if isinstance(self.model, IAE):
-            image_callback_config = ImageCallbackConfig(autoencoder=self.model.interpolate, pattern=image_pattern,
+        if isinstance(model, AE):
+            image_callbacks_configs += [
+                ImageCallbackConfig(autoencoder=model, pattern=image_pattern, is_train_callback=True,
+                                    name="train", video_sample_rate=self.video_sample_rate),
+                ImageCallbackConfig(autoencoder=model, pattern=image_pattern, is_train_callback=False,
+                                    name="test", video_sample_rate=self.video_sample_rate),
+            ]
+
+        if isinstance(model, IAE):
+            image_callback_config = ImageCallbackConfig(autoencoder=model.interpolate, pattern=image_pattern,
                                                         is_train_callback=False, name="interpolate_test",
                                                         video_sample_rate=self.video_sample_rate)
             image_callbacks_configs.append(image_callback_config)
 
         return image_callbacks_configs
+
+    # endregion
 
     # region Properties
     # region Abstract properties
@@ -395,16 +506,12 @@ class VideoProtocol(DatasetProtocol):
     # endregion
 
     @property
-    def model_depth(self) -> int:
-        return len(self.encoder_filters) + len(self.decoder_filters)
-
-    @property
     def kernel_size(self) -> int:
         return self.config["kernel_size"]
 
     @property
-    def use_batch_norm(self) -> bool:
-        return self.config["use_batch_norm"]
+    def basic_block_count(self) -> int:
+        return self.config["basic_block_count"]
 
     @property
     def learning_rate(self) -> float:
@@ -469,7 +576,7 @@ class VideoProtocol(DatasetProtocol):
                          output_size: Tuple[int, int] = None
                          ):
         from datasets.data_readers import VideoReader
-        from custom_tf_models.utils import reduce_std_from, reduce_mean_from
+        from misc_utils.math_utils import reduce_std_from, reduce_mean_from
         from tqdm import tqdm
 
         self.load_weights(epoch=load_epoch)
