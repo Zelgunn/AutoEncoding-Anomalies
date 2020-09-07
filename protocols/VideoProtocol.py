@@ -10,7 +10,7 @@ from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
-from custom_tf_models import AE, IAE, MinimalistDescriptor, MinimalistDescriptorV3
+from custom_tf_models import AE, IAE, MinimalistDescriptor, MinimalistDescriptorV3, BinAE
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
@@ -40,6 +40,8 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_ae()
         elif self.model_architecture == "iae":
             model = self.make_iae()
+        elif self.model_architecture == "bin_ae":
+            model = self.make_bin_ae()
         elif self.model_architecture == "iaegan":
             model = self.make_iaegan()
         elif self.model_architecture == "vaegan":
@@ -81,6 +83,16 @@ class VideoProtocol(DatasetProtocol):
                     step_size=self.step_size,
                     learning_rate=self.base_learning_rate_schedule,
                     seed=self.seed)
+        return model
+
+    def make_bin_ae(self) -> BinAE:
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+
+        model = BinAE(encoder=encoder,
+                      decoder=decoder,
+                      learning_rate=self.base_learning_rate_schedule)
+
         return model
 
     def make_iaegan(self) -> IAEGAN:
@@ -178,16 +190,21 @@ class VideoProtocol(DatasetProtocol):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
         from tensorflow.python.keras.initializers import VarianceScaling
-        # from tensorflow.python.keras.initializers import GlorotUniform
+        from tensorflow.python.keras.initializers import GlorotUniform
 
         max_steps = 8
+        use_normal_init = False
+
         encoders = [self.make_encoder(self.get_encoder_input_shape(), name="Encoder_{}".format(i))
                     for i in range(max_steps)]
         latent_code_shape = self.get_latent_code_shape(encoders[0])
         decoders = [self.make_decoder(latent_code_shape, name="Decoder_{}".format(i)) for i in range(max_steps)]
 
-        stop_init = VarianceScaling(seed=self.seed, scale=0.1)
-        # stop_init = GlorotUniform(seed=self.seed)
+        if use_normal_init:
+            stop_init = VarianceScaling(seed=self.seed, scale=0.1)
+        else:
+            stop_init = GlorotUniform(seed=self.seed)
+
         stop_encoder = Sequential(
             layers=[
                 Flatten(input_shape=latent_code_shape),
