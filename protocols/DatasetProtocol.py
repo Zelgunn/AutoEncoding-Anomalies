@@ -1,8 +1,7 @@
-from tensorflow.python.keras.models import Model, Sequential
-from tensorflow.python.keras.layers import Lambda
+from tensorflow.python.keras.models import Model
 import numpy as np
 from abc import abstractmethod
-from typing import Callable, Dict, Optional, List
+from typing import Callable, Dict, Optional, List, Union
 import json
 import os
 from shutil import copyfile
@@ -71,6 +70,7 @@ class DatasetProtocol(Protocol):
                                    epochs=self.epochs,
                                    initial_epoch=self.initial_epoch,
                                    validation_steps=self.validation_steps,
+                                   save_frequency=self.save_frequency,
                                    modality_callback_configs=modality_callback_configs,
                                    auc_callback_configs=auc_callbacks_configs)
 
@@ -171,6 +171,14 @@ class DatasetProtocol(Protocol):
         copyfile(src=source_path, dst=target_path)
 
     @property
+    def batch_size(self) -> int:
+        return self.config["batch_size"]
+
+    @property
+    def output_activation(self) -> str:
+        return self.config["output_activation"]
+
+    @property
     def epochs(self) -> int:
         return int(self.config["epochs"])
 
@@ -183,10 +191,6 @@ class DatasetProtocol(Protocol):
         return int(self.config["validation_steps"])
 
     @property
-    def batch_size(self) -> int:
-        return self.config["batch_size"]
-
-    @property
-    def output_activation(self) -> str:
-        return self.config["output_activation"]
+    def save_frequency(self) -> Union[str, int]:
+        return int(self.config["save_frequency"])
     # endregion

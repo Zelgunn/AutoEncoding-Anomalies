@@ -4,7 +4,7 @@ from tensorflow.python.keras.callbacks import Callback, TensorBoard, TerminateOn
 from tensorboard.plugins import projector
 import time
 import os
-from typing import List, Callable, Dict, Sequence
+from typing import List, Callable, Dict, Sequence, Union
 
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig
@@ -22,6 +22,7 @@ class ProtocolTrainConfig(object):
                  epochs: int,
                  initial_epoch: int,
                  validation_steps: int,
+                 save_frequency: Union[str, int],
                  modality_callback_configs: List[ModalityCallbackConfig] = None,
                  auc_callback_configs: List[AUCCallbackConfig] = None,
                  ):
@@ -31,6 +32,7 @@ class ProtocolTrainConfig(object):
         self.epochs = epochs
         self.initial_epoch = initial_epoch
         self.validation_steps = validation_steps
+        self.save_frequency = save_frequency
         self.modality_callback_configs = modality_callback_configs
         self.auc_callback_configs = auc_callback_configs
 
@@ -114,7 +116,7 @@ class Protocol(object):
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
         weights_path = os.path.join(log_dir, "weights_{epoch:03d}")
-        model_checkpoint = ModelCheckpoint(filepath=weights_path, save_frequency=100)
+        model_checkpoint = ModelCheckpoint(filepath=weights_path, save_freq=config.save_frequency)
         callbacks.append(model_checkpoint)
         callbacks.append(CustomModelCheckpoint(filepath=os.path.join(log_dir, "full_checkpoint_{epoch:03d}"),
                                                save_weights_only=False))
