@@ -10,7 +10,8 @@ from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
-from custom_tf_models import AE, IAE, MinimalistDescriptor, MinimalistDescriptorV3, BinAE
+from custom_tf_models import AE, IAE, BinAE
+from custom_tf_models import MinimalistDescriptor, MinimalistDescriptorV3, MinimalistDescriptorV4
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
@@ -52,6 +53,8 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_minimalist_descriptor()
         elif self.model_architecture == "minimalist_descriptor_v3":
             model = self.make_minimalist_descriptor_v3()
+        elif self.model_architecture == "minimalist_descriptor_v4":
+            model = self.make_minimalist_descriptor_v4()
         elif self.model_architecture == "ebm":
             model = self.make_ebm()
         elif self.model_architecture == "ebae":
@@ -61,9 +64,15 @@ class VideoProtocol(DatasetProtocol):
         else:
             raise ValueError("Unknown architecture : {}.".format(self.model_architecture))
 
-        model.build(self.get_encoder_input_batch_shape())
-        model.compile()
+        self.setup_model(model)
         return model
+
+    def setup_model(self, model: Model):
+        model.build(self.get_encoder_input_batch_shape(False))
+        if isinstance(model, IAE):
+            # noinspection PyProtectedMember
+            model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
+        model.compile()
 
     def make_ae(self) -> AE:
         encoder = self.make_encoder(self.get_encoder_input_shape())
@@ -228,6 +237,18 @@ class VideoProtocol(DatasetProtocol):
                                        seed=self.seed)
         return model
 
+    def make_minimalist_descriptor_v4(self) -> MinimalistDescriptorV4:
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+
+        model = MinimalistDescriptorV4(encoder=encoder,
+                                       decoder=decoder,
+                                       learning_rate=self.base_learning_rate_schedule,
+                                       features_per_block=4,
+                                       patience=128,
+                                       trained_blocks_count=1)
+        return model
+
     def make_ebm(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
@@ -286,8 +307,9 @@ class VideoProtocol(DatasetProtocol):
     # endregion
 
     # region Sub-models input shapes
-    def get_encoder_input_batch_shape(self) -> Tuple[None, int, int, int, int]:
-        shape = (None, self.step_size, self.height, self.width, 1)
+    def get_encoder_input_batch_shape(self, use_batch_size=False) -> Tuple[None, int, int, int, int]:
+        batch_size = self.batch_size if use_batch_size else None
+        shape = (batch_size, self.step_size, self.height, self.width, 1)
         return shape
 
     def get_encoder_input_shape(self) -> Tuple[int, int, int, int]:

@@ -192,5 +192,8 @@ class DatasetProtocol(Protocol):
 
     @property
     def save_frequency(self) -> Union[str, int]:
-        return int(self.config["save_frequency"])
+        save_frequency = self.config["save_frequency"]
+        if save_frequency not in ["batch", "epoch"]:
+            save_frequency = int(save_frequency)
+        return save_frequency
     # endregion
