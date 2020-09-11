@@ -1,10 +1,44 @@
 import tensorflow as tf
+from enum import Enum
+from typing import Tuple, Callable, Union, Optional
 
 from data_processing.common import dropout_noise
 
 
+class ActivationRange(Enum):
+    LINEAR = 0
+    SIGMOID = 1
+    TANH = 2
+
+    @staticmethod
+    def from_str(s: str) -> "ActivationRange":
+        s = s.lower()
+        if s == "linear":
+            return ActivationRange.LINEAR
+        elif s == "sigmoid":
+            return ActivationRange.SIGMOID
+        elif s == "tanh":
+            return ActivationRange.TANH
+        else:
+            raise ValueError("s must be in {{linear, sigmoid, tanh}} but got {}".format(s))
+
+
+def apply_activation_range(x: tf.Tensor, activation_range: Union[ActivationRange, str]) -> tf.Tensor:
+    if isinstance(activation_range, str):
+        activation_range = ActivationRange.from_str(activation_range)
+
+    if activation_range == activation_range.LINEAR:
+        x = tf.image.per_image_standardization(x)
+    elif activation_range == activation_range.SIGMOID:
+        x = normalize_sigmoid(x)
+    elif activation_range == activation_range.TANH:
+        x = normalize_tanh(x)
+    return x
+
+
 def make_video_augmentation(length: int, height: int, width: int, channels: int,
-                            seed,
+                            activation_range: Union[ActivationRange, str],
+                            seed: int,
                             dropout_noise_ratio=0.0,
                             negative_prob=0.0,
                             ):
@@ -22,22 +56,25 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
         if to_grayscale:
             video = convert_to_grayscale(video)
 
-        video = tf.image.per_image_standardization(video)
-        # video = normalize_tanh(video)
+        video = apply_activation_range(video, activation_range)
         return video
 
     return augment_video
 
 
-def make_video_preprocess(height: int, width: int, to_grayscale: bool):
+def make_video_preprocess(to_grayscale: bool,
+                          activation_range: Union[ActivationRange, str],
+                          target_size: Tuple[int, int] = None
+                          ) -> Callable[[tf.Tensor, Optional[tf.Tensor]], Tuple[tf.Tensor, Optional[tf.Tensor]]]:
     def preprocess(video: tf.Tensor, labels: tf.Tensor = None):
-        # video = tf.image.resize(video, (height, width))
+        if target_size is not None:
+            (height, width) = target_size
+            video = tf.image.resize(video, (height, width))
 
         if to_grayscale:
             video = convert_to_grayscale(video)
 
-        video = tf.image.per_image_standardization(video)
-        # video = normalize_tanh(video)
+        video = apply_activation_range(video, activation_range)
 
         if labels is None:
             return video

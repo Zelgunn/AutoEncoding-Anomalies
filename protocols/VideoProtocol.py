@@ -404,13 +404,19 @@ class VideoProtocol(DatasetProtocol):
 
     def get_image_pattern(self) -> Pattern:
         video_preprocess = self.make_video_preprocess()
-        video_patch_extractor = VideoPatchExtractor(patch_size=self.height)
+
+        if self.extract_patches:
+            video_patch_extractor = VideoPatchExtractor(patch_size=self.height)
+            batch_processor = video_patch_extractor.batch_process
+            postprocessor = video_patch_extractor.post_process
+        else:
+            batch_processor = postprocessor = None
 
         pattern = Pattern(
             ModalityLoadInfo(RawVideo, self.output_length),
             preprocessor=video_preprocess,
-            batch_processor=video_patch_extractor.batch_process,
-            postprocessor=video_patch_extractor.post_process,
+            batch_processor=batch_processor,
+            postprocessor=postprocessor,
         )
         return pattern
 
@@ -428,12 +434,14 @@ class VideoProtocol(DatasetProtocol):
                                        channels=self.dataset_channels,
                                        dropout_noise_ratio=self.dropout_noise_ratio,
                                        negative_prob=negative_prob,
-                                       seed=self.seed)
+                                       seed=self.seed,
+                                       activation_range=self.output_activation)
 
     def make_video_preprocess(self) -> Callable:
-        return make_video_preprocess(height=self.height,
-                                     width=self.width,
-                                     to_grayscale=self.dataset_channels == 3)
+        target_size = (self.height, self.width) if not self.extract_patches == "resize" else None
+        return make_video_preprocess(to_grayscale=self.dataset_channels == 3,
+                                     activation_range=self.output_activation,
+                                     target_size=target_size)
 
     def make_video_post_process(self) -> Callable:
         pass
@@ -575,10 +583,6 @@ class VideoProtocol(DatasetProtocol):
         return self.config["data_augmentation"]
 
     @property
-    def use_cropping(self) -> bool:
-        return self.crop_ratio > 0.0
-
-    @property
     def crop_ratio(self) -> float:
         return self.data_augmentation_config["crop_ratio"]
 
@@ -595,6 +599,10 @@ class VideoProtocol(DatasetProtocol):
         return self.data_augmentation_config["use_random_negative"]
 
     # endregion
+
+    @property
+    def extract_patches(self) -> bool:
+        return self.config["extract_patches"]
 
     # endregion
 
