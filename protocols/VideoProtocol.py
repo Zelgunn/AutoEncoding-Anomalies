@@ -69,11 +69,12 @@ class VideoProtocol(DatasetProtocol):
 
     def setup_model(self, model: Model):
         model.build(self.get_encoder_input_batch_shape(False))
-        if isinstance(model, IAE):
+        if isinstance(model, (IAE, MinimalistDescriptorV4)):
             # noinspection PyProtectedMember
             model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
         model.compile()
 
+    # region AE
     def make_ae(self) -> AE:
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
@@ -81,17 +82,6 @@ class VideoProtocol(DatasetProtocol):
         model = AE(encoder=encoder,
                    decoder=decoder,
                    learning_rate=self.base_learning_rate_schedule)
-        return model
-
-    def make_iae(self) -> IAE:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
-
-        model = IAE(encoder=encoder,
-                    decoder=decoder,
-                    step_size=self.step_size,
-                    learning_rate=self.base_learning_rate_schedule,
-                    seed=self.seed)
         return model
 
     def make_bin_ae(self) -> BinAE:
@@ -102,6 +92,20 @@ class VideoProtocol(DatasetProtocol):
                       decoder=decoder,
                       learning_rate=self.base_learning_rate_schedule)
 
+        return model
+
+    # endregion
+
+    # region IAE
+    def make_iae(self) -> IAE:
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+
+        model = IAE(encoder=encoder,
+                    decoder=decoder,
+                    step_size=self.step_size,
+                    learning_rate=self.base_learning_rate_schedule,
+                    seed=self.seed)
         return model
 
     def make_iaegan(self) -> IAEGAN:
@@ -121,6 +125,9 @@ class VideoProtocol(DatasetProtocol):
                        )
         return model
 
+    # endregion
+
+    # region VAE
     def make_vaegan(self) -> VAEGAN:
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
@@ -138,6 +145,9 @@ class VideoProtocol(DatasetProtocol):
 
         return model
 
+    # endregion
+
+    # region Autoregressive
     def make_and(self) -> AND:
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
@@ -151,6 +161,9 @@ class VideoProtocol(DatasetProtocol):
 
         return model
 
+    # endregion
+
+    # region Minimalist Desc
     def make_minimalist_descriptor(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
@@ -244,11 +257,15 @@ class VideoProtocol(DatasetProtocol):
         model = MinimalistDescriptorV4(encoder=encoder,
                                        decoder=decoder,
                                        learning_rate=self.base_learning_rate_schedule,
-                                       features_per_block=4,
-                                       patience=128,
-                                       trained_blocks_count=1)
+                                       features_per_block=1,
+                                       merge_dims_with_features=False,
+                                       add_binarization_noise_to_mask=True,
+                                       seed=self.seed)
         return model
 
+    # endregion
+
+    # region Energy based
     def make_ebm(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
@@ -303,6 +320,8 @@ class VideoProtocol(DatasetProtocol):
                       seed=self.seed,
                       )
         return model
+
+    # endregion
 
     # endregion
 
@@ -615,6 +634,7 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
+    # region Misc.
     def autoencode_video(self,
                          video_source,
                          target_path: str,
@@ -687,6 +707,7 @@ class VideoProtocol(DatasetProtocol):
             frame = np.mean(frame, axis=-1, keepdims=True)
 
         return frame
+    # endregion
 
 
 def write_frame(video_writer: cv2.VideoWriter, frame: np.ndarray, output_size: Tuple[int, int]):

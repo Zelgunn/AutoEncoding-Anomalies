@@ -470,7 +470,6 @@ class AnomalyDetector(Model):
         labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
         mask = np.zeros_like(labels)
         mask[:, 15] = 1
-        # mask[:, 16] = 1
         # mask = np.ones_like(labels)
         labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
         return labels
