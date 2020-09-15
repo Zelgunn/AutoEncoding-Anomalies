@@ -1,5 +1,5 @@
 {
-    "model_architecture": "minimalist_descriptor_v4",
+    "model_architecture": "led",
     "step_size": 32,
     "step_count": 1,
     "height": 128,

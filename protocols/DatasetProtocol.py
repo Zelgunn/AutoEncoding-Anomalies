@@ -10,7 +10,7 @@ from datasets.tfrecord_builders import tfrecords_config_filename
 from modalities import Pattern
 from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
 from callbacks.configs import AUCCallbackConfig
-from custom_tf_models import AE, IAE, MinimalistDescriptor, MinimalistDescriptorV4
+from custom_tf_models import AE, IAE, LED
 from custom_tf_models.energy_based import EBAE
 
 
@@ -124,13 +124,7 @@ class DatasetProtocol(Protocol):
                                    prefix="iae", convert_to_io_compare_model=True)
                  ]
 
-        if isinstance(model, MinimalistDescriptor):
-            auc_callbacks_configs += \
-                [AUCCallbackConfig(model.compute_description_length, anomaly_pattern, labels_length=1,
-                                   prefix="desc_length", epoch_freq=1)
-                 ]
-
-        if isinstance(model, MinimalistDescriptorV4):
+        if isinstance(model, LED):
             auc_callbacks_configs += \
                 [AUCCallbackConfig(model.compute_description_energy, anomaly_pattern, labels_length=1,
                                    prefix="desc_energy", epoch_freq=1)

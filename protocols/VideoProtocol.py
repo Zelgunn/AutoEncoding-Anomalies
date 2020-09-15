@@ -11,7 +11,7 @@ from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from custom_tf_models import AE, IAE, BinAE
-from custom_tf_models import MinimalistDescriptor, MinimalistDescriptorV3, MinimalistDescriptorV4
+from custom_tf_models import LED, ALED
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
@@ -49,12 +49,10 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_vaegan()
         elif self.model_architecture == "and":
             model = self.make_and()
-        elif self.model_architecture == "minimalist_descriptor":
-            model = self.make_minimalist_descriptor()
-        elif self.model_architecture == "minimalist_descriptor_v3":
-            model = self.make_minimalist_descriptor_v3()
-        elif self.model_architecture == "minimalist_descriptor_v4":
-            model = self.make_minimalist_descriptor_v4()
+        elif self.model_architecture == "led":
+            model = self.make_led()
+        elif self.model_architecture == "aled":
+            model = self.make_aled()
         elif self.model_architecture == "ebm":
             model = self.make_ebm()
         elif self.model_architecture == "ebae":
@@ -69,7 +67,7 @@ class VideoProtocol(DatasetProtocol):
 
     def setup_model(self, model: Model):
         model.build(self.get_encoder_input_batch_shape(False))
-        if isinstance(model, (IAE, MinimalistDescriptorV4)):
+        if isinstance(model, (IAE, LED)):
             # noinspection PyProtectedMember
             model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
         model.compile()
@@ -164,103 +162,35 @@ class VideoProtocol(DatasetProtocol):
     # endregion
 
     # region Minimalist Desc
-    def make_minimalist_descriptor(self):
-        from tensorflow.python.keras.models import Sequential
-        from tensorflow.python.keras.layers import Dense, Flatten
-        from tensorflow.python.keras.initializers import VarianceScaling
-        # from tensorflow.python.keras.initializers import GlorotUniform
-
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        latent_code_shape = self.get_latent_code_shape(encoder)
-        decoder = self.make_decoder(latent_code_shape)
-
-        stop_init = VarianceScaling(seed=self.seed, scale=0.1)
-        # stop_init = GlorotUniform(seed=self.seed)
-        stop_encoder = Sequential(
-            layers=[
-                Flatten(input_shape=latent_code_shape),
-                Dense(units=64, activation="relu", kernel_initializer=stop_init),
-                Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, use_bias=False),
-                # Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, bias_initializer="ones"),
-            ],
-            name="StopEncoder"
-        )
-
-        # ebae: EBAE = tf.keras.models.load_model(r"D:\Users\Degva\Documents\_PhD\Tensorflow\logs\AEA\video\ped2\train"
-        #                                         r"\ebae\1596102387\tmp_weights_004")
-        # perceptual_encoder = ebae.energy_model.autoencoder.encoder
-
-        # iaegan: IAEGAN = tf.keras.models.load_model(r"D:\Users\Degva\Documents\_PhD\Tensorflow\logs\AEA\video\ped2"
-        #                                             r"\train\iaegan\1597838199\tmp_weights_009")
-        # perceptual_encoder = iaegan.encoder
-        # perceptual_encoder.trainable = False
-
-        model = MinimalistDescriptor(encoder=encoder,
-                                     decoder=decoder,
-                                     stop_encoder=stop_encoder,
-                                     max_steps=8,
-                                     stop_lambda=1e-4,
-                                     learning_rate=self.base_learning_rate_schedule,
-                                     stop_residual_gradients=True,
-                                     noise_factor_distribution="normal",
-                                     noise_type="sparse",
-                                     train_stride=None,
-                                     seed=self.seed)
-        return model
-
-    def make_minimalist_descriptor_v3(self):
-        from tensorflow.python.keras.models import Sequential
-        from tensorflow.python.keras.layers import Dense, Flatten
-        from tensorflow.python.keras.initializers import VarianceScaling
-        from tensorflow.python.keras.initializers import GlorotUniform
-
-        max_steps = 8
-        use_normal_init = False
-
-        encoders = [self.make_encoder(self.get_encoder_input_shape(), name="Encoder_{}".format(i))
-                    for i in range(max_steps)]
-        latent_code_shape = self.get_latent_code_shape(encoders[0])
-        decoders = [self.make_decoder(latent_code_shape, name="Decoder_{}".format(i)) for i in range(max_steps)]
-
-        if use_normal_init:
-            stop_init = VarianceScaling(seed=self.seed, scale=0.1)
-        else:
-            stop_init = GlorotUniform(seed=self.seed)
-
-        stop_encoder = Sequential(
-            layers=[
-                Flatten(input_shape=latent_code_shape),
-                Dense(units=64, activation="relu", kernel_initializer=stop_init),
-                Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, use_bias=False),
-                # Dense(units=1, activation="sigmoid", kernel_initializer=stop_init, bias_initializer="ones"),
-            ],
-            name="StopEncoder"
-        )
-
-        model = MinimalistDescriptorV3(encoders=encoders,
-                                       decoders=decoders,
-                                       stop_encoder=stop_encoder,
-                                       max_steps=max_steps,
-                                       stop_lambda=1e-4,
-                                       learning_rate=self.base_learning_rate_schedule,
-                                       stop_residual_gradients=True,
-                                       noise_factor_distribution="normal",
-                                       noise_type="sparse",
-                                       train_stride=None,
-                                       seed=self.seed)
-        return model
-
-    def make_minimalist_descriptor_v4(self) -> MinimalistDescriptorV4:
+    def make_led(self):
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
-        model = MinimalistDescriptorV4(encoder=encoder,
-                                       decoder=decoder,
-                                       learning_rate=self.base_learning_rate_schedule,
-                                       features_per_block=1,
-                                       merge_dims_with_features=False,
-                                       add_binarization_noise_to_mask=True,
-                                       seed=self.seed)
+        model = LED(encoder=encoder,
+                    decoder=decoder,
+                    learning_rate=self.base_learning_rate_schedule,
+                    features_per_block=1,
+                    merge_dims_with_features=False,
+                    add_binarization_noise_to_mask=True,
+                    seed=self.seed)
+        return model
+
+    def make_aled(self):
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        latent_code_shape = self.get_latent_code_shape(encoder)
+        decoder = self.make_decoder(latent_code_shape)
+        generator = self.make_decoder(latent_code_shape, name="ResidualGenerator")
+        generator_learning_rate = self.base_learning_rate_schedule
+
+        model = ALED(encoder=encoder,
+                     decoder=decoder,
+                     generator=generator,
+                     learning_rate=self.base_learning_rate_schedule,
+                     generator_learning_rate=generator_learning_rate,
+                     features_per_block=1,
+                     merge_dims_with_features=False,
+                     add_binarization_noise_to_mask=True,
+                     seed=self.seed)
         return model
 
     # endregion
