@@ -1,4 +1,3 @@
-import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.callbacks import Callback
 from tensorflow.python.platform import tf_logging as logging

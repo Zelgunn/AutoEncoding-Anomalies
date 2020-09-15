@@ -2,7 +2,7 @@ import tensorflow as tf
 from typing import Union, List, Tuple
 
 from data_processing import DataProcessor
-from custom_tf_models.utils import reduce_min_from, reduce_max_from
+from misc_utils.math_utils import reduce_min_from, reduce_max_from
 
 
 class VideoProcessor(DataProcessor):

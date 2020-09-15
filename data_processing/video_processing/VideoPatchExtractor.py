@@ -2,7 +2,6 @@ import tensorflow as tf
 from typing import Union, List, Tuple
 
 from data_processing import DataProcessor
-from misc_utils.math_utils import standardize_from
 
 
 class VideoPatchExtractor(DataProcessor):
