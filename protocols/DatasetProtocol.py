@@ -112,7 +112,13 @@ class DatasetProtocol(Protocol):
         if isinstance(model, EBAE):
             model = model.autoencoder
 
-        if isinstance(model, AE):
+        if isinstance(model, LED):
+            auc_callbacks_configs += \
+                [AUCCallbackConfig(model.compute_description_energy, anomaly_pattern, labels_length=1,
+                                   prefix="desc_energy", epoch_freq=1)
+                 ]
+
+        elif isinstance(model, AE):
             auc_callbacks_configs += [
                 AUCCallbackConfig(model, anomaly_pattern, labels_length=self.output_length, prefix="",
                                   convert_to_io_compare_model=True),
@@ -122,12 +128,6 @@ class DatasetProtocol(Protocol):
             auc_callbacks_configs += \
                 [AUCCallbackConfig(model.interpolate, anomaly_pattern, labels_length=self.output_length,
                                    prefix="iae", convert_to_io_compare_model=True)
-                 ]
-
-        if isinstance(model, LED):
-            auc_callbacks_configs += \
-                [AUCCallbackConfig(model.compute_description_energy, anomaly_pattern, labels_length=1,
-                                   prefix="desc_energy", epoch_freq=1)
                  ]
 
         return auc_callbacks_configs

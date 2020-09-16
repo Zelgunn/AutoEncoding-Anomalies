@@ -1,6 +1,6 @@
 {
-    "model_architecture": "aled",
-    "step_size": 8,
+    "model_architecture": "led",
+    "step_size": 32,
     "step_count": 1,
     "height": 128,
     "width": 128,
@@ -37,7 +37,7 @@
     },
     "extract_patches": true,
     "seed": 42,
-    "epochs": 10,
+    "epochs": 100,
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency" : "epoch"
