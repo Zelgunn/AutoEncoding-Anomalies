@@ -12,6 +12,7 @@ from callbacks import CustomModelCheckpoint
 from datasets import DatasetLoader, SingleSetConfig
 from misc_utils.train_utils import save_model_info
 from modalities import Pattern
+from custom_tf_models import LED
 
 
 class ProtocolTrainConfig(object):
@@ -151,7 +152,11 @@ class Protocol(object):
     def test_model(self, config: ProtocolTestConfig):
         self.load_weights(epoch=config.epoch)
 
-        compare_metrics = list(known_metrics.keys())
+        if isinstance(self.model, LED):
+            compare_metrics = None
+        else:
+            compare_metrics = list(known_metrics.keys())
+
         additional_metrics = self.additional_test_metrics
         if config.additional_metrics is not None:
             additional_metrics = [*additional_metrics, *config.additional_metrics]

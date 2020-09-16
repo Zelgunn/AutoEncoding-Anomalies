@@ -5,7 +5,7 @@ from scipy.optimize import brentq
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import os
-from typing import Union, List, Callable, Dict, Any, Tuple, Sequence
+from typing import Union, List, Callable, Dict, Any, Tuple, Sequence, Optional
 
 from anomaly_detection import IOCompareModel
 from datasets import DatasetLoader, SubsetLoader
@@ -18,7 +18,7 @@ class AnomalyDetector(Model):
     def __init__(self,
                  autoencoder: Union[Callable, AE],
                  pattern: Pattern,
-                 compare_metrics: List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]] = "mse",
+                 compare_metrics: Optional[List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]]] = "mse",
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
                  **kwargs
                  ):
@@ -32,16 +32,22 @@ class AnomalyDetector(Model):
         """
         super(AnomalyDetector, self).__init__(**kwargs)
 
+        if (compare_metrics is None) and (additional_metrics is None):
+            raise ValueError("At least `compare_metrics` or `additional_metrics` must be specified.")
+
         self.autoencoder = autoencoder
         self.pattern = pattern
         self.compare_metrics = compare_metrics
 
-        self.io_compare_model = IOCompareModel(autoencoder=autoencoder,
-                                               postprocessor=self.pattern.postprocessor,
-                                               metrics=compare_metrics)
-        self.additional_metrics = to_list(additional_metrics) if additional_metrics is not None else []
+        if compare_metrics is not None:
+            self.io_compare_model = IOCompareModel(autoencoder=autoencoder,
+                                                   postprocessor=self.pattern.postprocessor,
+                                                   metrics=compare_metrics)
+        else:
+            self.io_compare_model = None
 
-        compare_metrics = to_list(compare_metrics)
+        self.additional_metrics = to_list(additional_metrics) if additional_metrics is not None else []
+        compare_metrics = to_list(compare_metrics) if compare_metrics is not None else []
 
         self.anomaly_metrics_names = []
         all_metrics = compare_metrics + self.additional_metrics
@@ -59,7 +65,10 @@ class AnomalyDetector(Model):
         inputs = self.pattern.process_batch(inputs)
         ground_truth = self.pattern.process_batch(ground_truth)
 
-        predictions = self.io_compare_model([inputs, ground_truth])
+        if self.compare_metrics is not None:
+            predictions = self.io_compare_model([inputs, ground_truth])
+        else:
+            predictions = []
 
         for additional_metric in self.additional_metrics:
             prediction = additional_metric(inputs)
@@ -473,6 +482,14 @@ class AnomalyDetector(Model):
         # mask = np.ones_like(labels)
         labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
         return labels
+
+    def get_config(self):
+        return {
+            "autoencoder": self.autoencoder,
+            "pattern": self.pattern,
+            "compare_metrics": self.compare_metrics,
+            "additional_metrics": self.additional_metrics,
+        }
 
 
 def adjust_figure_aspect(fig, aspect=1.0):
