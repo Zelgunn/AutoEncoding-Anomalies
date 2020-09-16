@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-import tensorflow as tf
+from tensorflow.python.ops import summary_ops_v2
 from typing import Union
 
 from tensorflow.python.keras.callbacks import Callback, TensorBoard
@@ -43,27 +43,15 @@ class TensorBoardPlugin(Callback, ABC):
         if (self.epoch_freq is None) or (((epoch + 1) % self.epoch_freq) == 0):
             self._write_logs(index)
 
-    def _get_writer(self, writer_name: str) -> tf.summary.SummaryWriter:
+    @property
+    def train_run_writer(self) -> summary_ops_v2.ResourceSummaryWriter:
         # noinspection PyProtectedMember
-        return self.tensorboard._get_writer(writer_name)
+        return self.tensorboard._train_writer
 
     @property
-    def train_run_name(self) -> str:
+    def validation_run_writer(self) -> summary_ops_v2.ResourceSummaryWriter:
         # noinspection PyProtectedMember
-        return self.tensorboard._train_run_name
-
-    @property
-    def validation_run_name(self) -> str:
-        # noinspection PyProtectedMember
-        return self.tensorboard._validation_run_name
-
-    @property
-    def train_run_writer(self) -> tf.summary.SummaryWriter:
-        return self._get_writer(self.train_run_name)
-
-    @property
-    def validation_run_writer(self) -> tf.summary.SummaryWriter:
-        return self._get_writer(self.validation_run_name)
+        return self.tensorboard._val_writer
 
     @abstractmethod
     def _write_logs(self, index: int):

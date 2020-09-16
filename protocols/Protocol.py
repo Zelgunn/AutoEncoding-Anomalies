@@ -111,7 +111,7 @@ class Protocol(object):
                       config: ProtocolTrainConfig
                       ) -> List[Callback]:
         print("Protocol - Make Callbacks - Tensorboard ...")
-        tensorboard = TensorBoard(log_dir=log_dir, update_freq=16, profile_batch=0)
+        tensorboard = TensorBoard(log_dir=log_dir, update_freq=64, profile_batch=0)
         callbacks = [tensorboard, TerminateOnNaN()]
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")

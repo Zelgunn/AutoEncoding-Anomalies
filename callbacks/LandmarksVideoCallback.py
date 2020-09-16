@@ -45,8 +45,12 @@ class LandmarksVideoCallback(TensorBoardPlugin):
                 self.inputs = inputs.numpy()
                 self.outputs = outputs.numpy()
 
+    @property
+    def writer(self):
+        return self.train_run_writer if self.is_train_callback else self.validation_run_writer
+
     def _write_logs(self, index: int):
-        with self._get_writer(self.writer_name).as_default():
+        with self.writer.as_default():
             if index == 0:
                 self.ground_truth_images = self.landmarks_to_image(self.outputs, color=(255, 0, 0))
                 images = tf.convert_to_tensor(self.ground_truth_images)

@@ -1,6 +1,6 @@
 {
-    "model_architecture": "led",
-    "step_size": 32,
+    "model_architecture": "aled",
+    "step_size": 8,
     "step_count": 1,
     "height": 128,
     "width": 128,
@@ -13,15 +13,15 @@
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
-            [2, 2, 2],
-            [2, 2, 2]
+            [1, 2, 2],
+            [1, 2, 2]
         ]
     },
     "decoder": {
         "filters": [64, 32, 24, 16],
         "strides": [
-            [2, 2, 2],
-            [2, 2, 2],
+            [1, 2, 2],
+            [1, 2, 2],
             [2, 2, 2],
             [2, 2, 2]
         ]
@@ -38,7 +38,7 @@
     "extract_patches": true,
     "seed": 42,
     "epochs": 10,
-    "steps_per_epoch": 2000,
+    "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency" : "epoch"
 }

@@ -31,7 +31,7 @@ class ModalityCallback(TensorBoardPlugin, ABC):
         self.outputs = inputs if outputs is None else outputs
         self.postprocessor = postprocessor
         self.summary_model = model
-        self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
+        self.is_train_callback = is_train_callback
 
         self.true_outputs_were_logged = False
         self.logged_output_indices = to_list(logged_output_indices)
@@ -43,8 +43,12 @@ class ModalityCallback(TensorBoardPlugin, ABC):
             self.outputs = self.postprocessor(self.outputs)
         self.true_outputs = self.extract_logged_modalities(self.outputs)
 
+    @property
+    def writer(self):
+        return self.train_run_writer if self.is_train_callback else self.validation_run_writer
+
     def _write_logs(self, index):
-        with self._get_writer(self.writer_name).as_default():
+        with self.writer.as_default():
             if not self.true_outputs_were_logged:
                 self.samples_summary(self.true_outputs, step=index, suffix="true")
                 self.true_outputs_were_logged = True

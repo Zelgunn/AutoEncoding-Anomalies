@@ -70,7 +70,7 @@ class VideoProtocol(DatasetProtocol):
         if isinstance(model, (IAE, LED)):
             # noinspection PyProtectedMember
             model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
-        model.compile()
+        model.compile(optimizer=model.optimizer)
 
     # region AE
     def make_ae(self) -> AE:
