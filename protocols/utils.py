@@ -2,10 +2,10 @@ from tensorflow.python.keras.models import Sequential, Model
 from tensorflow.python.keras.layers import Layer, Dense
 from tensorflow.python.keras.layers import AveragePooling1D, AveragePooling2D, AveragePooling3D
 from tensorflow.python.keras.layers import UpSampling1D, UpSampling2D, UpSampling3D
-from tensorflow.python.keras.initializers import VarianceScaling
+from tensorflow.python.keras.initializers.initializers_v2 import VarianceScaling
 from typing import List, Tuple, Union
 
-from CustomKerasLayers import ResBlockND, ResSASABlock
+from CustomKerasLayers import ResBlockND
 
 
 def make_encoder(input_shape: Tuple[int, ...],

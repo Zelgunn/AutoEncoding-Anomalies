@@ -180,13 +180,13 @@ class VideoProtocol(DatasetProtocol):
         latent_code_shape = self.get_latent_code_shape(encoder)
         decoder = self.make_decoder(latent_code_shape)
         generator = self.make_decoder(latent_code_shape, name="ResidualGenerator")
-        generator_learning_rate = self.base_learning_rate_schedule
+        # generator_learning_rate = self.base_learning_rate_schedule
 
         model = ALED(encoder=encoder,
                      decoder=decoder,
                      generator=generator,
                      learning_rate=self.base_learning_rate_schedule,
-                     generator_learning_rate=generator_learning_rate,
+                     # generator_learning_rate=generator_learning_rate,
                      features_per_block=1,
                      merge_dims_with_features=False,
                      add_binarization_noise_to_mask=True,
@@ -199,7 +199,7 @@ class VideoProtocol(DatasetProtocol):
     def make_ebm(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
-        from tensorflow.python.keras.initializers import VarianceScaling
+        from tensorflow.python.keras.initializers.initializers_v2 import VarianceScaling
         from custom_tf_models.energy_based.energy_state_functions.FlipSequence import FlipSequence
         from custom_tf_models.energy_based.energy_state_functions.IdentityESF import IdentityESF
 
