@@ -174,6 +174,7 @@ class VideoProtocol(DatasetProtocol):
                     add_binarization_noise_to_mask=True,
                     description_energy_loss_lambda=1e-3,
                     noise_stddev=0.25,
+                    reconstruct_noise=False,
                     seed=self.seed)
         return model
 
