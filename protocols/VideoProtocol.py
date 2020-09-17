@@ -1,9 +1,9 @@
 import tensorflow as tf
-from tensorflow.python.keras import Model
+from tensorflow.python.keras import Model, optimizers
 from abc import abstractmethod
 import numpy as np
 import cv2
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Callable, Union
 
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
@@ -70,26 +70,21 @@ class VideoProtocol(DatasetProtocol):
         if isinstance(model, (IAE, LED)):
             # noinspection PyProtectedMember
             model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
-        model.compile(optimizer=model.optimizer)
+        model.compile(optimizer=self.make_base_optimizer())
 
     # region AE
     def make_ae(self) -> AE:
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
-        model = AE(encoder=encoder,
-                   decoder=decoder,
-                   learning_rate=self.base_learning_rate_schedule)
+        model = AE(encoder=encoder, decoder=decoder)
         return model
 
     def make_bin_ae(self) -> BinAE:
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
-        model = BinAE(encoder=encoder,
-                      decoder=decoder,
-                      learning_rate=self.base_learning_rate_schedule)
-
+        model = BinAE(encoder=encoder, decoder=decoder)
         return model
 
     # endregion
@@ -99,11 +94,7 @@ class VideoProtocol(DatasetProtocol):
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
-        model = IAE(encoder=encoder,
-                    decoder=decoder,
-                    step_size=self.step_size,
-                    learning_rate=self.base_learning_rate_schedule,
-                    seed=self.seed)
+        model = IAE(encoder=encoder, decoder=decoder, step_size=self.step_size, seed=self.seed)
         return model
 
     def make_iaegan(self) -> IAEGAN:
@@ -117,8 +108,7 @@ class VideoProtocol(DatasetProtocol):
                        decoder=decoder,
                        discriminator=discriminator,
                        step_size=self.step_size,
-                       autoencoder_learning_rate=self.base_learning_rate_schedule,
-                       discriminator_learning_rate=self.discriminator_learning_rate_schedule,
+                       discriminator_optimizer=self.make_discriminator_optimizer(),
                        seed=self.seed
                        )
         return model
@@ -151,11 +141,7 @@ class VideoProtocol(DatasetProtocol):
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
         conv_am = self.make_conv_am(self.get_saam_input_shape()[1:])
 
-        model = AND(encoder=encoder,
-                    decoder=decoder,
-                    am=conv_am,
-                    step_size=self.step_size,
-                    learning_rate=self.learning_rate)
+        model = AND(encoder=encoder, decoder=decoder, am=conv_am, step_size=self.step_size)
 
         return model
 
@@ -168,13 +154,12 @@ class VideoProtocol(DatasetProtocol):
 
         model = LED(encoder=encoder,
                     decoder=decoder,
-                    learning_rate=self.base_learning_rate_schedule,
                     features_per_block=1,
                     merge_dims_with_features=False,
                     add_binarization_noise_to_mask=True,
                     description_energy_loss_lambda=1e-3,
                     noise_stddev=0.25,
-                    reconstruct_noise=False,
+                    reconstruct_noise=True,
                     seed=self.seed)
         return model
 
@@ -188,7 +173,6 @@ class VideoProtocol(DatasetProtocol):
         model = ALED(encoder=encoder,
                      decoder=decoder,
                      generator=generator,
-                     learning_rate=self.base_learning_rate_schedule,
                      # generator_learning_rate=generator_learning_rate,
                      features_per_block=1,
                      merge_dims_with_features=False,
@@ -240,7 +224,6 @@ class VideoProtocol(DatasetProtocol):
                      energy_state_functions=[FlipSequence(), IdentityESF()],
                      energy_margin=2e-1,
                      weights_decay=0.0,
-                     learning_rate=self.base_learning_rate_schedule,
                      seed=self.seed)
 
         return model
@@ -286,6 +269,7 @@ class VideoProtocol(DatasetProtocol):
     # endregion
 
     # region Make sub-models
+    # region Base
     def make_encoder(self, input_shape, name="ResidualEncoder") -> Model:
         encoder = make_encoder(input_shape=input_shape,
                                filters=self.encoder_filters,
@@ -312,6 +296,9 @@ class VideoProtocol(DatasetProtocol):
                                )
         return decoder
 
+    # endregion
+
+    # region Adversarial
     def make_discriminator(self, input_shape) -> Model:
         discriminator_config = self.config["discriminator"]
         include_intermediate_output = self.model_architecture in ["vaegan"]
@@ -325,6 +312,9 @@ class VideoProtocol(DatasetProtocol):
                                            seed=self.seed)
         return discriminator
 
+    # endregion
+
+    # region Autoregressive
     def make_saam(self, input_shape) -> SAAM:
         saam_config = self.config["saam"]
         saam = SAAM(layer_count=saam_config["layer_count"],
@@ -343,6 +333,36 @@ class VideoProtocol(DatasetProtocol):
                          output_activation="linear",
                          input_shape=input_shape)
         return conv_am
+
+    # endregion
+
+    # region Optimizers
+    def make_optimizer(self,
+                       learning_rate: Union[Callable, float],
+                       optimizer_class: str = None
+                       ) -> optimizers.optimizer_v2.OptimizerV2:
+
+        optimizer_class = self.optimizer_class if optimizer_class is None else optimizer_class
+        if optimizer_class == "adam":
+            return tf.keras.optimizers.Adam(learning_rate)
+        elif optimizer_class == "rmsprop":
+            return tf.keras.optimizers.RMSprop(learning_rate)
+        elif optimizer_class == "sgd":
+            return tf.keras.optimizers.SGD(learning_rate)
+        else:
+            raise ValueError("`{}` is not a valid optimizer identifier.".format(optimizer_class))
+
+    def make_base_optimizer(self) -> optimizers.optimizer_v2.OptimizerV2:
+        return self.make_optimizer(self.base_learning_rate_schedule)
+
+    def make_discriminator_optimizer(self) -> optimizers.optimizer_v2.OptimizerV2:
+        if "discriminator_optimizer" in self.config:
+            discriminator_optimizer_class = self.config["discriminator_optimizer"]
+        else:
+            discriminator_optimizer_class = self.optimizer_class
+        return self.make_optimizer(self.discriminator_learning_rate_schedule, discriminator_optimizer_class)
+
+    # endregion
 
     # endregion
 
@@ -513,6 +533,10 @@ class VideoProtocol(DatasetProtocol):
     @property
     def basic_block_count(self) -> int:
         return self.config["basic_block_count"]
+
+    @property
+    def optimizer_class(self) -> str:
+        return self.config["optimizer"].lower()
 
     @property
     def learning_rate(self) -> float:

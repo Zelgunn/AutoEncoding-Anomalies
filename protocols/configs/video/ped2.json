@@ -29,6 +29,7 @@
     "output_activation": "linear",
     "batch_size": 32,
     "learning_rate": 0.001,
+    "optimizer": "rmsprop",
     "data_augmentation": {
         "crop_ratio": 0.2,
         "dropout_noise_ratio": 0.0,
