@@ -193,6 +193,8 @@ class VideoProtocol(DatasetProtocol):
                      features_per_block=1,
                      merge_dims_with_features=False,
                      add_binarization_noise_to_mask=True,
+                     noise_stddev=0.25,
+                     reconstruct_noise=False,
                      seed=self.seed)
         return model
 
