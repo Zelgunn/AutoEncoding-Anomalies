@@ -1,6 +1,6 @@
 {
     "model_architecture": "led",
-    "step_size": 32,
+    "step_size": 8,
     "step_count": 1,
     "height": 128,
     "width": 128,
@@ -27,7 +27,7 @@
         ]
     },
     "output_activation": "linear",
-    "batch_size": 8,
+    "batch_size": 32,
     "learning_rate": 0.001,
     "data_augmentation": {
         "crop_ratio": 0.2,
@@ -35,10 +35,10 @@
         "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
     },
-    "extract_patches": true,
+    "extract_patches": false,
     "seed": 42,
     "epochs": 100,
     "steps_per_epoch": 1000,
     "validation_steps": 128,
-    "save_frequency" : "epoch"
+    "save_frequency": "epoch"
 }
