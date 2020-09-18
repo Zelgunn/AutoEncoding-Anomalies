@@ -1,5 +1,6 @@
 from callbacks.TensorBoardPlugin import TensorBoardPlugin
 from callbacks.AUCCallback import AUCCallback
+from callbacks.AnomalyDetectorCallback import AnomalyDetectorCallback
 from callbacks.modality_callbacks.ModalityCallback import ModalityCallback
 from callbacks.modality_callbacks.ImageCallback import ImageCallback
 from callbacks.modality_callbacks.AudioCallback import AudioCallback

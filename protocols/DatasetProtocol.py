@@ -9,7 +9,7 @@ from shutil import copyfile
 from datasets.tfrecord_builders import tfrecords_config_filename
 from modalities import Pattern
 from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
-from callbacks.configs import AUCCallbackConfig
+from callbacks.configs import AUCCallbackConfig, AnomalyDetectorCallbackConfig
 from custom_tf_models import AE, IAE, LED
 from custom_tf_models.energy_based import EBAE
 
@@ -62,7 +62,8 @@ class DatasetProtocol(Protocol):
     def get_train_config(self) -> ProtocolTrainConfig:
         train_pattern = self.get_train_pattern()
         modality_callback_configs = self.get_modality_callback_configs()
-        auc_callbacks_configs = self.get_auc_callbacks_configs()
+        auc_callbacks_configs = self.get_auc_callback_configs()
+        anomaly_detector_callback_configs = self.get_anomaly_detector_callback_configs()
 
         return ProtocolTrainConfig(batch_size=self.batch_size,
                                    pattern=train_pattern,
@@ -72,7 +73,8 @@ class DatasetProtocol(Protocol):
                                    validation_steps=self.validation_steps,
                                    save_frequency=self.save_frequency,
                                    modality_callback_configs=modality_callback_configs,
-                                   auc_callback_configs=auc_callbacks_configs)
+                                   auc_callback_configs=auc_callbacks_configs,
+                                   anomaly_detector_callback_configs=anomaly_detector_callback_configs)
 
     def get_modality_callback_configs(self):
         return None
@@ -104,19 +106,13 @@ class DatasetProtocol(Protocol):
     # endregion
 
     # region Callbacks
-    def get_auc_callbacks_configs(self) -> List[AUCCallbackConfig]:
+    def get_auc_callback_configs(self) -> List[AUCCallbackConfig]:
         anomaly_pattern = self.get_anomaly_pattern()
         auc_callbacks_configs = []
 
         model = self.model
         if isinstance(model, EBAE):
             model = model.autoencoder
-
-        if isinstance(model, LED):
-            auc_callbacks_configs += \
-                [AUCCallbackConfig(model.compute_description_energy, anomaly_pattern, labels_length=1,
-                                   prefix="desc_energy", epoch_freq=1)
-                 ]
 
         elif isinstance(model, AE):
             auc_callbacks_configs += [
@@ -131,6 +127,21 @@ class DatasetProtocol(Protocol):
                  ]
 
         return auc_callbacks_configs
+
+    def get_anomaly_detector_callback_configs(self) -> List[AnomalyDetectorCallbackConfig]:
+        callbacks = []
+        if isinstance(self.model, LED):
+            callback = AnomalyDetectorCallbackConfig(autoencoder=self.model,
+                                                     pattern=self.get_anomaly_pattern(),
+                                                     compare_metrics=None,
+                                                     additional_metrics=self.model.additional_test_metrics,
+                                                     stride=1,
+                                                     epoch_freq=1,
+                                                     pre_normalize_predictions=True,
+                                                     max_samples=-1,
+                                                     )
+            callbacks.append(callback)
+        return callbacks
 
     # endregion
 

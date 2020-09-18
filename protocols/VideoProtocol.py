@@ -157,7 +157,7 @@ class VideoProtocol(DatasetProtocol):
                     features_per_block=1,
                     merge_dims_with_features=False,
                     add_binarization_noise_to_mask=True,
-                    description_energy_loss_lambda=1e-3,
+                    description_energy_loss_lambda=1e-2,
                     noise_stddev=0.25,
                     reconstruct_noise=True,
                     seed=self.seed)
@@ -177,7 +177,7 @@ class VideoProtocol(DatasetProtocol):
                      features_per_block=1,
                      merge_dims_with_features=False,
                      add_binarization_noise_to_mask=True,
-                     noise_stddev=0.25,
+                     noise_stddev=0.1,
                      reconstruct_noise=False,
                      seed=self.seed)
         return model
@@ -545,7 +545,7 @@ class VideoProtocol(DatasetProtocol):
     @property
     def base_learning_rate_schedule(self):
         learning_rate = self.learning_rate
-        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
+        # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
         # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         return learning_rate
 

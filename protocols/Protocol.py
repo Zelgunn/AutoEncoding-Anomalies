@@ -7,7 +7,7 @@ import os
 from typing import List, Callable, Dict, Sequence, Union
 
 from anomaly_detection import AnomalyDetector, known_metrics
-from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig
+from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig, AnomalyDetectorCallbackConfig
 from callbacks import CustomModelCheckpoint
 from datasets import DatasetLoader, SingleSetConfig
 from misc_utils.train_utils import save_model_info
@@ -26,6 +26,7 @@ class ProtocolTrainConfig(object):
                  save_frequency: Union[str, int],
                  modality_callback_configs: List[ModalityCallbackConfig] = None,
                  auc_callback_configs: List[AUCCallbackConfig] = None,
+                 anomaly_detector_callback_configs: List[AnomalyDetectorCallbackConfig] = None,
                  ):
         self.batch_size = batch_size
         self.pattern = pattern
@@ -36,6 +37,7 @@ class ProtocolTrainConfig(object):
         self.save_frequency = save_frequency
         self.modality_callback_configs = modality_callback_configs
         self.auc_callback_configs = auc_callback_configs
+        self.anomaly_detector_callback_configs = anomaly_detector_callback_configs
 
 
 class ProtocolTestConfig(object):
@@ -128,6 +130,13 @@ class Protocol(object):
             for acc in config.auc_callback_configs:
                 print("Protocol - Make AUC Callbacks - {} callback ...".format(acc.prefix))
                 callback = acc.to_callback(tensorboard, self.dataset_loader, self.seed)
+                callbacks.append(callback)
+        # endregion
+        # region Anomaly detector (full test)
+        if config.anomaly_detector_callback_configs is not None:
+            print("Protocol - Make Callbacks - Anomaly detector callbacks")
+            for adc in config.anomaly_detector_callback_configs:
+                callback = adc.to_callback(tensorboard, self.dataset_loader)
                 callbacks.append(callback)
         # endregion
         # region Modality Callbacks

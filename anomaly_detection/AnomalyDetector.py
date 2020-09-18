@@ -93,18 +93,13 @@ class AnomalyDetector(Model):
         merged_predictions, merged_labels = self.merge_samples_predictions(predictions=predictions, labels=labels)
         self.save_predictions(predictions=merged_predictions, labels=labels, log_dir=log_dir)
         results = self.evaluate_predictions(predictions=merged_predictions, labels=merged_labels)
+        self.print_results(results)
 
         samples_names = [os.path.basename(folder) for folder in dataset.test_subset.subset_folders]
         self.plot_predictions(predictions=predictions,
                               labels=labels,
                               log_dir=log_dir,
                               samples_names=samples_names)
-
-        for i in range(self.metric_count):
-            metric_results_string = "Anomaly_score ({}):".format(self.anomaly_metrics_names[i])
-            for result_name, result_values in results.items():
-                metric_results_string += " {} = {} |".format(result_name, result_values[i])
-            print(metric_results_string)
 
         additional_config["stride"] = stride
         additional_config["pre-normalize predictions"] = pre_normalize_predictions
@@ -208,13 +203,14 @@ class AnomalyDetector(Model):
     # region Evaluate predictions
     @staticmethod
     def evaluate_predictions(predictions: List[np.ndarray],
-                             labels: np.ndarray
+                             labels: np.ndarray,
+                             evaluation_metrics: List[str] = None,
                              ) -> Dict[str, List[float]]:
         predictions = [normalize(metric_predictions) for metric_predictions in predictions]
 
         results = None
         for i in range(len(predictions)):
-            metric_results = AnomalyDetector.evaluate_metric_predictions(predictions[i], labels)
+            metric_results = AnomalyDetector.evaluate_metric_predictions(predictions[i], labels, evaluation_metrics)
 
             if results is None:
                 results = {result_name: [] for result_name in metric_results}
@@ -226,44 +222,72 @@ class AnomalyDetector(Model):
 
     @staticmethod
     def evaluate_metric_predictions(predictions: np.ndarray,
-                                    labels: np.ndarray
+                                    labels: np.ndarray,
+                                    evaluation_metrics: List[str] = None,
                                     ):
-        roc = tf.metrics.AUC(curve="ROC", num_thresholds=1000)
-        pr = tf.metrics.AUC(curve="PR", num_thresholds=1000)
-
-        thresholds = list(np.arange(0.01, 1.0, 1.0 / 200.0, dtype=np.float32))
-        precision = tf.metrics.Precision(thresholds=thresholds)
-        recall = tf.metrics.Recall(thresholds=thresholds)
-
-        if predictions.ndim > 1 and labels.ndim == 1:
-            predictions = predictions.mean(axis=tuple(range(1, predictions.ndim)))
-
-        predictions = normalize(predictions)
-
-        roc.update_state(labels, predictions)
-        pr.update_state(labels, predictions)
-
-        precision.update_state(labels, predictions)
-        recall.update_state(labels, predictions)
-
-        # region EER
-        tp = roc.true_positives.numpy()
-        fp = roc.false_positives.numpy()
-        tpr = (tp / tp.max()).astype(np.float64)
-        fpr = (fp / fp.max()).astype(np.float64)
-        eer = brentq(lambda x: 1. - x - interp1d(fpr, tpr)(x), 0., 1.)
+        # region Evaluation metrics used (ROC, EER, PR, Precision)
+        available_metrics = ["roc", "eer", "pr", "precision"]
+        if evaluation_metrics is None:
+            evaluation_metrics = available_metrics
+        evaluation_metrics = [evaluation_metric.lower() for evaluation_metric in evaluation_metrics]
+        for evaluation_metric in evaluation_metrics:
+            if evaluation_metric not in available_metrics:
+                raise ValueError("Unknown evaluation metric : {}. Available evaluation metrics are : {}".format(
+                    evaluation_metric, available_metrics))
         # endregion
 
-        recall_result = recall.result().numpy()
-        precision_result = precision.result().numpy()
-        average_precision = -np.sum(np.diff(recall_result) * precision_result[:-1])
+        results = {}
 
-        results = {
-            "ROC": roc.result(),
-            "EER": eer,
-            "PR": pr.result(),
-            "Precision": average_precision,
-        }
+        # region Normalize predictions
+        if predictions.ndim > 1 and labels.ndim == 1:
+            predictions = predictions.mean(axis=tuple(range(1, predictions.ndim)))
+        predictions = normalize(predictions)
+        # endregion
+
+        # region ROC / EER
+        if ("roc" in evaluation_metrics) or ("eer" in evaluation_metrics):
+            roc = tf.metrics.AUC(curve="ROC", num_thresholds=1000)
+            roc.update_state(labels, predictions)
+
+            # region ROC
+            if "roc" in evaluation_metrics:
+                results["ROC"] = roc.result()
+            # endregion
+
+            # region EER
+            if "eer" in evaluation_metrics:
+                tp = roc.true_positives.numpy()
+                fp = roc.false_positives.numpy()
+                tpr = (tp / tp.max()).astype(np.float64)
+                fpr = (fp / fp.max()).astype(np.float64)
+                eer = brentq(lambda x: 1. - x - interp1d(fpr, tpr)(x), 0., 1.)
+                results["EER"] = eer
+            # endregion
+
+        # endregion
+
+        # region PR
+        if "pr" in evaluation_metrics:
+            pr = tf.metrics.AUC(curve="PR", num_thresholds=1000)
+            pr.update_state(labels, predictions)
+            results["PR"] = pr
+        # endregion
+
+        # region Precision
+        if "precision" in evaluation_metrics:
+            thresholds = list(np.arange(0.01, 1.0, 1.0 / 200.0, dtype=np.float32))
+            precision = tf.metrics.Precision(thresholds=thresholds)
+            recall = tf.metrics.Recall(thresholds=thresholds)
+
+            precision.update_state(labels, predictions)
+            recall.update_state(labels, predictions)
+
+            recall_result = recall.result().numpy()
+            precision_result = precision.result().numpy()
+            average_precision = -np.sum(np.diff(recall_result) * precision_result[:-1])
+
+            results["Precision"] = average_precision
+        # endregion
 
         return results
 
@@ -352,6 +376,16 @@ class AnomalyDetector(Model):
             plt.gca().axvspan(start, len(labels) - 1, alpha=0.25, color="red", linewidth=0)
 
     # endregion
+
+    def print_results(self, results: Dict[str, List], print_fn=None):
+        if print_fn is None:
+            print_fn = print
+
+        for i in range(self.metric_count):
+            metric_results_string = "Anomaly_score ({}):".format(self.anomaly_metrics_names[i])
+            for result_name, result_values in results.items():
+                metric_results_string += " {} = {} |".format(result_name, result_values[i])
+            print_fn(metric_results_string)
 
     def save_evaluation_results(self,
                                 log_dir: str,
