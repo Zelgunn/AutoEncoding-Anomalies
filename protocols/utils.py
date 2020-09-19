@@ -5,7 +5,7 @@ from tensorflow.python.keras.layers import UpSampling1D, UpSampling2D, UpSamplin
 from tensorflow.python.keras.initializers.initializers_v2 import VarianceScaling
 from typing import List, Tuple, Union
 
-from CustomKerasLayers import ResBlockND
+from CustomKerasLayers import ResBlockND, ResSASABlock
 
 
 def make_encoder(input_shape: Tuple[int, ...],

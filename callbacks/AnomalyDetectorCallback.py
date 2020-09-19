@@ -3,6 +3,7 @@ from tensorflow.python.keras.callbacks import TensorBoard
 from tensorflow.python.ops import summary_ops_v2
 from tensorflow.python.eager import context
 import numpy as np
+from time import time
 from typing import Union, Callable, Optional, List, Tuple, Dict
 
 from callbacks import TensorBoardPlugin
@@ -42,15 +43,20 @@ class AnomalyDetectorCallback(TensorBoardPlugin):
         self.name = name
 
     def _write_logs(self, step: int):
+        start_time = time()
+
         predictions, labels = self.predict_anomalies()
         predictions, labels = self.anomaly_detector.merge_samples_predictions(predictions=predictions, labels=labels)
-        results = self.anomaly_detector.evaluate_predictions(predictions=predictions, labels=labels)
+        results = self.anomaly_detector.evaluate_predictions(predictions=predictions, labels=labels,
+                                                             evaluation_metrics=["roc", "pr"])
         self.anomaly_detector.print_results(results)
 
         with context.eager_mode():
             with summary_ops_v2.always_record_summaries():
                 with self.validation_run_writer.as_default():
                     self.write_results(results, step=step)
+
+        print("`{}` took {:.2f} seconds.".format(self.name, time() - start_time))
 
     def predict_anomalies(self) -> Tuple[List[np.ndarray], np.ndarray]:
         return self.anomaly_detector.predict_anomalies(dataset=self.dataset,
@@ -63,4 +69,4 @@ class AnomalyDetectorCallback(TensorBoardPlugin):
             metric_name = self.anomaly_detector.anomaly_metrics_names[i]
             for evaluation_metric_name, evaluation_metric_value in results.items():
                 name = "{}/{}/{}".format(self.name, metric_name, evaluation_metric_name)
-                summary_ops_v2.scalar(name=name, tensor=evaluation_metric_name, step=step)
+                summary_ops_v2.scalar(name=name, tensor=evaluation_metric_value, step=step)

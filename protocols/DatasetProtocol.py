@@ -107,6 +107,9 @@ class DatasetProtocol(Protocol):
 
     # region Callbacks
     def get_auc_callback_configs(self) -> List[AUCCallbackConfig]:
+        if isinstance(self.model, LED):
+            return []
+
         anomaly_pattern = self.get_anomaly_pattern()
         auc_callbacks_configs = []
 

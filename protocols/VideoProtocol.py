@@ -147,7 +147,7 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
-    # region Minimalist Desc
+    # region LED
     def make_led(self):
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
@@ -158,7 +158,7 @@ class VideoProtocol(DatasetProtocol):
                     merge_dims_with_features=False,
                     add_binarization_noise_to_mask=True,
                     description_energy_loss_lambda=1e-2,
-                    noise_stddev=0.25,
+                    noise_stddev=0.1,
                     reconstruct_noise=True,
                     seed=self.seed)
         return model
@@ -177,6 +177,7 @@ class VideoProtocol(DatasetProtocol):
                      features_per_block=1,
                      merge_dims_with_features=False,
                      add_binarization_noise_to_mask=True,
+                     use_noise=False,
                      noise_stddev=0.1,
                      reconstruct_noise=False,
                      seed=self.seed)

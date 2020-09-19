@@ -270,7 +270,7 @@ class AnomalyDetector(Model):
         if "pr" in evaluation_metrics:
             pr = tf.metrics.AUC(curve="PR", num_thresholds=1000)
             pr.update_state(labels, predictions)
-            results["PR"] = pr
+            results["PR"] = pr.result()
         # endregion
 
         # region Precision
@@ -384,7 +384,7 @@ class AnomalyDetector(Model):
         for i in range(self.metric_count):
             metric_results_string = "Anomaly_score ({}):".format(self.anomaly_metrics_names[i])
             for result_name, result_values in results.items():
-                metric_results_string += " {} = {} |".format(result_name, result_values[i])
+                metric_results_string += " {} = {:.3f} |".format(result_name, result_values[i])
             print_fn(metric_results_string)
 
     def save_evaluation_results(self,

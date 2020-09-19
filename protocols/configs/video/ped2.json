@@ -1,6 +1,6 @@
 {
     "model_architecture": "led",
-    "step_size": 16,
+    "step_size": 32,
     "step_count": 1,
     "height": 128,
     "width": 128,
@@ -9,7 +9,7 @@
     "kernel_size": 3,
     "basic_block_count": 2,
     "encoder": {
-        "filters": [16, 24, 32, 64],
+        "filters": [64, 64, 64, 64],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -18,7 +18,7 @@
         ]
     },
     "decoder": {
-        "filters": [64, 32, 24, 16],
+        "filters": [64, 64, 64, 64],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -27,7 +27,7 @@
         ]
     },
     "output_activation": "linear",
-    "batch_size": 16,
+    "batch_size": 8,
     "learning_rate": 0.001,
     "optimizer": "rmsprop",
     "data_augmentation": {
@@ -36,10 +36,10 @@
         "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
     },
-    "extract_patches": true,
+    "extract_patches": false,
     "seed": 42,
-    "epochs": 32,
-    "steps_per_epoch": 1000,
+    "epochs": 100,
+    "steps_per_epoch": 500,
     "validation_steps": 128,
     "save_frequency": "epoch"
 }
