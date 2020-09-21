@@ -121,8 +121,8 @@ class Protocol(object):
         weights_path = os.path.join(log_dir, "weights_{epoch:03d}")
         model_checkpoint = ModelCheckpoint(filepath=weights_path, save_freq=config.save_frequency)
         callbacks.append(model_checkpoint)
-        callbacks.append(CustomModelCheckpoint(filepath=os.path.join(log_dir, "full_checkpoint_{epoch:03d}"),
-                                               save_weights_only=False))
+        # callbacks.append(CustomModelCheckpoint(filepath=os.path.join(log_dir, "full_checkpoint_{epoch:03d}"),
+        #                                        save_weights_only=False))
         # endregion
         # region AUC
         if config.auc_callback_configs is not None:
