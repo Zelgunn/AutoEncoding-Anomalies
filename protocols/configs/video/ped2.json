@@ -26,7 +26,7 @@
             [2, 2, 2]
         ]
     },
-    "output_activation": "linear",
+    "output_activation": "tanh",
     "batch_size": 4,
     "learning_rate": 0.001,
     "optimizer": "rmsprop",
@@ -42,5 +42,5 @@
     "steps_per_epoch": 500,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "ALED : Removal of reconstruction loss for generator and gradient penalty for led"
+    "current_test": "ALED : No rec. loss for gen, with output from tanh"
 }
