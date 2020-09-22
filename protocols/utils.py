@@ -2,7 +2,8 @@ from tensorflow.python.keras.models import Sequential, Model
 from tensorflow.python.keras.layers import Layer, Dense
 from tensorflow.python.keras.layers import AveragePooling1D, AveragePooling2D, AveragePooling3D
 from tensorflow.python.keras.layers import UpSampling1D, UpSampling2D, UpSampling3D
-from tensorflow.python.keras.initializers.initializers_v2 import VarianceScaling
+# noinspection PyUnresolvedReferences
+from tensorflow.python.keras.initializers import VarianceScaling
 from typing import List, Tuple, Union
 
 from CustomKerasLayers import ResBlockND, ResSASABlock
@@ -126,8 +127,8 @@ def get_encoder_layers(rank: int,
         if i == 0:
             layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i] + 4, **kwargs)
         else:
-            layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
-            # layer = ResSASABlock(head_count=8, head_size=filters[i] // 8, kernel_size=kernel_size[i], **kwargs)
+            # layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
+            layer = ResSASABlock(head_count=8, head_size=filters[i] // 8, kernel_size=kernel_size[i], **kwargs)
         layers.append(layer)
 
         layer = average_pooling(rank=rank, pool_size=strides[i])

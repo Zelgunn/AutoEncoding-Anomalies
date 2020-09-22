@@ -156,11 +156,12 @@ class VideoProtocol(DatasetProtocol):
                     decoder=decoder,
                     features_per_block=1,
                     merge_dims_with_features=False,
+                    binarization_temperature=50.0,
                     add_binarization_noise_to_mask=True,
-                    description_energy_loss_lambda=2e-2,
-                    use_noise=False,
+                    description_energy_loss_lambda=5e-3,
+                    use_noise=True,
                     noise_stddev=0.1,
-                    reconstruct_noise=False,
+                    reconstruct_noise=True,
                     seed=self.seed)
         return model
 
@@ -188,7 +189,8 @@ class VideoProtocol(DatasetProtocol):
     def make_ebm(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
-        from tensorflow.python.keras.initializers.initializers_v2 import VarianceScaling
+        # noinspection PyUnresolvedReferences
+        from tensorflow.python.keras.initializers import VarianceScaling
         from custom_tf_models.energy_based.energy_state_functions.FlipSequence import FlipSequence
         from custom_tf_models.energy_based.energy_state_functions.IdentityESF import IdentityESF
 
