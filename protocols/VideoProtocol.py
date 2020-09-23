@@ -11,7 +11,7 @@ from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from custom_tf_models import AE, IAE, BinAE
-from custom_tf_models import LED, ALED
+from custom_tf_models import LED, ALED, PreLED
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
@@ -53,6 +53,8 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_led()
         elif self.model_architecture == "aled":
             model = self.make_aled()
+        elif self.model_architecture == "preled":
+            model = self.make_preled()
         elif self.model_architecture == "ebm":
             model = self.make_ebm()
         elif self.model_architecture == "ebae":
@@ -181,6 +183,25 @@ class VideoProtocol(DatasetProtocol):
                      add_binarization_noise_to_mask=True,
                      description_energy_loss_lambda=1e-2,
                      seed=self.seed)
+        return model
+
+    def make_preled(self):
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+        predictor = self.make_decoder(self.get_latent_code_shape(encoder))
+
+        model = PreLED(encoder=encoder,
+                       decoder=decoder,
+                       predictor=predictor,
+                       input_length=self.step_size,
+                       use_temporal_reconstruction_loss=True,
+                       features_per_block=1,
+                       merge_dims_with_features=False,
+                       add_binarization_noise_to_mask=True,
+                       description_energy_loss_lambda=1e-2,
+                       use_noise=True,
+                       noise_stddev=0.1,
+                       seed=self.seed)
         return model
 
     # endregion
@@ -590,6 +611,8 @@ class VideoProtocol(DatasetProtocol):
     def output_length(self) -> int:
         if self.model_architecture in ["iae", "and", "iaegan"]:
             return self.step_size * self.step_count
+        elif self.model_architecture in ["aep", "preled"]:
+            return self.step_size * 2
         else:
             return self.step_size
 

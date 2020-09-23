@@ -18,6 +18,7 @@
       <w>compat</w>
       <w>dataframe</w>
       <w>degva</w>
+      <w>denoising</w>
       <w>diag</w>
       <w>divx</w>
       <w>dlib</w>
@@ -68,6 +69,7 @@
       <w>pcolormesh</w>
       <w>pixar</w>
       <w>preconditioner</w>
+      <w>preled</w>
       <w>pwet</w>
       <w>pyplot</w>
       <w>resample</w>

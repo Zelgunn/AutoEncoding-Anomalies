@@ -1,7 +1,7 @@
 {
-    "model_architecture": "led",
-    "step_size": 32,
-    "step_count": 1,
+    "model_architecture": "preled",
+    "step_size": 16,
+    "step_count": 2,
     "height": 128,
     "width": 128,
     "code_size": 128,
@@ -27,9 +27,9 @@
         ]
     },
     "output_activation": "linear",
-    "batch_size": 4,
+    "batch_size": 8,
     "learning_rate": 0.001,
-    "optimizer": "rmsprop",
+    "optimizer": "adam",
     "data_augmentation": {
         "crop_ratio": 0.2,
         "dropout_noise_ratio": 0.0,
@@ -42,5 +42,5 @@
     "steps_per_epoch": 500,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : Using TF2.2 initializers"
+    "current_test": "PreLED : Testing with new initialization of description module"
 }
