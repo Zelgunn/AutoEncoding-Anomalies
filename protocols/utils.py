@@ -127,8 +127,8 @@ def get_encoder_layers(rank: int,
         if i == 0:
             layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i] + 4, **kwargs)
         else:
-            # layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
-            layer = ResSASABlock(head_count=8, head_size=filters[i] // 8, kernel_size=kernel_size[i], **kwargs)
+            layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
+            # layer = ResSASABlock(head_count=8, head_size=filters[i] // 8, kernel_size=kernel_size[i], **kwargs)
         layers.append(layer)
 
         layer = average_pooling(rank=rank, pool_size=strides[i])

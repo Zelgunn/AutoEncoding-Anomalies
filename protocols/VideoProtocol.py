@@ -158,10 +158,10 @@ class VideoProtocol(DatasetProtocol):
                     merge_dims_with_features=False,
                     binarization_temperature=50.0,
                     add_binarization_noise_to_mask=True,
-                    description_energy_loss_lambda=5e-3,
+                    description_energy_loss_lambda=1e-2,
                     use_noise=True,
                     noise_stddev=0.1,
-                    reconstruct_noise=True,
+                    reconstruct_noise=False,
                     seed=self.seed)
         return model
 
