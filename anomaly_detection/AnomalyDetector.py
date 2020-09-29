@@ -20,6 +20,7 @@ class AnomalyDetector(Model):
                  pattern: Pattern,
                  compare_metrics: Optional[List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]]] = "mse",
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
+                 labels_frame_count=32,
                  **kwargs
                  ):
         """
@@ -156,7 +157,6 @@ class AnomalyDetector(Model):
 
         predictions, labels = None, []
         for sample in dataset:
-
             sample_inputs, sample_outputs, sample_labels = self.unpack_sample(sample)
             sample_predictions = self([sample_inputs, sample_outputs])
 
@@ -510,11 +510,21 @@ class AnomalyDetector(Model):
             labels_array[i][:len(label)] = label
         labels = labels_array
 
-        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, 32)
-        mask = np.zeros_like(labels)
-        mask[:, 15] = 1
-        # mask = np.ones_like(labels)
-        labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
+        start, end = labels[..., 0], labels[..., 1]
+        start_before_half = start <= 0.5
+        end_after_half = end >= 0.5
+        not_equal = start != end
+
+        # noinspection PyUnresolvedReferences
+        labels = np.logical_and(start_before_half, end_after_half)
+        # noinspection PyUnresolvedReferences
+        labels = np.logical_and(labels, not_equal)
+        labels = np.any(labels, axis=1)
+
+        # labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, frame_count)
+        # mask = np.zeros_like(labels)
+        # mask[:, (frame_count - 1) // 2] = 1
+        # labels = np.sum(labels.numpy() * mask, axis=-1) >= 1
         return labels
 
     def get_config(self):

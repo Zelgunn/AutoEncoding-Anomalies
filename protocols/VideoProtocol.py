@@ -21,7 +21,7 @@ from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtra
 
 
 # from misc_utils.train_utils import ScaledSchedule
-# from misc_utils.train_utils import WarmupSchedule
+from misc_utils.train_utils import WarmupSchedule
 
 
 class VideoProtocol(DatasetProtocol):
@@ -194,7 +194,7 @@ class VideoProtocol(DatasetProtocol):
                        decoder=decoder,
                        predictor=predictor,
                        input_length=self.step_size,
-                       use_temporal_reconstruction_loss=True,
+                       use_temporal_reconstruction_loss=False,
                        features_per_block=1,
                        merge_dims_with_features=False,
                        add_binarization_noise_to_mask=True,
@@ -569,7 +569,7 @@ class VideoProtocol(DatasetProtocol):
     def base_learning_rate_schedule(self):
         learning_rate = self.learning_rate
         # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
-        # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
+        learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         return learning_rate
 
     @property
@@ -606,6 +606,12 @@ class VideoProtocol(DatasetProtocol):
         return self.config["extract_patches"]
 
     # endregion
+    @property
+    def input_length(self) -> int:
+        if self.model_architecture in ["aep", "preled"]:
+            return self.step_size
+        else:
+            return self.output_length
 
     @property
     def output_length(self) -> int:
