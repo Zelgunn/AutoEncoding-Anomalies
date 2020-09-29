@@ -42,5 +42,5 @@
     "steps_per_epoch": 500,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : `relu` and all 16 except code (at 64), base energy loss weight (1e-2) and Warmup schedule"
+    "current_test": "LED : added a gradient penalty to description energy, which would increase too fast and reduced description length too quickly."
 }

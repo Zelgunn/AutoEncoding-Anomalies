@@ -69,4 +69,4 @@ class AnomalyDetectorCallback(TensorBoardPlugin):
             metric_name = self.anomaly_detector.anomaly_metrics_names[i]
             for evaluation_metric_name, evaluation_metric_value in results.items():
                 name = "{}/{}/{}".format(self.name, metric_name, evaluation_metric_name)
-                summary_ops_v2.scalar(name=name, tensor=evaluation_metric_value, step=step)
+                summary_ops_v2.scalar(name=name, tensor=evaluation_metric_value[i], step=step)

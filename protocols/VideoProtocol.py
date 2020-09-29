@@ -19,9 +19,7 @@ from data_processing.video_preprocessing import make_video_augmentation, make_vi
 
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
-
-# from misc_utils.train_utils import ScaledSchedule
-from misc_utils.train_utils import WarmupSchedule
+from misc_utils.train_utils import CyclicSchedule, ScaledSchedule
 
 
 class VideoProtocol(DatasetProtocol):
@@ -569,7 +567,11 @@ class VideoProtocol(DatasetProtocol):
     def base_learning_rate_schedule(self):
         learning_rate = self.learning_rate
         # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
-        learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
+        # learning_rate = WarmupSchedule(warmup_steps=2000, learning_rate=learning_rate)
+        min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
+        learning_rate = CyclicSchedule(cycle_length=1000,
+                                       learning_rate=min_learning_rate,
+                                       max_learning_rate=learning_rate)
         return learning_rate
 
     @property

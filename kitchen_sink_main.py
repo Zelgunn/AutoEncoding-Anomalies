@@ -15,14 +15,15 @@ def tmp_main():
 
 
 def compare_einsum_matmul():
+    seed = 42
     batch_size = 8
     count = 16 ** 2
     heads = 8
     head_size = 16
     k = 3
 
-    x = tf.random.normal(shape=[batch_size, heads, head_size, k ** 2, count])
-    y = tf.random.normal(shape=[batch_size, count, heads, 1, k ** 2])
+    x = tf.random.normal(shape=[batch_size, heads, head_size, k ** 2, count], seed=seed)
+    y = tf.random.normal(shape=[batch_size, count, heads, 1, k ** 2], seed=seed)
 
     t0 = time()
     for _ in range(100):
