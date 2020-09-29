@@ -4,12 +4,12 @@
     "step_count": 1,
     "height": 128,
     "width": 128,
-    "code_size": 64,
+    "code_size": 128,
     "code_activation": "relu",
     "kernel_size": 3,
     "basic_block_count": 2,
     "encoder": {
-        "filters": [16, 16, 16, 16],
+        "filters": [16, 32, 48, 64],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -18,7 +18,7 @@
         ]
     },
     "decoder": {
-        "filters": [16, 16, 16, 16],
+        "filters": [64, 48, 32, 16],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -42,5 +42,5 @@
     "steps_per_epoch": 500,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : added a gradient penalty to description energy, which would increase too fast and reduced description length too quickly."
+    "current_test": "LED : GP with normal weights and default lr schedule"
 }
