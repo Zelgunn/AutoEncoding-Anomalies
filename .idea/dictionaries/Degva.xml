@@ -34,6 +34,7 @@
       <w>gaussians</w>
       <w>grayscale</w>
       <w>hann</w>
+      <w>hparams</w>
       <w>iaegan</w>
       <w>iaes</w>
       <w>icns</w>

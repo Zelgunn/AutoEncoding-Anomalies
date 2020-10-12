@@ -45,16 +45,20 @@ class AnomalyDetectorCallback(TensorBoardPlugin):
     def _write_logs(self, step: int):
         start_time = time()
 
-        predictions, labels = self.predict_anomalies()
-        predictions, labels = self.anomaly_detector.merge_samples_predictions(predictions=predictions, labels=labels)
-        results = self.anomaly_detector.evaluate_predictions(predictions=predictions, labels=labels,
-                                                             evaluation_metrics=["roc", "pr"])
-        self.anomaly_detector.print_results(results)
+        try:
+            predictions, labels = self.predict_anomalies()
+            predictions, labels = self.anomaly_detector.merge_samples_predictions(predictions=predictions, labels=labels)
+            results = self.anomaly_detector.evaluate_predictions(predictions=predictions, labels=labels,
+                                                                 evaluation_metrics=["roc", "pr"])
+            self.anomaly_detector.print_results(results)
 
-        with context.eager_mode():
-            with summary_ops_v2.always_record_summaries():
-                with self.validation_run_writer.as_default():
-                    self.write_results(results, step=step)
+            with context.eager_mode():
+                with summary_ops_v2.always_record_summaries():
+                    with self.validation_run_writer.as_default():
+                        self.write_results(results, step=step)
+
+        except tf.errors.InvalidArgumentError:
+            print("Could not predict this time.")
 
         print("`{}` took {:.2f} seconds.".format(self.name, time() - start_time))
 

@@ -19,7 +19,7 @@ from data_processing.video_preprocessing import make_video_augmentation, make_vi
 
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
-from misc_utils.train_utils import CyclicSchedule, ScaledSchedule
+# from misc_utils.train_utils import CyclicSchedule, ScaledSchedule
 
 
 class VideoProtocol(DatasetProtocol):
@@ -161,7 +161,7 @@ class VideoProtocol(DatasetProtocol):
                     description_energy_loss_lambda=1e-2,
                     use_noise=True,
                     noise_stddev=0.1,
-                    reconstruct_noise=False,
+                    reconstruct_noise=True,
                     seed=self.seed)
         return model
 

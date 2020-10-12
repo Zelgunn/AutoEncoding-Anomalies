@@ -102,7 +102,8 @@ class Protocol(object):
         train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern,
                                                                     split=0.9,
                                                                     batch_size=config.batch_size,
-                                                                    seed=self.seed)
+                                                                    seed=self.seed,
+                                                                    parallel_cores=8)
 
         print("Protocol - Training : Fit loop ...")
         self.model.fit(train_dataset, steps_per_epoch=config.steps_per_epoch, epochs=config.epochs,
@@ -114,7 +115,7 @@ class Protocol(object):
                       config: ProtocolTrainConfig
                       ) -> List[Callback]:
         print("Protocol - Make Callbacks - Tensorboard ...")
-        tensorboard = TensorBoard(log_dir=log_dir, update_freq=64, profile_batch=0)
+        tensorboard = TensorBoard(log_dir=log_dir, update_freq=32, profile_batch=0)
         callbacks = [tensorboard, TerminateOnNaN()]
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
@@ -162,7 +163,7 @@ class Protocol(object):
         self.load_weights(epoch=config.epoch)
 
         if isinstance(self.model, LED):
-            compare_metrics = None
+            compare_metrics = list(known_metrics.keys())
         else:
             compare_metrics = list(known_metrics.keys())
 

@@ -4,12 +4,12 @@
     "step_count": 1,
     "height": 128,
     "width": 128,
-    "code_size": 128,
-    "code_activation": "relu",
+    "code_size": 256,
+    "code_activation": "tanh",
     "kernel_size": 3,
     "basic_block_count": 2,
     "encoder": {
-        "filters": [16, 32, 48, 64],
+        "filters": [8, 16, 24, 32],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -18,7 +18,7 @@
         ]
     },
     "decoder": {
-        "filters": [64, 48, 32, 16],
+        "filters": [32, 24, 16, 8],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -27,9 +27,9 @@
         ]
     },
     "output_activation": "linear",
-    "batch_size": 4,
+    "batch_size": 8,
     "learning_rate": 0.001,
-    "optimizer": "adam",
+    "optimizer": "rmsprop",
     "data_augmentation": {
         "crop_ratio": 0.2,
         "dropout_noise_ratio": 0.0,
@@ -38,9 +38,9 @@
     },
     "extract_patches": false,
     "seed": 42,
-    "epochs": 64,
-    "steps_per_epoch": 500,
+    "epochs": 128,
+    "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : GP with normal weights and default lr schedule"
+    "current_test": "LED : Wide latent codes (256) - small encoder - default schedule"
 }
