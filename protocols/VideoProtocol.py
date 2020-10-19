@@ -19,8 +19,6 @@ from data_processing.video_preprocessing import make_video_augmentation, make_vi
 
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
-# from misc_utils.train_utils import CyclicSchedule, ScaledSchedule
-
 
 class VideoProtocol(DatasetProtocol):
     def __init__(self,
@@ -165,17 +163,16 @@ class VideoProtocol(DatasetProtocol):
                     seed=self.seed)
         return model
 
+    # region LED Variants
     def make_aled(self):
         encoder = self.make_encoder(self.get_encoder_input_shape())
         latent_code_shape = self.get_latent_code_shape(encoder)
         decoder = self.make_decoder(latent_code_shape)
         generator = self.make_decoder(latent_code_shape, name="ResidualGenerator")
-        # generator_learning_rate = self.base_learning_rate_schedule
 
         model = ALED(encoder=encoder,
                      decoder=decoder,
                      generator=generator,
-                     # generator_learning_rate=generator_learning_rate,
                      features_per_block=1,
                      merge_dims_with_features=False,
                      add_binarization_noise_to_mask=True,
@@ -201,6 +198,8 @@ class VideoProtocol(DatasetProtocol):
                        noise_stddev=0.1,
                        seed=self.seed)
         return model
+
+    # endregion
 
     # endregion
 
@@ -291,8 +290,9 @@ class VideoProtocol(DatasetProtocol):
 
     # region Make sub-models
     # region Base
-    def make_encoder(self, input_shape, name="ResidualEncoder") -> Model:
+    def make_encoder(self, input_shape, name="Encoder") -> Model:
         encoder = make_encoder(input_shape=input_shape,
+                               mode=self.encoder_mode,
                                filters=self.encoder_filters,
                                kernel_size=self.kernel_size,
                                strides=self.encoder_strides,
@@ -304,8 +304,9 @@ class VideoProtocol(DatasetProtocol):
                                )
         return encoder
 
-    def make_decoder(self, input_shape, name="ResidualDecoder") -> Model:
+    def make_decoder(self, input_shape, name="Decoder") -> Model:
         decoder = make_decoder(input_shape=input_shape,
+                               mode=self.decoder_mode,
                                filters=self.decoder_filters,
                                kernel_size=self.kernel_size,
                                strides=self.decoder_strides,
@@ -519,6 +520,10 @@ class VideoProtocol(DatasetProtocol):
         return self.config["encoder"]
 
     @property
+    def encoder_mode(self):
+        return self.encoder_config["mode"]
+
+    @property
     def encoder_filters(self) -> List[int]:
         return self.encoder_config["filters"]
 
@@ -536,6 +541,10 @@ class VideoProtocol(DatasetProtocol):
     @property
     def decoder_config(self):
         return self.config["decoder"]
+
+    @property
+    def decoder_mode(self):
+        return self.decoder_config["mode"]
 
     @property
     def decoder_filters(self) -> List[int]:
@@ -565,9 +574,11 @@ class VideoProtocol(DatasetProtocol):
 
     @property
     def base_learning_rate_schedule(self):
+        from misc_utils.train_utils import WarmupSchedule
+
         learning_rate = self.learning_rate
         # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
-        # learning_rate = WarmupSchedule(warmup_steps=2000, learning_rate=learning_rate)
+        learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
         # learning_rate = CyclicSchedule(cycle_length=1000,
         #                                learning_rate=min_learning_rate,

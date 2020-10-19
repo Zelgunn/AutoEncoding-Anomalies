@@ -115,7 +115,8 @@ class Protocol(object):
                       config: ProtocolTrainConfig
                       ) -> List[Callback]:
         print("Protocol - Make Callbacks - Tensorboard ...")
-        tensorboard = TensorBoard(log_dir=log_dir, update_freq=32, profile_batch=0)
+        tensorboard = TensorBoard(log_dir=log_dir, update_freq=32, profile_batch=0,
+                                  histogram_freq=1, write_images=False)
         callbacks = [tensorboard, TerminateOnNaN()]
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
@@ -162,11 +163,7 @@ class Protocol(object):
     def test_model(self, config: ProtocolTestConfig):
         self.load_weights(epoch=config.epoch)
 
-        if isinstance(self.model, LED):
-            compare_metrics = list(known_metrics.keys())
-        else:
-            compare_metrics = list(known_metrics.keys())
-
+        compare_metrics = list(known_metrics.keys())
         additional_metrics = self.additional_test_metrics
         if config.additional_metrics is not None:
             additional_metrics = [*additional_metrics, *config.additional_metrics]

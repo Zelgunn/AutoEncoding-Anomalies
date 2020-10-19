@@ -1,15 +1,16 @@
 {
     "model_architecture": "led",
-    "step_size": 32,
-    "step_count": 1,
+    "step_size": 16,
+    "step_count": 4,
     "height": 128,
     "width": 128,
-    "code_size": 256,
-    "code_activation": "tanh",
+    "code_size": 64,
+    "code_activation": "linear",
     "kernel_size": 3,
     "basic_block_count": 2,
     "encoder": {
-        "filters": [8, 16, 24, 32],
+        "mode": "conv",
+        "filters": [16, 24, 32, 48],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -18,7 +19,8 @@
         ]
     },
     "decoder": {
-        "filters": [32, 24, 16, 8],
+        "mode": "conv",
+        "filters": [48, 32, 24, 16],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -26,12 +28,18 @@
             [2, 2, 2]
         ]
     },
+    "description_module":
+    {
+        "mode": "conv",
+        "filters": [32, 32, 32, 32, 32],
+        "kernel_size": 13,
+        "base_activation": "relu"
+    },
     "output_activation": "linear",
     "batch_size": 8,
     "learning_rate": 0.001,
     "optimizer": "rmsprop",
     "data_augmentation": {
-        "crop_ratio": 0.2,
         "dropout_noise_ratio": 0.0,
         "gaussian_noise_ratio": 0.0,
         "use_random_negative": false
@@ -42,5 +50,5 @@
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : Wide latent codes (256) - small encoder - default schedule"
+    "current_test": "LED : testing non-residual setup"
 }
