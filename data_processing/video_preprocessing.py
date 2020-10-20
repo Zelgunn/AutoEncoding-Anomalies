@@ -40,6 +40,7 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
                             activation_range: Union[ActivationRange, str],
                             seed: int,
                             dropout_noise_ratio=0.0,
+                            gaussian_noise_std=0.0,
                             negative_prob=0.0,
                             ):
     to_grayscale = channels == 3
@@ -57,6 +58,11 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
             video = convert_to_grayscale(video)
 
         video = apply_activation_range(video, activation_range)
+
+        if gaussian_noise_std > 0.0:
+            video_shape = tf.shape(video)
+            video += tf.random.normal(video_shape, stddev=gaussian_noise_std, seed=seed)
+
         return video
 
     return augment_video

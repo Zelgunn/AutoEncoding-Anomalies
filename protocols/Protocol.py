@@ -8,11 +8,9 @@ from typing import List, Callable, Dict, Sequence, Union
 
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig, AnomalyDetectorCallbackConfig
-from callbacks import CustomModelCheckpoint
 from datasets import DatasetLoader, SingleSetConfig
 from misc_utils.train_utils import save_model_info
 from modalities import Pattern
-from custom_tf_models import LED
 
 
 class ProtocolTrainConfig(object):

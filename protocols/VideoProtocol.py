@@ -150,6 +150,9 @@ class VideoProtocol(DatasetProtocol):
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
+        # autoencoder = AE(encoder, decoder)
+        # autoencoder.load_weights("../logs/AEA/video/ped2/weights_023")
+
         model = LED(encoder=encoder,
                     decoder=decoder,
                     features_per_block=1,
@@ -595,10 +598,6 @@ class VideoProtocol(DatasetProtocol):
     @property
     def data_augmentation_config(self):
         return self.config["data_augmentation"]
-
-    @property
-    def crop_ratio(self) -> float:
-        return self.data_augmentation_config["crop_ratio"]
 
     @property
     def dropout_noise_ratio(self) -> float:
