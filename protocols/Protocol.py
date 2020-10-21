@@ -240,10 +240,11 @@ class Protocol(object):
         return log_dir
 
     def load_weights(self, epoch: int):
+        weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}")
         if epoch > 0:
-            weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}")
-            weights_path = weights_path.format(epoch=epoch)
-            self.model.load_weights(weights_path)
+            self.model.load_weights(weights_path.format(epoch=epoch))
+        else:
+            self.model.save_weights(weights_path.format(epoch=0))
 
     # region Properties
     @property

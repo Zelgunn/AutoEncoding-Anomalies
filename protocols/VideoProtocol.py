@@ -157,7 +157,9 @@ class VideoProtocol(DatasetProtocol):
                     description_energy_loss_lambda=1e-2,
                     use_noise=True,
                     noise_stddev=0.1,
-                    reconstruct_noise=False)
+                    reconstruct_noise=False,
+                    unmasked_reconstruction_weight=1e-1,
+                    )
         return model
 
     # region LED Variants
