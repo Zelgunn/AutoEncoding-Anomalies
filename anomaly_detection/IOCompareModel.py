@@ -55,3 +55,6 @@ class IOCompareModel(Model):
 
     def compute_output_signature(self, input_signature):
         raise NotImplementedError
+
+    def get_config(self):
+        raise NotImplementedError("IOCompareModel cannot be serialized yet.")

@@ -24,12 +24,10 @@ class VideoProtocol(DatasetProtocol):
     def __init__(self,
                  dataset_name: str,
                  initial_epoch: int,
-                 model_name: str = None
                  ):
         super(VideoProtocol, self).__init__(dataset_name=dataset_name,
                                             protocol_name="video",
-                                            initial_epoch=initial_epoch,
-                                            model_name=model_name)
+                                            initial_epoch=initial_epoch)
 
     # region Make model
     def make_model(self) -> Model:
@@ -92,7 +90,7 @@ class VideoProtocol(DatasetProtocol):
         encoder = self.make_encoder(self.get_encoder_input_shape())
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
-        model = IAE(encoder=encoder, decoder=decoder, step_size=self.step_size, seed=self.seed)
+        model = IAE(encoder=encoder, decoder=decoder, step_size=self.step_size)
         return model
 
     def make_iaegan(self) -> IAEGAN:
@@ -106,9 +104,7 @@ class VideoProtocol(DatasetProtocol):
                        decoder=decoder,
                        discriminator=discriminator,
                        step_size=self.step_size,
-                       discriminator_optimizer=self.make_discriminator_optimizer(),
-                       seed=self.seed
-                       )
+                       discriminator_optimizer=self.make_discriminator_optimizer())
         return model
 
     # endregion
@@ -126,7 +122,6 @@ class VideoProtocol(DatasetProtocol):
                        reconstruction_loss_factor=100.0,
                        kl_divergence_loss_factor=10.0,
                        balance_discriminator_learning_rate=False,
-                       seed=self.seed
                        )
 
         return model
@@ -162,8 +157,7 @@ class VideoProtocol(DatasetProtocol):
                     description_energy_loss_lambda=1e-2,
                     use_noise=True,
                     noise_stddev=0.1,
-                    reconstruct_noise=False,
-                    seed=self.seed)
+                    reconstruct_noise=False)
         return model
 
     # region LED Variants
@@ -179,8 +173,7 @@ class VideoProtocol(DatasetProtocol):
                      features_per_block=1,
                      merge_dims_with_features=False,
                      add_binarization_noise_to_mask=True,
-                     description_energy_loss_lambda=1e-2,
-                     seed=self.seed)
+                     description_energy_loss_lambda=1e-2)
         return model
 
     def make_preled(self):
@@ -198,8 +191,7 @@ class VideoProtocol(DatasetProtocol):
                        add_binarization_noise_to_mask=True,
                        description_energy_loss_lambda=1e-2,
                        use_noise=True,
-                       noise_stddev=0.1,
-                       seed=self.seed)
+                       noise_stddev=0.1)
         return model
 
     # endregion
@@ -216,7 +208,7 @@ class VideoProtocol(DatasetProtocol):
         from custom_tf_models.energy_based.energy_state_functions.IdentityESF import IdentityESF
 
         encoder = self.make_encoder(self.get_encoder_input_shape())
-        kernel_initializer = VarianceScaling(seed=self.seed)
+        kernel_initializer = VarianceScaling()
         energy_model = Sequential(
             layers=[
                 encoder,
@@ -230,8 +222,7 @@ class VideoProtocol(DatasetProtocol):
         model = EBM(energy_model=energy_model,
                     energy_state_functions=[FlipSequence(), IdentityESF()],
                     optimizer=tf.keras.optimizers.Adam(),
-                    energy_margin=1.0,
-                    seed=self.seed)
+                    energy_margin=1.0)
 
         return model
 
@@ -246,8 +237,7 @@ class VideoProtocol(DatasetProtocol):
                      decoder=decoder,
                      energy_state_functions=[FlipSequence(), IdentityESF()],
                      energy_margin=2e-1,
-                     weights_decay=0.0,
-                     seed=self.seed)
+                     weights_decay=0.0)
 
         return model
 
@@ -257,9 +247,7 @@ class VideoProtocol(DatasetProtocol):
 
         model = EBGAN(autoencoder=autoencoder,
                       generator=generator,
-                      margin=1e-3,
-                      seed=self.seed,
-                      )
+                      margin=1e-3)
         return model
 
     # endregion
@@ -302,7 +290,6 @@ class VideoProtocol(DatasetProtocol):
                                code_size=self.code_size,
                                code_activation=self.code_activation,
                                basic_block_count=self.basic_block_count,
-                               seed=self.seed,
                                name=name,
                                )
         return encoder
@@ -316,7 +303,6 @@ class VideoProtocol(DatasetProtocol):
                                channels=1,
                                output_activation=self.output_activation,
                                basic_block_count=self.basic_block_count,
-                               seed=self.seed,
                                name=name,
                                )
         return decoder
@@ -333,8 +319,7 @@ class VideoProtocol(DatasetProtocol):
                                            strides=discriminator_config["strides"],
                                            intermediate_size=discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
-                                           include_intermediate_output=include_intermediate_output,
-                                           seed=self.seed)
+                                           include_intermediate_output=include_intermediate_output)
         return discriminator
 
     # endregion
@@ -433,7 +418,6 @@ class VideoProtocol(DatasetProtocol):
                                        channels=self.dataset_channels,
                                        dropout_noise_ratio=self.dropout_noise_ratio,
                                        negative_prob=negative_prob,
-                                       seed=self.seed,
                                        activation_range=self.output_activation)
 
     def make_video_preprocess(self) -> Callable:
@@ -577,11 +561,11 @@ class VideoProtocol(DatasetProtocol):
 
     @property
     def base_learning_rate_schedule(self):
-        # from misc_utils.train_utils import WarmupSchedule
+        from misc_utils.train_utils import WarmupSchedule
 
         learning_rate = self.learning_rate
         # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
-        # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
+        learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
         # learning_rate = CyclicSchedule(cycle_length=1000,
         #                                learning_rate=min_learning_rate,

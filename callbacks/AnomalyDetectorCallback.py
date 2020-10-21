@@ -47,7 +47,8 @@ class AnomalyDetectorCallback(TensorBoardPlugin):
 
         try:
             predictions, labels = self.predict_anomalies()
-            predictions, labels = self.anomaly_detector.merge_samples_predictions(predictions=predictions, labels=labels)
+            predictions, labels = self.anomaly_detector.merge_samples_predictions(predictions=predictions,
+                                                                                  labels=labels)
             results = self.anomaly_detector.evaluate_predictions(predictions=predictions, labels=labels,
                                                                  evaluation_metrics=["roc", "pr"])
             self.anomaly_detector.print_results(results)

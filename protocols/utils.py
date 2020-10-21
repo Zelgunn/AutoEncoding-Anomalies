@@ -17,7 +17,6 @@ def make_encoder(input_shape: Tuple[int, ...],
                  code_size: int,
                  code_activation: Union[str, Layer],
                  basic_block_count=1,
-                 seed=None,
                  name="Encoder"
                  ) -> Sequential:
     layers = get_encoder_layers(rank=len(input_shape) - 1,
@@ -27,8 +26,7 @@ def make_encoder(input_shape: Tuple[int, ...],
                                 strides=strides,
                                 code_size=code_size,
                                 code_activation=code_activation,
-                                basic_block_count=basic_block_count,
-                                seed=seed)
+                                basic_block_count=basic_block_count)
 
     return to_sequential(layers=layers, input_shape=input_shape, name=name)
 
@@ -41,7 +39,6 @@ def make_decoder(input_shape: Tuple[int, ...],
                  channels: int,
                  output_activation: Union[str, Layer],
                  basic_block_count=1,
-                 seed=None,
                  name="Decoder"
                  ) -> Sequential:
     layers = get_decoder_layers(rank=len(input_shape) - 1,
@@ -51,8 +48,7 @@ def make_decoder(input_shape: Tuple[int, ...],
                                 strides=strides,
                                 channels=channels,
                                 output_activation=output_activation,
-                                basic_block_count=basic_block_count,
-                                seed=seed)
+                                basic_block_count=basic_block_count)
 
     return to_sequential(layers=layers, input_shape=input_shape, name=name)
 
@@ -65,7 +61,6 @@ def make_discriminator(input_shape: Tuple[int, ...],
                        intermediate_activation: str,
                        include_intermediate_output: bool,
                        basic_block_count=1,
-                       seed=None,
                        name="Discriminator"
                        ):
     if isinstance(kernel_size, int):
@@ -76,7 +71,6 @@ def make_discriminator(input_shape: Tuple[int, ...],
         "input_shape": input_shape,
         "rank": rank,
         "basic_block_count": basic_block_count,
-        "seed": seed,
     }
 
     intermediate_shape = input_shape
@@ -93,7 +87,7 @@ def make_discriminator(input_shape: Tuple[int, ...],
         if i == 0:
             kwargs.pop("input_shape")
 
-    dense_initializer = VarianceScaling(seed=seed)
+    dense_initializer = VarianceScaling()
 
     layers.append(Dense(units=intermediate_size, activation=intermediate_activation,
                         kernel_initializer=dense_initializer))
@@ -116,13 +110,12 @@ def get_encoder_layers(rank: int,
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        code_size: int,
                        code_activation: Union[str, Layer],
-                       seed: int,
                        **kwargs
                        ) -> List[Layer]:
     layer_count = len(filters)
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * layer_count
-    shared_params = {"rank": rank, "transposed": False, "mode": mode, "use_bias": True, "seed": seed, **kwargs}
+    shared_params = {"rank": rank, "transposed": False, "mode": mode, "use_bias": True, **kwargs}
 
     layers = []
     for i in range(layer_count):
@@ -146,13 +139,12 @@ def get_decoder_layers(rank: int,
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        channels: int,
                        output_activation: Union[str, Layer],
-                       seed: int,
                        **kwargs,
                        ) -> List[Layer]:
     layer_count = len(filters)
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * layer_count
-    shared_params = {"rank": rank, "transposed": True, "mode": mode, "use_bias": True, "seed": seed, **kwargs}
+    shared_params = {"rank": rank, "transposed": True, "mode": mode, "use_bias": True, **kwargs}
 
     layers = []
     for i in range(layer_count):
@@ -180,7 +172,6 @@ def get_layer(rank: int,
               strides: Union[Tuple[int, int, int], List[int], int],
               use_bias: bool,
               activation: Union[str, Layer],
-              seed: int,
               name=None,
               **kwargs
               ) -> List[Layer]:
@@ -189,7 +180,7 @@ def get_layer(rank: int,
 
     padding = dict_get(kwargs, "padding", default="same")
     if mode == "conv":
-        kernel_initializer = dict_get(kwargs, "kernel_initializer", default=VarianceScaling(seed=seed))
+        kernel_initializer = dict_get(kwargs, "kernel_initializer", default=VarianceScaling())
         main_layer = Conv(rank=rank, filters=filters, kernel_size=kernel_size, kernel_initializer=kernel_initializer,
                           strides=1, padding=padding, activation=activation, use_bias=use_bias,
                           name=name)
@@ -197,14 +188,14 @@ def get_layer(rank: int,
         basic_block_count = dict_get(kwargs, "basic_block_count", default=1)
         main_layer = ResBlockND(rank=rank, filters=filters, kernel_size=kernel_size,
                                 basic_block_count=basic_block_count, strides=1, padding=padding,
-                                activation=activation, seed=seed, name=name)
+                                activation=activation, name=name)
     elif mode == "residual_self_attention":
         head_count = dict_get(kwargs, "head_count", default=8)
         head_size = filters // head_count
         basic_block_count = dict_get(kwargs, "basic_block_count", default=1)
         main_layer = ResSASABlock(rank=rank, head_size=head_size, head_count=head_count, kernel_size=kernel_size,
                                   basic_block_count=basic_block_count, strides=1,
-                                  activation=activation, seed=seed, name=name)
+                                  activation=activation, name=name)
     else:
         raise ValueError("`mode` must be in ['conv', 'residual', 'residual_self_attention']. Got {}".format(mode))
 

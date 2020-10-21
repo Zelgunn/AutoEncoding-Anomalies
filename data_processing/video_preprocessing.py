@@ -38,7 +38,6 @@ def apply_activation_range(x: tf.Tensor, activation_range: Union[ActivationRange
 
 def make_video_augmentation(length: int, height: int, width: int, channels: int,
                             activation_range: Union[ActivationRange, str],
-                            seed: int,
                             dropout_noise_ratio=0.0,
                             gaussian_noise_std=0.0,
                             negative_prob=0.0,
@@ -46,13 +45,13 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
     to_grayscale = channels == 3
 
     def augment_video(video: tf.Tensor) -> tf.Tensor:
-        video = tf.image.random_crop(video, size=(length, height, width, channels), seed=seed)
+        video = tf.image.random_crop(video, size=(length, height, width, channels))
 
         if dropout_noise_ratio > 0.0:
-            video = video_dropout_noise(video, dropout_noise_ratio, spatial_prob=0.1, seed=seed)
+            video = video_dropout_noise(video, dropout_noise_ratio, spatial_prob=0.1)
 
         if negative_prob > 0.0:
-            video = random_image_negative(video, negative_prob=negative_prob, seed=seed)
+            video = random_image_negative(video, negative_prob=negative_prob)
 
         if to_grayscale:
             video = convert_to_grayscale(video)
@@ -61,7 +60,7 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
 
         if gaussian_noise_std > 0.0:
             video_shape = tf.shape(video)
-            video += tf.random.normal(video_shape, stddev=gaussian_noise_std, seed=seed)
+            video += tf.random.normal(video_shape, stddev=gaussian_noise_std)
 
         return video
 
@@ -90,30 +89,30 @@ def make_video_preprocess(to_grayscale: bool,
     return preprocess
 
 
-def video_random_cropping(video: tf.Tensor, crop_ratio: float, output_length: int, seed=None):
-    crop_ratio = tf.random.uniform(shape=(), minval=1.0 - crop_ratio, maxval=1.0, seed=seed)
+def video_random_cropping(video: tf.Tensor, crop_ratio: float, output_length: int):
+    crop_ratio = tf.random.uniform(shape=(), minval=1.0 - crop_ratio, maxval=1.0)
     original_shape = tf.cast(tf.shape(video), tf.float32)
     original_height, original_width = original_shape[1], original_shape[2]
 
     crop_size = [output_length, crop_ratio * original_height, crop_ratio * original_width, 1]
 
-    video = tf.image.random_crop(video, crop_size, seed=seed)
+    video = tf.image.random_crop(video, crop_size)
     return video
 
 
-def video_dropout_noise(video, max_rate, spatial_prob, seed=None):
-    drop_width = tf.random.uniform([], minval=0.0, maxval=1.0, dtype=tf.float32, seed=seed) > 0.5
+def video_dropout_noise(video, max_rate, spatial_prob):
+    drop_width = tf.random.uniform([], minval=0.0, maxval=1.0, dtype=tf.float32) > 0.5
     drop_width = tf.cast(drop_width, tf.float32)
 
     noise_shape_prob = [spatial_prob * (1.0 - drop_width), spatial_prob * drop_width, 1.0]
     noise_shape_prob = [0.0] * (len(video.shape) - 3) + noise_shape_prob
 
-    video = dropout_noise(video, max_rate, noise_shape_prob, seed=seed)
+    video = dropout_noise(video, max_rate, noise_shape_prob)
     return video
 
 
-def random_image_negative(image, negative_prob=0.5, seed=None):
-    negative = tf.random.uniform([], minval=0.0, maxval=1.0, dtype=tf.float32, seed=seed) < negative_prob
+def random_image_negative(image, negative_prob=0.5):
+    negative = tf.random.uniform([], minval=0.0, maxval=1.0, dtype=tf.float32) < negative_prob
     image = tf.cond(pred=negative,
                     true_fn=lambda: 1.0 - image,
                     false_fn=lambda: image)

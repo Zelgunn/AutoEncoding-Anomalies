@@ -10,7 +10,6 @@ class SGLD(tf.optimizers.Optimizer):
                  burn_in_steps=25,
                  preconditioner_decay_rate=0.95,
                  diagonal_bias=1e-8,
-                 seed=None,
                  name="SGLD",
                  **kwargs
                  ):
@@ -23,7 +22,6 @@ class SGLD(tf.optimizers.Optimizer):
         self._set_hyper("burn_in_steps", burn_in_steps)
         self._set_hyper("preconditioner_decay_rate", preconditioner_decay_rate)
         self._set_hyper("diagonal_bias", diagonal_bias)
-        self._set_hyper("seed", seed)
 
     def _create_slots(self, var_list):
         for var in var_list:
@@ -88,8 +86,7 @@ class SGLD(tf.optimizers.Optimizer):
         # noise_stddev = tf.sqrt(noise_stddev)
 
         noisy_gradient = tf.random.normal(mean=gradient_mean, stddev=noise_stddev,
-                                          shape=gradient_shape, dtype=gradient_dtype,
-                                          seed=self._get_hyper("seed"))
+                                          shape=gradient_shape, dtype=gradient_dtype)
 
         if indices is None:
             momentum.assign(new_momentum)

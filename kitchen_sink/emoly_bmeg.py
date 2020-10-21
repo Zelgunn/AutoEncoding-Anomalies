@@ -284,13 +284,14 @@ def main():
     protocol = Protocol(model=model,
                         dataset_name="emoly",
                         protocol_name="audio_video",
-                        model_name="BMEG",
                         output_range=(-1.0, 1.0),
                         seed=seed,
                         )
 
     # region Training
-    video_preprocess = make_video_preprocess(height=video_height, width=video_width, to_grayscale=video_channels == 1)
+    video_preprocess = make_video_preprocess(to_grayscale=video_channels == 1,
+                                             activation_range="tanh",
+                                             target_size=(video_height, video_length))
 
     def preprocess(inputs):
         audio, video, faces = inputs
@@ -314,6 +315,7 @@ def main():
         offset_width = tf.cast(width * offset_width, tf.int32)
 
         video = tf.image.crop_to_bounding_box(video, offset_height, offset_width, target_height, target_width)
+        # noinspection PyArgumentList
         video = video_preprocess(video)
         return audio, video
 
@@ -414,7 +416,8 @@ def main():
                                        initial_epoch=initial_epoch,
                                        validation_steps=validation_steps,
                                        modality_callback_configs=modality_callback_configs,
-                                       auc_callback_configs=auc_callback_configs
+                                       auc_callback_configs=auc_callback_configs,
+                                       save_frequency="epoch"
                                        )
 
     protocol.train_model(train_config)

@@ -1,7 +1,6 @@
-from tensorflow.python.keras.models import Model
 import numpy as np
 from abc import abstractmethod
-from typing import Callable, Dict, Optional, List, Union
+from typing import Dict, List, Union
 import json
 import os
 from shutil import copyfile
@@ -19,38 +18,18 @@ class DatasetProtocol(Protocol):
                  dataset_name: str,
                  protocol_name: str,
                  initial_epoch: int,
-                 model_name: str = None
                  ):
-
         self.config = self.load_config(protocol_name, dataset_name)
         if "seed" not in self.config:
             self.config["seed"] = int(np.random.randint(low=0, high=2 ** 31, dtype=np.int32))
-        self.seed = self.config["seed"]
-
-        model = self.make_model()
-        autoencoder = self.make_autoencoder(model)
+        output_range = (-1.0, 1.0) if self.output_activation == "tanh" else (0.0, 1.0)
         self.initial_epoch = initial_epoch
 
-        output_range = (-1.0, 1.0) if self.output_activation == "tanh" else (0.0, 1.0)
-
-        super(DatasetProtocol, self).__init__(model=model,
-                                              dataset_name=dataset_name,
+        super(DatasetProtocol, self).__init__(dataset_name=dataset_name,
                                               protocol_name=protocol_name,
-                                              autoencoder=autoencoder,
-                                              model_name=model_name,
+                                              model=None,
                                               output_range=output_range,
-                                              seed=self.seed)
-
-    # region Init
-    @abstractmethod
-    def make_model(self) -> Model:
-        raise NotImplementedError
-
-    @staticmethod
-    def make_autoencoder(model: Model) -> Optional[Callable]:
-        return model
-
-    # endregion
+                                              seed=self.config["seed"])
 
     # region Train
     def train_model(self, config: ProtocolTrainConfig = None, **kwargs):

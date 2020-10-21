@@ -92,7 +92,7 @@ def main():
                                               strides=video_encoder_strides,
                                               code_size=code_size,
                                               code_activation="tanh",
-                                              seed=seed)
+                                              mode="conv")
     video_code_shape = compute_output_shape(video_encoder_layers, video_shape)
     video_encoder_layers.append(reshape_to_common_code)
     video_encoder = to_sequential(layers=video_encoder_layers, input_shape=video_shape, name="VideoEncoder")
@@ -105,7 +105,7 @@ def main():
                                               strides=video_decoder_strides,
                                               channels=video_channels,
                                               output_activation="linear",
-                                              seed=seed)
+                                              mode="conv")
     reshape_to_video_code = Reshape(target_shape=video_code_shape, name="ReshapeToVideoCodeShape")
     video_decoder_layers.insert(0, reshape_to_video_code)
     video_decoder = to_sequential(layers=video_decoder_layers, input_shape=code_shape, name="VideoDecoder")
@@ -119,7 +119,6 @@ def main():
                                              intermediate_size=video_discriminator_intermediate_size,
                                              intermediate_activation="relu",
                                              include_intermediate_output=False,
-                                             seed=seed,
                                              name="VideoDiscriminator")
     # endregion
 
@@ -136,7 +135,7 @@ def main():
                                               strides=audio_encoder_strides,
                                               code_size=code_size,
                                               code_activation="tanh",
-                                              seed=seed)
+                                              mode="conv")
     audio_code_shape = compute_output_shape(audio_encoder_layers, audio_shape)
     audio_encoder_layers.append(reshape_to_common_code)
     audio_encoder = to_sequential(layers=audio_encoder_layers, input_shape=audio_shape, name="AudioEncoder")
@@ -149,7 +148,7 @@ def main():
                                               strides=audio_decoder_strides,
                                               channels=audio_channels,
                                               output_activation="linear",
-                                              seed=seed)
+                                              mode="conv")
     reshape_to_audio_code = Reshape(target_shape=audio_code_shape, name="ReshapeToAudioCodeShape")
     audio_decoder_layers.insert(0, reshape_to_audio_code)
     audio_decoder = to_sequential(layers=audio_decoder_layers, input_shape=code_shape, name="AudioDecoder")
@@ -163,7 +162,6 @@ def main():
                                              intermediate_size=audio_discriminator_intermediate_size,
                                              intermediate_activation="relu",
                                              include_intermediate_output=False,
-                                             seed=seed,
                                              name="AudioDiscriminator")
     # endregion
 
@@ -195,13 +193,14 @@ def main():
     protocol = Protocol(model=model,
                         dataset_name="emoly",
                         protocol_name="audio_video",
-                        model_name="CoupledVAEGANs",
                         output_range=(-1.0, 1.0),
                         seed=seed,
                         )
 
     # region Training
-    video_preprocess = make_video_preprocess(height=video_height, width=video_width, to_grayscale=video_channels == 1)
+    video_preprocess = make_video_preprocess(to_grayscale=video_channels == 1,
+                                             activation_range="tanh",
+                                             target_size=(video_height, video_width))
 
     def preprocess(inputs):
         audio, video, faces = inputs
@@ -225,6 +224,7 @@ def main():
         offset_width = tf.cast(width * offset_width, tf.int32)
 
         video = tf.image.crop_to_bounding_box(video, offset_height, offset_width, target_height, target_width)
+        # noinspection PyArgumentList
         video = video_preprocess(video)
 
         return audio, video
@@ -341,8 +341,8 @@ def main():
                                        initial_epoch=initial_epoch,
                                        validation_steps=validation_steps,
                                        modality_callback_configs=modality_callback_configs,
-                                       auc_callback_configs=auc_callback_configs
-                                       )
+                                       auc_callback_configs=auc_callback_configs,
+                                       save_frequency="epoch")
 
     protocol.train_model(train_config)
     # endregion

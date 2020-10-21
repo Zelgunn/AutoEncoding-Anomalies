@@ -20,7 +20,6 @@ class AnomalyDetector(Model):
                  pattern: Pattern,
                  compare_metrics: Optional[List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]]] = "mse",
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
-                 labels_frame_count=32,
                  **kwargs
                  ):
         """

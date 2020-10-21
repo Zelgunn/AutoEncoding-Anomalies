@@ -4,17 +4,14 @@ from protocols import VideoProtocol, ProtocolTestConfig
 class UCSDProtocol(VideoProtocol):
     def __init__(self,
                  dataset_version=2,
-                 initial_epoch=0,
-                 model_name=None
+                 initial_epoch=0
                  ):
         if dataset_version not in [1, 2]:
             raise ValueError("`dataset_version` must either be 1 (ped1) or 2 (ped2). Received {}."
                              .format(dataset_version))
         dataset_name = "ped1" if dataset_version == 1 else "ped2"
 
-        super(UCSDProtocol, self).__init__(dataset_name=dataset_name,
-                                           initial_epoch=initial_epoch,
-                                           model_name=model_name)
+        super(UCSDProtocol, self).__init__(dataset_name=dataset_name, initial_epoch=initial_epoch)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()

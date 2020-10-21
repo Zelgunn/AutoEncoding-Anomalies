@@ -16,7 +16,6 @@ from CustomKerasLayers import ResBlock1D
 def get_audio_encoder(length: int,
                       channels: int,
                       n: int,
-                      seed: int,
                       ) -> Sequential:
     layers = get_encoder_layers(rank=2,
                                 filters=[
@@ -41,7 +40,7 @@ def get_audio_encoder(length: int,
                                 code_size=n * 8,
                                 code_activation="linear",
                                 basic_block_count=1,
-                                seed=seed
+                                mode="conv"
                                 )
 
     input_shape = (length, channels, 1)
@@ -59,7 +58,6 @@ def get_audio_encoder(length: int,
 def get_audio_decoder(length: int,
                       channels: int,
                       n: int,
-                      seed: int,
                       ) -> Sequential:
     layers = get_decoder_layers(rank=2,
                                 filters=[
@@ -84,7 +82,7 @@ def get_audio_decoder(length: int,
                                 channels=1,
                                 output_activation="linear",
                                 basic_block_count=1,
-                                seed=seed
+                                mode="conv"
                                 )
 
     input_shape = (length // 32, 1, n * 8)
@@ -107,7 +105,6 @@ def get_video_encoder(length: int,
                       width: int,
                       channels: int,
                       n: int,
-                      seed: int,
                       ) -> Sequential:
     layers = get_encoder_layers(rank=3,
                                 filters=[n, int(n * 1.5), n * 2, n * 4, n * 6, n * 8],
@@ -123,7 +120,7 @@ def get_video_encoder(length: int,
                                 code_size=n * 8,
                                 code_activation="linear",
                                 basic_block_count=1,
-                                seed=seed
+                                mode="conv",
                                 )
 
     layers = [
@@ -137,7 +134,6 @@ def get_video_encoder(length: int,
 def get_video_decoder(length: int,
                       channels: int,
                       n: int,
-                      seed: int,
                       ) -> Sequential:
     layers = get_decoder_layers(rank=3,
                                 filters=[n * 8, n * 6, n * 4, n * 2, int(1.5 * n), n],
@@ -153,7 +149,7 @@ def get_video_decoder(length: int,
                                 channels=channels,
                                 output_activation="linear",
                                 basic_block_count=1,
-                                seed=seed
+                                mode="conv",
                                 )
 
     layers = [
@@ -222,15 +218,15 @@ def main():
     # region Model
 
     # region Audio models
-    audio_encoder = get_audio_encoder(audio_length, audio_channels, n=audio_n, seed=seed)
-    audio_decoder = get_audio_decoder(audio_length, audio_channels, n=audio_n, seed=seed)
+    audio_encoder = get_audio_encoder(audio_length, audio_channels, n=audio_n)
+    audio_decoder = get_audio_decoder(audio_length, audio_channels, n=audio_n)
 
     audio_autoencoder = AE(encoder=audio_encoder, decoder=audio_decoder, name="AudioAutoencoder")
     # endregion
 
     # region Video models
-    video_encoder = get_video_encoder(video_length, video_height, video_width, video_channels, n=video_n, seed=seed)
-    video_decoder = get_video_decoder(video_length, video_channels, n=video_n, seed=seed)
+    video_encoder = get_video_encoder(video_length, video_height, video_width, video_channels, n=video_n)
+    video_decoder = get_video_decoder(video_length, video_channels, n=video_n)
 
     video_autoencoder = AE(encoder=video_encoder, decoder=video_decoder, name="VideoAutoencoder")
     # endregion
@@ -251,16 +247,18 @@ def main():
     protocol = Protocol(model=model,
                         dataset_name="audioset",
                         protocol_name="audio_video",
-                        model_name="EBL3",
                         output_range=(-1.0, 1.0),
                         seed=seed,
                         )
 
     # region Training
-    video_preprocess = make_video_preprocess(height=video_height, width=video_width, to_grayscale=video_channels == 1)
+    video_preprocess = make_video_preprocess(to_grayscale=video_channels == 1,
+                                             activation_range="tanh",
+                                             target_size=(video_height, video_width))
 
     def preprocess(inputs):
         audio, video = inputs
+        # noinspection PyArgumentList
         video = video_preprocess(video)
         return audio, video
 
@@ -320,7 +318,8 @@ def main():
                                        initial_epoch=initial_epoch,
                                        validation_steps=validation_steps,
                                        modality_callback_configs=modality_callback_configs,
-                                       auc_callback_configs=None
+                                       auc_callback_configs=None,
+                                       save_frequency="epoch"
                                        )
 
     protocol.train_model(train_config)

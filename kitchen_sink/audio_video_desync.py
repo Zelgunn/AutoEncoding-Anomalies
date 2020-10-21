@@ -3,6 +3,7 @@ from tensorflow.python.keras.models import Model, Sequential
 from tensorflow.python.keras.layers import Input, Concatenate, Lambda, Flatten, Reshape, Add
 from tensorflow.python.keras.layers import Dense, Conv1D, Conv3D
 from tensorflow.python.keras.layers import TimeDistributed, GlobalAveragePooling2D, AveragePooling3D
+from typing import Tuple
 
 from protocols import Protocol, ProtocolTrainConfig
 from callbacks.configs import ImageCallbackConfig
@@ -245,7 +246,7 @@ def main():
 
     energy_state_functions = [
         TakeStepESF(step_count=step_count),
-        OffsetSequences(seed=42, step_count=step_count)
+        OffsetSequences(step_count=step_count)
         # IdentityESF(),
         # SwitchSamplesESF(),
     ]
@@ -259,20 +260,23 @@ def main():
                 optimizer=optimizer,
                 energy_margin=1.0,
                 energy_model_uses_ground_truth=False,
+                name="ebm"
                 )
 
     # region Protocol
     protocol = Protocol(model=model,
                         dataset_name="emoly",
                         protocol_name="audio_video",
-                        model_name="ebm",
                         output_range=(0.0, 1.0)
                         )
 
-    video_preprocess = make_video_preprocess(height=video_height, width=video_width, to_grayscale=True)
+    video_preprocess = make_video_preprocess(to_grayscale=True,
+                                             activation_range="sigmoid",
+                                             target_size=(video_height, video_width))
 
-    def preprocess(inputs):
+    def preprocess(inputs: Tuple[tf.Tensor, tf.Tensor]):
         audio, video = inputs
+        # noinspection PyArgumentList
         video = video_preprocess(video)
         return audio, video
 
@@ -310,7 +314,8 @@ def main():
                                        epochs=100,
                                        initial_epoch=0,
                                        validation_steps=32,
-                                       modality_callback_configs=image_callbacks_configs
+                                       modality_callback_configs=image_callbacks_configs,
+                                       save_frequency="epoch"
                                        )
 
     protocol.train_model(train_config)

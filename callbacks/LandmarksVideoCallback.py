@@ -34,7 +34,6 @@ class LandmarksVideoCallback(TensorBoardPlugin):
         self.autoencoder = autoencoder
         self.writer_name = self.train_run_name if is_train_callback else self.validation_run_name
         self.prefix = prefix if (len(prefix) == 0) else (prefix + "_")
-        self.seed = seed
         self.ground_truth_images = None
 
         if isinstance(subset, SubsetLoader):

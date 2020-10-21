@@ -4,7 +4,7 @@ from tensorflow.python.keras.callbacks import Callback, TensorBoard, TerminateOn
 from tensorboard.plugins import projector
 import time
 import os
-from typing import List, Callable, Dict, Sequence, Union
+from typing import List, Callable, Dict, Sequence, Union, Optional
 
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig, AnomalyDetectorCallbackConfig
@@ -57,33 +57,28 @@ class ProtocolTestConfig(object):
 
 class Protocol(object):
     def __init__(self,
-                 model: Model,
                  dataset_name: str,
                  protocol_name: str,
-                 autoencoder: Callable = None,
-                 model_name: str = None,
+                 model: Optional[Model],
                  output_range=(0.0, 1.0),
                  seed=None
                  ):
-        self.model = model
-        if autoencoder is None:
-            autoencoder = model
-        self.autoencoder = autoencoder
-        if model_name is None:
-            model_name = model.name
-        self.model_name = model_name
-        self.autoencoder_name = autoencoder.name if hasattr(autoencoder, "name") else autoencoder.__name__
-        self.protocol_name = protocol_name
+        self.seed = seed
+        tf.random.set_seed(seed)
 
+        if model is None:
+            model = self.make_model()
+
+        self.model = model
+        self.protocol_name = protocol_name
         self.dataset_name = dataset_name
+
         self.dataset_folder = get_dataset_folder(dataset_name)
         self.dataset_config = SingleSetConfig(self.dataset_folder, output_range=output_range)
         self.dataset_loader = DatasetLoader(self.dataset_config)
 
-        self.base_log_dir = "../logs/AEA/{protocol_name}/{dataset_name}" \
-            .format(protocol_name=protocol_name, dataset_name=dataset_name)
-
-        self.seed = seed
+    def make_model(self) -> Model:
+        raise NotImplementedError
 
     def train_model(self, config: ProtocolTrainConfig, **kwargs):
         print("Protocol - Training : Loading weights ...")
@@ -100,7 +95,7 @@ class Protocol(object):
         train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern,
                                                                     split=0.9,
                                                                     batch_size=config.batch_size,
-                                                                    seed=self.seed,
+                                                                    seed=self.seed,  # numpy seed
                                                                     parallel_cores=8)
 
         print("Protocol - Training : Fit loop ...")
@@ -129,7 +124,8 @@ class Protocol(object):
             print("Protocol - Make Callbacks - AUC callbacks ...")
             for acc in config.auc_callback_configs:
                 print("Protocol - Make AUC Callbacks - {} callback ...".format(acc.prefix))
-                callback = acc.to_callback(tensorboard, self.dataset_loader, self.seed)
+                callback = acc.to_callback(tensorboard, self.dataset_loader)
+                # callback = acc.to_callback(tensorboard, self.dataset_loader, self.seed)
                 callbacks.append(callback)
         # endregion
         # region Anomaly detector (full test)
@@ -144,7 +140,8 @@ class Protocol(object):
             print("Protocol - Make Callbacks - Modality callbacks")
             for mcc in config.modality_callback_configs:
                 print("Protocol - Make Modality Callbacks - {} callback ...".format(mcc.name))
-                callback = mcc.to_callback(tensorboard, self.dataset_loader, self.seed)
+                callback = mcc.to_callback(tensorboard, self.dataset_loader)
+                # callback = mcc.to_callback(tensorboard, self.dataset_loader, self.seed)
                 callbacks.append(callback)
         # endregion
         # region Early stopping
@@ -188,10 +185,6 @@ class Protocol(object):
                                                   **config.kwargs
                                               }
                                               )
-
-    @property
-    def additional_test_metrics(self) -> List[Callable[[tf.Tensor], tf.Tensor]]:
-        return getattr(self.model, "additional_test_metrics", [])
 
     def log_model_latent_codes(self, config: ProtocolTestConfig):
         self.load_weights(epoch=config.epoch)
@@ -251,6 +244,34 @@ class Protocol(object):
             weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}")
             weights_path = weights_path.format(epoch=epoch)
             self.model.load_weights(weights_path)
+
+    # region Properties
+    @property
+    def model_name(self) -> str:
+        return self.model.name
+
+    @property
+    def autoencoder(self) -> Callable:
+        return self.model
+
+    @property
+    def autoencoder_name(self) -> str:
+        if hasattr(self.autoencoder, "name"):
+            # noinspection PyUnresolvedReferences
+            return self.autoencoder.name
+        else:
+            return self.autoencoder.__name__
+
+    @property
+    def base_log_dir(self) -> str:
+        return "../logs/AEA/{protocol_name}/{dataset_name}" \
+            .format(protocol_name=self.protocol_name, dataset_name=self.dataset_name)
+
+    @property
+    def additional_test_metrics(self) -> List[Callable[[tf.Tensor], tf.Tensor]]:
+        return getattr(self.model, "additional_test_metrics", [])
+
+    # endregion
 
 
 def get_dataset_folder(dataset_name: str) -> str:

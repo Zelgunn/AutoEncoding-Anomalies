@@ -2,7 +2,6 @@ import tensorflow as tf
 from typing import Union, List, Tuple
 
 from data_processing import DataProcessor
-from misc_utils.math_utils import reduce_min_from, reduce_max_from
 
 
 class VideoProcessor(DataProcessor):
@@ -34,6 +33,8 @@ class VideoProcessor(DataProcessor):
         return video
 
     def post_process(self, video: Union[tf.Tensor, List, Tuple]) -> Union[tf.Tensor, List, Tuple]:
-        video_min = reduce_min_from(video, start_axis=1, keepdims=True)
-        video_max = reduce_max_from(video, start_axis=1, keepdims=True)
-        video = (video - video_min) / (video_max - video_min)
+        raise NotImplementedError
+
+        # video_min = reduce_min_from(video, start_axis=1, keepdims=True)
+        # video_max = reduce_max_from(video, start_axis=1, keepdims=True)
+        # video = (video - video_min) / (video_max - video_min)

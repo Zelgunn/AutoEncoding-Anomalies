@@ -3,12 +3,10 @@ from protocols import VideoProtocol, ProtocolTestConfig
 
 class ShanghaiTechProtocol(VideoProtocol):
     def __init__(self,
-                 initial_epoch=0,
-                 model_name=None
+                 initial_epoch=0
                  ):
         super(ShanghaiTechProtocol, self).__init__(dataset_name="shanghaitech",
-                                                   initial_epoch=initial_epoch,
-                                                   model_name=model_name)
+                                                   initial_epoch=initial_epoch)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()
