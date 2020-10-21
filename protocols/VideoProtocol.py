@@ -162,7 +162,7 @@ class VideoProtocol(DatasetProtocol):
                     description_energy_loss_lambda=1e-2,
                     use_noise=True,
                     noise_stddev=0.1,
-                    reconstruct_noise=True,
+                    reconstruct_noise=False,
                     seed=self.seed)
         return model
 
@@ -577,11 +577,11 @@ class VideoProtocol(DatasetProtocol):
 
     @property
     def base_learning_rate_schedule(self):
-        from misc_utils.train_utils import WarmupSchedule
+        # from misc_utils.train_utils import WarmupSchedule
 
         learning_rate = self.learning_rate
         # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
-        learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
+        # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
         # learning_rate = CyclicSchedule(cycle_length=1000,
         #                                learning_rate=min_learning_rate,

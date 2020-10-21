@@ -126,7 +126,8 @@ def get_encoder_layers(rank: int,
 
     layers = []
     for i in range(layer_count):
-        layer_kernel_size = kernel_size[i] + 4 if (i == 0) else kernel_size[i]
+        is_first_layer = (i == 0)
+        layer_kernel_size = kernel_size[i] + 4 if is_first_layer else kernel_size[i]
         layer_activation = "relu" if mode == "conv" else "linear"
         layer = get_layer(filters=filters[i], kernel_size=layer_kernel_size, strides=strides[i],
                           activation=layer_activation, **shared_params)
@@ -155,14 +156,18 @@ def get_decoder_layers(rank: int,
 
     layers = []
     for i in range(layer_count):
-        layer_kernel_size = kernel_size[i] + 4 if (i == (layer_count - 1)) else kernel_size[i]
+        is_last_layer = (i == (layer_count - 1))
+        layer_kernel_size = kernel_size[i] + 4 if is_last_layer else kernel_size[i]
         layer_activation = "relu" if mode == "conv" else "linear"
         layer = get_layer(filters=filters[i], kernel_size=layer_kernel_size, strides=strides[i],
                           activation=layer_activation, **shared_params)
         layers += layer
 
+    if "basic_block_count" in shared_params:
+        shared_params["basic_block_count"] = 1
+
     output_layer = get_layer(filters=channels, kernel_size=1, strides=1,
-                             activation=output_activation, name="LatentCodeLayer", **shared_params)
+                             activation=output_activation, name="OutputLayer", **shared_params)
     layers += output_layer
     return layers
 
@@ -242,6 +247,6 @@ def average_pooling(rank: int,
 
 def dict_get(dictionary, key, default):
     if key in dictionary:
-        return key
+        return dictionary[key]
     else:
         return default

@@ -1,16 +1,16 @@
 {
     "model_architecture": "led",
-    "step_size": 16,
-    "step_count": 4,
+    "step_size": 32,
+    "step_count": 1,
     "height": 128,
     "width": 128,
-    "code_size": 64,
-    "code_activation": "linear",
+    "code_size": 128,
+    "code_activation": "tanh",
     "kernel_size": 3,
     "basic_block_count": 2,
     "encoder": {
-        "mode": "conv",
-        "filters": [16, 24, 32, 48],
+        "mode": "residual",
+        "filters": [16, 24, 32, 64],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -19,8 +19,8 @@
         ]
     },
     "decoder": {
-        "mode": "conv",
-        "filters": [48, 32, 24, 16],
+        "mode": "residual",
+        "filters": [64, 32, 24, 16],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -28,15 +28,8 @@
             [2, 2, 2]
         ]
     },
-    "description_module":
-    {
-        "mode": "conv",
-        "filters": [32, 32, 32, 32, 32],
-        "kernel_size": 13,
-        "base_activation": "relu"
-    },
     "output_activation": "linear",
-    "batch_size": 8,
+    "batch_size": 4,
     "learning_rate": 0.001,
     "optimizer": "rmsprop",
     "data_augmentation": {
@@ -50,5 +43,5 @@
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : testing non-residual setup"
+    "current_test": "LED : Restoring best known hparams."
 }
