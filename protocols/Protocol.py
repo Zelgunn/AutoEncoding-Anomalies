@@ -131,8 +131,7 @@ class Protocol(object):
             print("Protocol - Make Callbacks - AUC callbacks ...")
             for acc in config.auc_callback_configs:
                 print("Protocol - Make AUC Callbacks - {} callback ...".format(acc.prefix))
-                callback = acc.to_callback(tensorboard, self.dataset_loader)
-                # callback = acc.to_callback(tensorboard, self.dataset_loader, self.seed)
+                callback = acc.to_callback(tensorboard, self.dataset_loader, self.seed)
                 callbacks.append(callback)
         # endregion
         # region Anomaly detector (full test)
@@ -147,8 +146,7 @@ class Protocol(object):
             print("Protocol - Make Callbacks - Modality callbacks")
             for mcc in config.modality_callback_configs:
                 print("Protocol - Make Modality Callbacks - {} callback ...".format(mcc.name))
-                callback = mcc.to_callback(tensorboard, self.dataset_loader)
-                # callback = mcc.to_callback(tensorboard, self.dataset_loader, self.seed)
+                callback = mcc.to_callback(tensorboard, self.dataset_loader, self.seed)
                 callbacks.append(callback)
         # endregion
         # region Early stopping
