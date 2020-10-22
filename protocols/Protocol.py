@@ -92,11 +92,18 @@ class Protocol(object):
 
         print("Protocol - Training : Making datasets ...")
         subset = self.dataset_loader.train_subset
+        split_folders = {}
         train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern,
                                                                     split=0.9,
                                                                     batch_size=config.batch_size,
                                                                     seed=self.seed,  # numpy seed
-                                                                    parallel_cores=8)
+                                                                    parallel_cores=8,
+                                                                    split_folders=split_folders)
+
+        for dataset_name in split_folders:
+            print("Elements in {} :".format(dataset_name))
+            for path in split_folders[dataset_name]:
+                print("===> {}".format(os.path.basename(path)))
 
         print("Protocol - Training : Fit loop ...")
         self.model.fit(train_dataset, steps_per_epoch=config.steps_per_epoch, epochs=config.epochs,
