@@ -43,5 +43,6 @@
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : Restoring best known hparams."
+    "auc_frequency": 1,
+    "current_test": "LED : Unbound energy function (bounded to [-5, 0] for loss). exp^(energy) for masking"
 }

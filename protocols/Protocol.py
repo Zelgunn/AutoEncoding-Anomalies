@@ -81,7 +81,6 @@ class Protocol(object):
         raise NotImplementedError
 
     def train_model(self, config: ProtocolTrainConfig, **kwargs):
-        print("Protocol - Training : Loading weights ...")
         self.load_weights(epoch=config.initial_epoch)
 
         print("Protocol - Training : Making log dirs ...")
@@ -244,12 +243,13 @@ class Protocol(object):
         save_model_info(self.model, log_dir)
         return log_dir
 
-    def load_weights(self, epoch: int):
+    def load_weights(self, epoch: int, verbose=False):
         weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}")
+        if verbose:
+            print("Protocol : Loading weights from {} ..".format(weights_path))
+
         if epoch > 0:
             self.model.load_weights(weights_path.format(epoch=epoch))
-        else:
-            self.model.save_weights(weights_path.format(epoch=0))
 
     # region Properties
     @property

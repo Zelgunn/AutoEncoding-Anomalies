@@ -11,7 +11,7 @@ from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from custom_tf_models import AE, IAE, BinAE
-from custom_tf_models import LED, ALED, PreLED
+from custom_tf_models import LED, RDL, ALED, PreLED
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
@@ -45,6 +45,8 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_and()
         elif self.model_architecture == "led":
             model = self.make_led()
+        elif self.model_architecture == "rdl":
+            model = self.make_rdl()
         elif self.model_architecture == "aled":
             model = self.make_aled()
         elif self.model_architecture == "preled":
@@ -146,7 +148,12 @@ class VideoProtocol(DatasetProtocol):
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
         # autoencoder = AE(encoder, decoder)
-        # autoencoder.load_weights("../logs/AEA/video/ped2/weights_023")
+        # autoencoder.load_weights("../logs/AEA/video/ped2/weights_019")
+
+        # encoder.trainable = decoder.trainable = False
+        from custom_tf_models.description_length.LED import LEDGoal
+        goal_schedule = LEDGoal(offset=0.035, initial_rate=0.1, decay_steps=1000, decay_rate=0.6, staircase=False)
+        # goal_schedule = None
 
         model = LED(encoder=encoder,
                     decoder=decoder,
@@ -158,11 +165,24 @@ class VideoProtocol(DatasetProtocol):
                     use_noise=True,
                     noise_stddev=0.1,
                     reconstruct_noise=False,
-                    unmasked_reconstruction_weight=1e-1,
+                    goal_schedule=goal_schedule,
+                    allow_negative_description_loss_weight=True,
+                    unmasked_reconstruction_weight=1e-0,
                     )
         return model
 
     # region LED Variants
+    def make_rdl(self):
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+
+        model = RDL(encoder=encoder,
+                    decoder=decoder,
+                    use_noise=True,
+                    noise_stddev=0.1,
+                    reconstruct_noise=False)
+        return model
+
     def make_aled(self):
         encoder = self.make_encoder(self.get_encoder_input_shape())
         latent_code_shape = self.get_latent_code_shape(encoder)

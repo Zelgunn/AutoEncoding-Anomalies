@@ -43,5 +43,6 @@
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "current_test": "LED : "
+    "auc_frequency": 4,
+    "current_test": "LED : First LED test"
 }

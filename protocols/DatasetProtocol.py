@@ -118,7 +118,7 @@ class DatasetProtocol(Protocol):
                                                      compare_metrics=None,
                                                      additional_metrics=self.model.additional_test_metrics,
                                                      stride=1,
-                                                     epoch_freq=1,
+                                                     epoch_freq=self.auc_frequency,
                                                      pre_normalize_predictions=True,
                                                      max_samples=-1,
                                                      )
@@ -189,4 +189,10 @@ class DatasetProtocol(Protocol):
         if save_frequency not in ["batch", "epoch"]:
             save_frequency = int(save_frequency)
         return save_frequency
+
+    @property
+    def auc_frequency(self) -> int:
+        if "auc_frequency" not in self.config:
+            self.config["auc_frequency"] = 1
+        return self.config["auc_frequency"]
     # endregion
