@@ -3,7 +3,7 @@ from tensorflow.python.keras import Model, optimizers
 from abc import abstractmethod
 import numpy as np
 import cv2
-from typing import List, Tuple, Callable, Union
+from typing import List, Tuple, Callable, Union, Optional
 
 from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
@@ -15,6 +15,7 @@ from custom_tf_models import LED, RDL, ALED, PreLED
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
+from custom_tf_models.description_length.LED import LEDGoal
 from data_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
 
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
@@ -151,21 +152,16 @@ class VideoProtocol(DatasetProtocol):
         # autoencoder.load_weights("../logs/AEA/video/ped2/weights_019")
 
         # encoder.trainable = decoder.trainable = False
-        from custom_tf_models.description_length.LED import LEDGoal
-        goal_schedule = LEDGoal(offset=0.035, initial_rate=0.1, decay_steps=1000, decay_rate=0.6, staircase=False)
-        # goal_schedule = None
 
         model = LED(encoder=encoder,
                     decoder=decoder,
                     features_per_block=1,
                     merge_dims_with_features=False,
-                    binarization_temperature=50.0,
-                    add_binarization_noise_to_mask=True,
                     description_energy_loss_lambda=1e-2,
                     use_noise=True,
-                    noise_stddev=0.1,
+                    noise_stddev=0.02,
                     reconstruct_noise=False,
-                    goal_schedule=goal_schedule,
+                    goal_schedule=self.led_goal,
                     allow_negative_description_loss_weight=True,
                     unmasked_reconstruction_weight=1e-0,
                     )
@@ -639,6 +635,19 @@ class VideoProtocol(DatasetProtocol):
             return self.step_size * 2
         else:
             return self.step_size
+
+    @property
+    def led_goal(self) -> Optional[LEDGoal]:
+        goal_config = self.config["led"]["goal"]
+        if goal_config is None:
+            return None
+
+        led_goal = LEDGoal(initial_rate=goal_config["initial_rate"],
+                           decay_steps=goal_config["decay_steps"],
+                           decay_rate=goal_config["decay_rate"],
+                           staircase=goal_config["staircase"],
+                           offset=goal_config["offset"])
+        return led_goal
 
     # endregion
 

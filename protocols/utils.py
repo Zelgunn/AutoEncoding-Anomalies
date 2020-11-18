@@ -117,13 +117,13 @@ def get_encoder_layers(rank: int,
         kernel_size = [kernel_size] * layer_count
     shared_params = {"rank": rank, "transposed": False, "mode": mode, "use_bias": True, **kwargs}
 
-    layers = []
-    for i in range(layer_count):
-        is_first_layer = (i == 0)
-        layer_kernel_size = kernel_size[i] + 4 if is_first_layer else kernel_size[i]
-        layer_activation = "relu" if mode == "conv" else "linear"
-        layer = get_layer(filters=filters[i], kernel_size=layer_kernel_size, strides=strides[i],
-                          activation=layer_activation, **shared_params)
+    layer_activation = "relu" if mode == "conv" else "linear"
+    layers = get_layer(filters=filters[0], kernel_size=kernel_size[0] + 4, strides=strides[0],
+                       activation=layer_activation, name="EncoderStem", **shared_params)
+
+    for i in range(1, layer_count):
+        layer = get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
+                          activation=layer_activation, name="EncoderLayer_{}".format(i), **shared_params)
         layers += layer
 
     latent_code_layer = get_layer(filters=code_size, kernel_size=1, strides=1,
@@ -146,19 +146,16 @@ def get_decoder_layers(rank: int,
         kernel_size = [kernel_size] * layer_count
     shared_params = {"rank": rank, "transposed": True, "mode": mode, "use_bias": True, **kwargs}
 
+    layer_activation = "relu" if mode == "conv" else "linear"
     layers = []
     for i in range(layer_count):
-        is_last_layer = (i == (layer_count - 1))
-        layer_kernel_size = kernel_size[i] + 4 if is_last_layer else kernel_size[i]
-        layer_activation = "relu" if mode == "conv" else "linear"
-        layer = get_layer(filters=filters[i], kernel_size=layer_kernel_size, strides=strides[i],
-                          activation=layer_activation, **shared_params)
-        layers += layer
+        layers += get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
+                            activation=layer_activation, name="DecoderLayer_{}".format(i), **shared_params)
 
     if "basic_block_count" in shared_params:
         shared_params["basic_block_count"] = 1
 
-    output_layer = get_layer(filters=channels, kernel_size=1, strides=1,
+    output_layer = get_layer(filters=channels, kernel_size=7, strides=1,
                              activation=output_activation, name="OutputLayer", **shared_params)
     layers += output_layer
     return layers

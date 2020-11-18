@@ -7,10 +7,10 @@
     "code_size": 128,
     "code_activation": "tanh",
     "kernel_size": 3,
-    "basic_block_count": 2,
+    "basic_block_count": 1,
     "encoder": {
         "mode": "residual",
-        "filters": [16, 24, 32, 64],
+        "filters": [64, 80, 96, 112],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -20,7 +20,7 @@
     },
     "decoder": {
         "mode": "residual",
-        "filters": [64, 32, 24, 16],
+        "filters": [112, 96, 80, 64],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
@@ -31,7 +31,7 @@
     "output_activation": "linear",
     "batch_size": 4,
     "learning_rate": 0.001,
-    "optimizer": "rmsprop",
+    "optimizer": "adam",
     "data_augmentation": {
         "dropout_noise_ratio": 0.0,
         "gaussian_noise_ratio": 0.0,
@@ -44,5 +44,15 @@
     "validation_steps": 128,
     "save_frequency": "epoch",
     "auc_frequency": 4,
-    "current_test": "LED : First LED test"
+    "led":
+    {
+        "goal": {
+            "initial_rate": 0.2,
+            "decay_steps": 1000,
+            "decay_rate": 0.8,
+            "staircase": false,
+            "offset": 0.1
+        }
+    },
+    "current_test": "LED : Testing MAE"
 }

@@ -43,5 +43,16 @@
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
+    "auc_frequency": 1,
+    "led":
+    {
+        "goal": {
+            "initial_rate": 0.1,
+            "decay_steps": 1000,
+            "decay_rate": 0.6,
+            "staircase": false,
+            "offset": 0.035
+        }
+    },
     "current_test": "LED : "
 }
