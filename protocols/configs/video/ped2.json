@@ -1,7 +1,7 @@
 {
-    "model_architecture": "led",
-    "step_size": 32,
-    "step_count": 1,
+    "model_architecture": "aep",
+    "step_size": 16,
+    "step_count": 2,
     "height": 128,
     "width": 128,
     "code_size": 128,
@@ -54,5 +54,5 @@
             "offset": 0.035
         }
     },
-    "current_test": "LED : Unbound energy function (bounded to [-5, 0] for loss). exp^(energy) for masking"
+    "current_test": "AEP : Initial test on ped2"
 }

@@ -10,11 +10,13 @@ def main():
     arg_parser.add_argument("--dataset", default="ped2")
     arg_parser.add_argument("--mode", default="train")
     arg_parser.add_argument("--initial_epoch", default=None)
+    arg_parser.add_argument("--log_dir", default="../logs/AEA")
 
     args = arg_parser.parse_args()
     dataset: str = args.dataset
     mode: str = args.mode
     initial_epoch = args.initial_epoch
+    log_dir: str = args.log_dir
 
     best_weights = {
         "ped2": 16,
@@ -39,23 +41,23 @@ def main():
     # mixed_precision.set_policy(policy)
 
     if dataset == "ped2":
-        protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=2)
+        protocol = UCSDProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, dataset_version=2)
     elif dataset == "ped1":
-        protocol = UCSDProtocol(initial_epoch=initial_epoch, dataset_version=1)
+        protocol = UCSDProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, dataset_version=1)
     elif dataset == "avenue":
-        protocol = AvenueProtocol(initial_epoch=initial_epoch)
+        protocol = AvenueProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch)
     elif dataset == "shanghaitech":
-        protocol = ShanghaiTechProtocol(initial_epoch=initial_epoch)
+        protocol = ShanghaiTechProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch)
     elif dataset == "exit":
-        protocol = SubwayProtocol(initial_epoch=initial_epoch, video_id=SubwayVideo.EXIT)
+        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.EXIT)
     elif dataset == "entrance":
-        protocol = SubwayProtocol(initial_epoch=initial_epoch, video_id=SubwayVideo.ENTRANCE)
+        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.ENTRANCE)
     elif dataset == "mall1":
-        protocol = SubwayProtocol(initial_epoch=initial_epoch, video_id=SubwayVideo.MALL1)
+        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.MALL1)
     elif dataset == "mall2":
-        protocol = SubwayProtocol(initial_epoch=initial_epoch, video_id=SubwayVideo.MALL2)
+        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.MALL2)
     elif dataset == "mall3":
-        protocol = SubwayProtocol(initial_epoch=initial_epoch, video_id=SubwayVideo.MALL3)
+        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.MALL3)
     else:
         raise ValueError(dataset)
 

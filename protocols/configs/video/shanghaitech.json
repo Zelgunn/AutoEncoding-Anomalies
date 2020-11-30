@@ -1,7 +1,7 @@
 {
-    "model_architecture": "led",
-    "step_size": 32,
-    "step_count": 1,
+    "model_architecture": "aep",
+    "step_size": 16,
+    "step_count": 2,
     "height": 128,
     "width": 128,
     "code_size": 128,
@@ -30,7 +30,7 @@
     },
     "output_activation": "linear",
     "batch_size": 4,
-    "learning_rate": 0.001,
+    "learning_rate": 0.0005,
     "optimizer": "adam",
     "data_augmentation": {
         "dropout_noise_ratio": 0.0,
@@ -43,7 +43,7 @@
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
-    "auc_frequency": 4,
+    "auc_frequency": -1,
     "led":
     {
         "goal": {
@@ -54,5 +54,5 @@
             "offset": 0.1
         }
     },
-    "current_test": "LED : Testing MAE"
+    "current_test": "AEP : Lowered learning rate"
 }

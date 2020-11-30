@@ -4,6 +4,7 @@ from protocols import VideoProtocol, ProtocolTestConfig
 
 class SubwayProtocol(VideoProtocol):
     def __init__(self,
+                 base_log_dir: str,
                  video_id: SubwayVideo,
                  initial_epoch=0
                  ):
@@ -20,7 +21,8 @@ class SubwayProtocol(VideoProtocol):
         else:
             raise ValueError("Error : {} is not a valid Subway video ID.".format(video_id))
 
-        super(SubwayProtocol, self).__init__(dataset_name=dataset_name,
+        super(SubwayProtocol, self).__init__(base_log_dir=base_log_dir,
+                                             dataset_name=dataset_name,
                                              initial_epoch=initial_epoch)
 
     def get_test_config(self) -> ProtocolTestConfig:

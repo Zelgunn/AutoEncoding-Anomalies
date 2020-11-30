@@ -3,9 +3,11 @@ from protocols import VideoProtocol, ProtocolTestConfig
 
 class AvenueProtocol(VideoProtocol):
     def __init__(self,
+                 base_log_dir: str,
                  initial_epoch=0,
                  ):
-        super(AvenueProtocol, self).__init__(dataset_name="avenue",
+        super(AvenueProtocol, self).__init__(base_log_dir=base_log_dir,
+                                             dataset_name="avenue",
                                              initial_epoch=initial_epoch)
 
     def get_test_config(self) -> ProtocolTestConfig:

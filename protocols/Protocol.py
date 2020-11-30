@@ -59,6 +59,7 @@ class Protocol(object):
     def __init__(self,
                  dataset_name: str,
                  protocol_name: str,
+                 base_log_dir: str,
                  model: Optional[Model],
                  output_range=(0.0, 1.0),
                  seed=None
@@ -72,6 +73,7 @@ class Protocol(object):
         self.model = model
         self.protocol_name = protocol_name
         self.dataset_name = dataset_name
+        self.base_log_dir = base_log_dir
 
         self.dataset_folder = get_dataset_folder(dataset_name)
         self.dataset_config = SingleSetConfig(self.dataset_folder, output_range=output_range)
@@ -238,13 +240,13 @@ class Protocol(object):
 
     def make_log_dir(self, sub_folder: str) -> str:
         timestamp = str(int(time.time()))
-        log_dir = os.path.join(self.base_log_dir, sub_folder, self.model_name, timestamp)
+        log_dir = os.path.join(self.dataset_log_dir, sub_folder, self.model_name, timestamp)
         os.makedirs(log_dir)
         save_model_info(self.model, log_dir)
         return log_dir
 
     def load_weights(self, epoch: int, verbose=False):
-        weights_path = os.path.join(self.base_log_dir, "weights_{epoch:03d}")
+        weights_path = os.path.join(self.dataset_log_dir, "weights_{epoch:03d}")
         if verbose:
             print("Protocol : Loading weights from {} ..".format(weights_path))
 
@@ -269,9 +271,8 @@ class Protocol(object):
             return self.autoencoder.__name__
 
     @property
-    def base_log_dir(self) -> str:
-        return "../logs/AEA/{protocol_name}/{dataset_name}" \
-            .format(protocol_name=self.protocol_name, dataset_name=self.dataset_name)
+    def dataset_log_dir(self) -> str:
+        return os.path.join(self.base_log_dir, self.protocol_name, self.dataset_name)
 
     @property
     def additional_test_metrics(self) -> List[Callable[[tf.Tensor], tf.Tensor]]:

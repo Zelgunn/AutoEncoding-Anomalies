@@ -3,9 +3,11 @@ from protocols import VideoProtocol, ProtocolTestConfig
 
 class ShanghaiTechProtocol(VideoProtocol):
     def __init__(self,
+                 base_log_dir: str,
                  initial_epoch=0
                  ):
-        super(ShanghaiTechProtocol, self).__init__(dataset_name="shanghaitech",
+        super(ShanghaiTechProtocol, self).__init__(base_log_dir=base_log_dir,
+                                                   dataset_name="shanghaitech",
                                                    initial_epoch=initial_epoch)
 
     def get_test_config(self) -> ProtocolTestConfig:

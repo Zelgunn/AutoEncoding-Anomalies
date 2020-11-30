@@ -17,6 +17,7 @@ class DatasetProtocol(Protocol):
     def __init__(self,
                  dataset_name: str,
                  protocol_name: str,
+                 base_log_dir: str,
                  initial_epoch: int,
                  ):
         self.config = self.load_config(protocol_name, dataset_name)
@@ -27,6 +28,7 @@ class DatasetProtocol(Protocol):
 
         super(DatasetProtocol, self).__init__(dataset_name=dataset_name,
                                               protocol_name=protocol_name,
+                                              base_log_dir=base_log_dir,
                                               model=None,
                                               output_range=output_range,
                                               seed=self.config["seed"])
@@ -86,7 +88,7 @@ class DatasetProtocol(Protocol):
 
     # region Callbacks
     def get_auc_callback_configs(self) -> List[AUCCallbackConfig]:
-        if isinstance(self.model, LED):
+        if (self.auc_frequency < 1) or isinstance(self.model, LED):
             return []
 
         anomaly_pattern = self.get_anomaly_pattern()
@@ -99,13 +101,13 @@ class DatasetProtocol(Protocol):
         elif isinstance(model, AE):
             auc_callbacks_configs += [
                 AUCCallbackConfig(model, anomaly_pattern, labels_length=self.output_length, prefix="",
-                                  convert_to_io_compare_model=True),
+                                  convert_to_io_compare_model=True, epoch_freq=self.auc_frequency),
             ]
 
         if isinstance(model, IAE):
             auc_callbacks_configs += \
-                [AUCCallbackConfig(model.interpolate, anomaly_pattern, labels_length=self.output_length,
-                                   prefix="iae", convert_to_io_compare_model=True)
+                [AUCCallbackConfig(model.interpolate, anomaly_pattern, labels_length=self.output_length, prefix="iae",
+                                   convert_to_io_compare_model=True, epoch_freq=self.auc_frequency)
                  ]
 
         return auc_callbacks_configs

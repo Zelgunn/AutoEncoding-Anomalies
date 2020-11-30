@@ -10,7 +10,7 @@ from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
-from custom_tf_models import AE, IAE, BinAE
+from custom_tf_models import AE, IAE, BinAE, AEP
 from custom_tf_models import LED, RDL, ALED, PreLED
 from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN
@@ -24,16 +24,20 @@ from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtra
 class VideoProtocol(DatasetProtocol):
     def __init__(self,
                  dataset_name: str,
+                 base_log_dir: str,
                  initial_epoch: int,
                  ):
         super(VideoProtocol, self).__init__(dataset_name=dataset_name,
                                             protocol_name="video",
+                                            base_log_dir=base_log_dir,
                                             initial_epoch=initial_epoch)
 
     # region Make model
     def make_model(self) -> Model:
         if self.model_architecture == "ae":
             model = self.make_ae()
+        elif self.model_architecture == "aep":
+            model = self.make_aep()
         elif self.model_architecture == "iae":
             model = self.make_iae()
         elif self.model_architecture == "bin_ae":
@@ -77,6 +81,19 @@ class VideoProtocol(DatasetProtocol):
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
         model = AE(encoder=encoder, decoder=decoder)
+        return model
+
+    def make_aep(self) -> AEP:
+        encoder = self.make_encoder(self.get_encoder_input_shape())
+        latent_code_shape = self.get_latent_code_shape(encoder)
+        decoder = self.make_decoder(latent_code_shape)
+        predictor = self.make_decoder(latent_code_shape)
+
+        model = AEP(encoder=encoder,
+                    decoder=decoder,
+                    predictor=predictor,
+                    input_length=self.step_size,
+                    use_temporal_loss=False)
         return model
 
     def make_bin_ae(self) -> BinAE:
@@ -460,10 +477,10 @@ class VideoProtocol(DatasetProtocol):
 
         if isinstance(model, AE):
             image_callbacks_configs += [
-                ImageCallbackConfig(autoencoder=model, pattern=image_pattern, is_train_callback=True,
-                                    name="train", video_sample_rate=self.video_sample_rate),
-                ImageCallbackConfig(autoencoder=model, pattern=image_pattern, is_train_callback=False,
-                                    name="test", video_sample_rate=self.video_sample_rate),
+                ImageCallbackConfig(autoencoder=model, pattern=image_pattern, is_train_callback=True, name="train",
+                                    video_sample_rate=self.video_sample_rate),
+                ImageCallbackConfig(autoencoder=model, pattern=image_pattern, is_train_callback=False, name="test",
+                                    video_sample_rate=self.video_sample_rate),
             ]
 
         if isinstance(model, IAE):
@@ -582,8 +599,8 @@ class VideoProtocol(DatasetProtocol):
         from misc_utils.train_utils import WarmupSchedule
 
         learning_rate = self.learning_rate
-        # learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 2000, 0.8, staircase=False)
-        learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
+        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.95, staircase=False)
+        # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
         # learning_rate = CyclicSchedule(cycle_length=1000,
         #                                learning_rate=min_learning_rate,

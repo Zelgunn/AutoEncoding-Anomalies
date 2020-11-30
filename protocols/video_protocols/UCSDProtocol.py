@@ -3,6 +3,7 @@ from protocols import VideoProtocol, ProtocolTestConfig
 
 class UCSDProtocol(VideoProtocol):
     def __init__(self,
+                 base_log_dir: str,
                  dataset_version=2,
                  initial_epoch=0
                  ):
@@ -11,7 +12,9 @@ class UCSDProtocol(VideoProtocol):
                              .format(dataset_version))
         dataset_name = "ped1" if dataset_version == 1 else "ped2"
 
-        super(UCSDProtocol, self).__init__(dataset_name=dataset_name, initial_epoch=initial_epoch)
+        super(UCSDProtocol, self).__init__(dataset_name=dataset_name,
+                                           initial_epoch=initial_epoch,
+                                           base_log_dir=base_log_dir)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()
