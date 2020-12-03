@@ -6,7 +6,8 @@
     "width": 128,
     "code_size": 128,
     "code_activation": "tanh",
-    "kernel_size": 3,
+    "base_kernel_size": 3,
+    "stem_kernel_size": 7,
     "basic_block_count": 1,
     "encoder": {
         "mode": "residual",
@@ -54,5 +55,5 @@
             "offset": 0.1
         }
     },
-    "current_test": "AEP : Lowered learning rate"
+    "current_test": "AEP : Increased temporal weight (to offset the reduction caused by the removal of the temporal base)"
 }

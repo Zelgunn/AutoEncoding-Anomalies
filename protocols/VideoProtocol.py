@@ -223,10 +223,10 @@ class VideoProtocol(DatasetProtocol):
                        use_temporal_reconstruction_loss=False,
                        features_per_block=1,
                        merge_dims_with_features=False,
-                       add_binarization_noise_to_mask=True,
                        description_energy_loss_lambda=1e-2,
                        use_noise=True,
-                       noise_stddev=0.1)
+                       noise_stddev=0.02,
+                       reconstruct_noise=False, )
         return model
 
     # endregion
@@ -320,7 +320,7 @@ class VideoProtocol(DatasetProtocol):
         encoder = make_encoder(input_shape=input_shape,
                                mode=self.encoder_mode,
                                filters=self.encoder_filters,
-                               kernel_size=self.kernel_size,
+                               kernel_size=self.encoder_kernel_sizes,
                                strides=self.encoder_strides,
                                code_size=self.code_size,
                                code_activation=self.code_activation,
@@ -333,7 +333,8 @@ class VideoProtocol(DatasetProtocol):
         decoder = make_decoder(input_shape=input_shape,
                                mode=self.decoder_mode,
                                filters=self.decoder_filters,
-                               kernel_size=self.kernel_size,
+                               kernel_size=self.decoder_kernel_sizes,
+                               stem_kernel_size=self.stem_kernel_size,
                                strides=self.decoder_strides,
                                channels=1,
                                output_activation=self.output_activation,
@@ -350,7 +351,7 @@ class VideoProtocol(DatasetProtocol):
         include_intermediate_output = self.model_architecture in ["vaegan"]
         discriminator = make_discriminator(input_shape=input_shape,
                                            filters=discriminator_config["filters"],
-                                           kernel_size=self.kernel_size,
+                                           kernel_size=self.base_kernel_size,
                                            strides=discriminator_config["strides"],
                                            intermediate_size=discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
@@ -554,6 +555,14 @@ class VideoProtocol(DatasetProtocol):
         return self.encoder_config["strides"]
 
     @property
+    def encoder_kernel_sizes(self) -> List[int]:
+        layer_count = len(self.encoder_filters)
+        kernel_sizes = [self.base_kernel_size] * layer_count
+        if "stem_kernel_size" in self.config:
+            kernel_sizes[0] = self.stem_kernel_size
+        return kernel_sizes
+
+    @property
     def code_activation(self) -> str:
         return self.config["code_activation"]
 
@@ -576,11 +585,21 @@ class VideoProtocol(DatasetProtocol):
     def decoder_strides(self) -> List[List[int]]:
         return self.decoder_config["strides"]
 
+    @property
+    def decoder_kernel_sizes(self) -> List[int]:
+        layer_count = len(self.decoder_filters)
+        kernel_sizes = [self.base_kernel_size] * layer_count
+        return kernel_sizes
+
     # endregion
 
     @property
-    def kernel_size(self) -> int:
-        return self.config["kernel_size"]
+    def base_kernel_size(self) -> int:
+        return self.config["base_kernel_size"]
+
+    @property
+    def stem_kernel_size(self) -> int:
+        return self.config["stem_kernel_size"]
 
     @property
     def basic_block_count(self) -> int:

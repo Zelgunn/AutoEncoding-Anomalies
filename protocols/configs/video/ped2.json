@@ -6,7 +6,8 @@
     "width": 128,
     "code_size": 128,
     "code_activation": "tanh",
-    "kernel_size": 3,
+    "base_kernel_size": 3,
+    "stem_kernel_size": 7,
     "basic_block_count": 2,
     "encoder": {
         "mode": "residual",
@@ -54,5 +55,5 @@
             "offset": 0.035
         }
     },
-    "current_test": "AEP : Initial test on ped2"
+    "current_test": "AEP : Corrected a bug in the loss"
 }

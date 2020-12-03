@@ -35,6 +35,7 @@ def make_decoder(input_shape: Tuple[int, ...],
                  mode: str,
                  filters: List[int],
                  kernel_size: Union[int, List[int]],
+                 stem_kernel_size: int,
                  strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                  channels: int,
                  output_activation: Union[str, Layer],
@@ -112,16 +113,15 @@ def get_encoder_layers(rank: int,
                        code_activation: Union[str, Layer],
                        **kwargs
                        ) -> List[Layer]:
+    layers = []
+
     layer_count = len(filters)
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * layer_count
     shared_params = {"rank": rank, "transposed": False, "mode": mode, "use_bias": True, **kwargs}
 
     layer_activation = "relu" if mode == "conv" else "linear"
-    layers = get_layer(filters=filters[0], kernel_size=kernel_size[0] + 4, strides=strides[0],
-                       activation=layer_activation, name="EncoderStem", **shared_params)
-
-    for i in range(1, layer_count):
+    for i in range(layer_count):
         layer = get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
                           activation=layer_activation, name="EncoderLayer_{}".format(i), **shared_params)
         layers += layer
@@ -136,26 +136,25 @@ def get_decoder_layers(rank: int,
                        mode: str,
                        filters: List[int],
                        kernel_size: Union[int, List[int]],
+                       stem_kernel_size: int,
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        channels: int,
                        output_activation: Union[str, Layer],
                        **kwargs,
                        ) -> List[Layer]:
+    layers = []
+
     layer_count = len(filters)
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * layer_count
     shared_params = {"rank": rank, "transposed": True, "mode": mode, "use_bias": True, **kwargs}
 
     layer_activation = "relu" if mode == "conv" else "linear"
-    layers = []
     for i in range(layer_count):
         layers += get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
                             activation=layer_activation, name="DecoderLayer_{}".format(i), **shared_params)
 
-    if "basic_block_count" in shared_params:
-        shared_params["basic_block_count"] = 1
-
-    output_layer = get_layer(filters=channels, kernel_size=7, strides=1,
+    output_layer = get_layer(filters=channels, kernel_size=stem_kernel_size, strides=1,
                              activation=output_activation, name="OutputLayer", **shared_params)
     layers += output_layer
     return layers
