@@ -13,7 +13,7 @@ from modalities import Pattern, ModalityLoadInfo, RawVideo
 from custom_tf_models import AE, IAE, BinAE, AEP
 from custom_tf_models import LED, RDL, ALED, PreLED
 from custom_tf_models.autoregressive import SAAM, AND
-from custom_tf_models.adversarial import IAEGAN, VAEGAN
+from custom_tf_models.adversarial import IAEGAN, VAEGAN, AVP
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
 from custom_tf_models.description_length.LED import LEDGoal
 from data_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
@@ -46,6 +46,8 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_iaegan()
         elif self.model_architecture == "vaegan":
             model = self.make_vaegan()
+        elif self.model_architecture == "avp":
+            model = self.make_avp()
         elif self.model_architecture == "and":
             model = self.make_and()
         elif self.model_architecture == "led":
@@ -144,6 +146,27 @@ class VideoProtocol(DatasetProtocol):
                        balance_discriminator_learning_rate=False,
                        )
 
+        return model
+
+    def make_avp(self) -> AVP:
+        encoder_input_shape = self.get_encoder_input_shape()
+        encoder = self.make_encoder(encoder_input_shape)
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+
+        encoder_input_length = encoder_input_shape[0]
+        discriminator_input_shape = (encoder_input_length * 2, *encoder_input_shape[1:])
+        discriminator = self.make_discriminator(discriminator_input_shape)
+
+        model = AVP(encoder=encoder,
+                    decoder=decoder,
+                    discriminator=discriminator,
+                    prediction_lambda=1e-1,
+                    gradient_difference_lambda=1e-1,
+                    high_level_prediction_lambda=1e-1,
+                    kl_divergence_lambda=1e-3,
+                    adversarial_lambda=1e0,
+                    gradient_penalty_lambda=1e1,
+                    input_length=self.step_size)
         return model
 
     # endregion
@@ -301,7 +324,7 @@ class VideoProtocol(DatasetProtocol):
 
     def get_latent_code_batch_shape(self, encoder: Model):
         shape = encoder.compute_output_shape(self.get_encoder_input_batch_shape())
-        if self.model_architecture in ["vaegan"]:
+        if self.model_architecture in ["vaegan", "avp"]:
             shape = (*shape[:-1], shape[-1] // 2)
         return shape
 
@@ -348,14 +371,15 @@ class VideoProtocol(DatasetProtocol):
     # region Adversarial
     def make_discriminator(self, input_shape) -> Model:
         discriminator_config = self.config["discriminator"]
-        include_intermediate_output = self.model_architecture in ["vaegan"]
+        include_intermediate_output = self.model_architecture in ["vaegan", "avp"]
         discriminator = make_discriminator(input_shape=input_shape,
                                            filters=discriminator_config["filters"],
                                            kernel_size=self.base_kernel_size,
                                            strides=discriminator_config["strides"],
                                            intermediate_size=discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
-                                           include_intermediate_output=include_intermediate_output)
+                                           include_intermediate_output=include_intermediate_output,
+                                           basic_block_count=self.basic_block_count)
         return discriminator
 
     # endregion
@@ -476,7 +500,7 @@ class VideoProtocol(DatasetProtocol):
         if isinstance(model, EBAE):
             model = model.autoencoder
 
-        if isinstance(model, AE):
+        if isinstance(model, (AE, AVP)):
             image_callbacks_configs += [
                 ImageCallbackConfig(autoencoder=model, pattern=image_pattern, is_train_callback=True, name="train",
                                     video_sample_rate=self.video_sample_rate),
@@ -618,7 +642,7 @@ class VideoProtocol(DatasetProtocol):
         from misc_utils.train_utils import WarmupSchedule
 
         learning_rate = self.learning_rate
-        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.95, staircase=False)
+        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.98, staircase=False)
         # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
         # learning_rate = CyclicSchedule(cycle_length=1000,
@@ -665,7 +689,7 @@ class VideoProtocol(DatasetProtocol):
 
     @property
     def output_length(self) -> int:
-        if self.model_architecture in ["iae", "and", "iaegan"]:
+        if self.model_architecture in ["iae", "and", "iaegan", "avp"]:
             return self.step_size * self.step_count
         elif self.model_architecture in ["aep", "preled"]:
             return self.step_size * 2

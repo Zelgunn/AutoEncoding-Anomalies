@@ -46,6 +46,7 @@ def make_decoder(input_shape: Tuple[int, ...],
                                 mode=mode,
                                 filters=filters,
                                 kernel_size=kernel_size,
+                                stem_kernel_size=stem_kernel_size,
                                 strides=strides,
                                 channels=channels,
                                 output_activation=output_activation,
@@ -97,7 +98,9 @@ def make_discriminator(input_shape: Tuple[int, ...],
 
     input_layer = core_model.input
     intermediate_output = core_model.output
-    final_output = Dense(units=1, activation="linear", kernel_initializer=dense_initializer)(intermediate_output)
+    
+    final_layer = Dense(units=1, activation="linear", kernel_initializer=dense_initializer, use_bias=False)
+    final_output = final_layer(intermediate_output)
 
     outputs = [final_output, intermediate_output] if include_intermediate_output else [final_output]
 

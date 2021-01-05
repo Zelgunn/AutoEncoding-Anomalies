@@ -1,50 +1,92 @@
 import tensorflow as tf
-import cv2
-import matplotlib.pyplot as plt
-import numpy as np
+import timeit
+from tensorflow.python.keras.layers import Conv3D
 
-from protocols.video_protocols import UCSDProtocol, AvenueProtocol, SubwayProtocol
-from protocols.video_protocols.SubwayProtocol import SubwayVideo
-from datasets.data_readers import VideoReader
-from misc_utils.math_utils import standardize_from
-from custom_tf_models import LED
+from CustomKerasLayers.utility_layers.Unfold import Unfold
+from CustomKerasLayers.layers.StandAloneSelfAttention import StandAloneSelfAttention3D
+
+
+def test_stride():
+    filters = 32
+    head_count = 8
+    head_size = filters // head_count
+    k = 4
+    kernel_size = (k, k, k)
+    x = tf.random.normal(shape=(8, 16, 32, 32, 1))
+
+    sasa_layer_1 = StandAloneSelfAttention3D(head_size, head_count, kernel_size=(2, 2, 2), strides=(2, 2, 2))
+    sasa_layer_1(x)
+
+    sasa_layer_2 = StandAloneSelfAttention3D(head_size, head_count, kernel_size=(4, 4, 4), strides=(2, 2, 2))
+    sasa_layer_2(x)
+
+    @tf.function
+    def test_sasa_1(_x):
+        return sasa_layer_1(_x)
+
+    @tf.function
+    def test_sasa_2(_x):
+        return sasa_layer_2(_x)
+
+    test_sasa_1(x)
+    test_sasa_2(x)
+
+    print("SASA (1):", timeit.timeit(lambda: test_sasa_1(x), number=1000))
+    print("SASA (2):", timeit.timeit(lambda: test_sasa_2(x), number=1000))
+
+
+def test_vs():
+    filters = 32
+    head_count = 8
+    head_size = filters // head_count
+    k = 4
+    kernel_size = (k, k, k)
+    x = tf.random.normal(shape=(16, 32, 128, 128, 1))
+
+    unfold_layer = Unfold(kernel_size=kernel_size, strides=kernel_size, padding="SAME")
+
+    sasa_layer_v1 = StandAloneSelfAttention3D(head_size, head_count, kernel_size=kernel_size, strides=kernel_size,
+                                              v1=True)
+    sasa_layer_v1.build((32, 128, 128, 1))
+    sasa_layer_v1(x)
+
+    sasa_layer_v2 = StandAloneSelfAttention3D(head_size, head_count, kernel_size=kernel_size, strides=kernel_size,
+                                              v1=False)
+    sasa_layer_v2.build((32, 128, 128, 1))
+    sasa_layer_v2(x)
+
+    conv_layer = Conv3D(filters=filters, kernel_size=kernel_size, strides=kernel_size, padding="SAME")
+    conv_layer.build((32, 128, 128, 1))
+
+    @tf.function
+    def test_unfold(_x):
+        return unfold_layer(_x)
+
+    @tf.function
+    def test_sasa_v1(_x):
+        return sasa_layer_v1(_x)
+
+    @tf.function
+    def test_sasa_v2(_x):
+        return sasa_layer_v2(_x)
+
+    @tf.function
+    def test_conv(_x):
+        return conv_layer(_x)
+
+    test_unfold(x)
+    test_sasa_v1(x)
+    test_sasa_v2(x)
+    test_conv(x)
+
+    print("Unfold:", timeit.timeit(lambda: test_unfold(x), number=100))
+    print("SASA v1:", timeit.timeit(lambda: test_sasa_v1(x), number=100))
+    print("SASA v2:", timeit.timeit(lambda: test_sasa_v2(x), number=100))
+    print("Conv:", timeit.timeit(lambda: test_conv(x), number=100))
 
 
 def main():
-    protocol = SubwayProtocol(video_id=SubwayVideo.ENTRANCE)
-    subset = protocol.dataset_loader.train_subset
-    pattern = protocol.get_train_pattern()
-    dataset = subset.make_tf_dataset(pattern, 42, None, 1)
-
-    for batch in dataset:
-        video = batch.numpy()[0]
-        video = normalize(video)
-        video_mean = np.mean(video, axis=0, keepdims=True)
-        video_minus_mean = video - video_mean
-        video_minus_mean = normalize(video_minus_mean)
-
-        i = 0
-        k = 0
-        while k not in [13, 27]:
-            frame = video_minus_mean[i]
-            frame = cv2.resize(frame, (512, 512))
-            cv2.imshow("frame", frame)
-
-            frame_base = video[i]
-            frame_base = cv2.resize(frame_base, (512, 512))
-            cv2.imshow("frame_base", frame_base)
-
-            cv2.imshow("frame_bis", np.abs(frame * 2 - 1))
-
-            k = cv2.waitKey(100)
-            i = (i + 1) % len(video)
-
-        if k == 27:
-            break
-
-
-def normalize(x):
-    return (x - x.min()) / (x.max() - x.min())
+    test_vs()
 
 
 if __name__ == "__main__":

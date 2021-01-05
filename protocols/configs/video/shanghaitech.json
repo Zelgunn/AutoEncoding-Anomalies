@@ -1,35 +1,46 @@
 {
-    "model_architecture": "aep",
-    "step_size": 16,
+    "model_architecture": "avp",
+    "step_size": 8,
     "step_count": 2,
     "height": 128,
     "width": 128,
-    "code_size": 128,
-    "code_activation": "tanh",
+    "code_size": 256,
+    "code_activation": "linear",
     "base_kernel_size": 3,
     "stem_kernel_size": 7,
-    "basic_block_count": 1,
+    "basic_block_count": 2,
     "encoder": {
         "mode": "residual",
-        "filters": [64, 80, 96, 112],
+        "filters": [64, 96, 128, 128],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
-            [2, 2, 2],
-            [2, 2, 2]
+            [1, 2, 2],
+            [1, 2, 2]
         ]
     },
     "decoder": {
         "mode": "residual",
-        "filters": [112, 96, 80, 64],
+        "filters": [128, 128, 96, 64],
         "strides": [
-            [2, 2, 2],
-            [2, 2, 2],
+            [1, 2, 2],
+            [1, 2, 2],
             [2, 2, 2],
             [2, 2, 2]
         ]
     },
-    "output_activation": "linear",
+    "discriminator": {
+        "mode": "residual",
+        "filters": [64, 96, 128, 128],
+        "strides": [
+            [2, 2, 2],
+            [2, 2, 2],
+            [2, 2, 2],
+            [1, 2, 2]
+        ],
+        "intermediate_size": 64
+    },
+    "output_activation": "tanh",
     "batch_size": 4,
     "learning_rate": 0.0005,
     "optimizer": "adam",
@@ -40,7 +51,7 @@
     },
     "extract_patches": false,
     "seed": 42,
-    "epochs": 128,
+    "epochs": 256,
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
@@ -55,5 +66,5 @@
             "offset": 0.1
         }
     },
-    "current_test": "AEP : Increased temporal weight (to offset the reduction caused by the removal of the temporal base)"
+    "current_test": "AVP : Lowered recon, increased adversarial, reactivated GDL"
 }

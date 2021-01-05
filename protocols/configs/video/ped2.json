@@ -1,11 +1,11 @@
 {
-    "model_architecture": "aep",
+    "model_architecture": "avp",
     "step_size": 16,
     "step_count": 2,
     "height": 128,
     "width": 128,
     "code_size": 128,
-    "code_activation": "tanh",
+    "code_activation": "linear",
     "base_kernel_size": 3,
     "stem_kernel_size": 7,
     "basic_block_count": 2,
@@ -28,6 +28,17 @@
             [2, 2, 2],
             [2, 2, 2]
         ]
+    },
+    "discriminator": {
+        "mode": "residual",
+        "filters": [16, 24, 32, 64],
+        "strides": [
+            [2, 2, 2],
+            [2, 2, 2],
+            [2, 2, 2],
+            [2, 2, 2]
+        ],
+        "intermediate_size": 32
     },
     "output_activation": "linear",
     "batch_size": 4,
