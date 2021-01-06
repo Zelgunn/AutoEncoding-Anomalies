@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow_addons as tfa
 from tensorflow.python.keras import Model, optimizers
 from abc import abstractmethod
 import numpy as np
@@ -160,12 +161,13 @@ class VideoProtocol(DatasetProtocol):
         model = AVP(encoder=encoder,
                     decoder=decoder,
                     discriminator=discriminator,
-                    prediction_lambda=1e-1,
+                    prediction_lambda=1e0,
                     gradient_difference_lambda=1e-1,
                     high_level_prediction_lambda=1e-1,
                     kl_divergence_lambda=1e-3,
-                    adversarial_lambda=1e0,
+                    adversarial_lambda=1e-1,
                     gradient_penalty_lambda=1e1,
+                    weight_decay_lambda=1e-5,
                     input_length=self.step_size)
         return model
 
@@ -295,7 +297,7 @@ class VideoProtocol(DatasetProtocol):
                      decoder=decoder,
                      energy_state_functions=[FlipSequence(), IdentityESF()],
                      energy_margin=2e-1,
-                     weights_decay=0.0)
+                     weight_decay=0.0)
 
         return model
 
@@ -370,13 +372,13 @@ class VideoProtocol(DatasetProtocol):
 
     # region Adversarial
     def make_discriminator(self, input_shape) -> Model:
-        discriminator_config = self.config["discriminator"]
         include_intermediate_output = self.model_architecture in ["vaegan", "avp"]
         discriminator = make_discriminator(input_shape=input_shape,
-                                           filters=discriminator_config["filters"],
+                                           mode=self.discriminator_mode,
+                                           filters=self.discriminator_filters,
                                            kernel_size=self.base_kernel_size,
-                                           strides=discriminator_config["strides"],
-                                           intermediate_size=discriminator_config["intermediate_size"],
+                                           strides=self.discriminator_strides,
+                                           intermediate_size=self.discriminator_config["intermediate_size"],
                                            intermediate_activation="relu",
                                            include_intermediate_output=include_intermediate_output,
                                            basic_block_count=self.basic_block_count)
@@ -415,6 +417,8 @@ class VideoProtocol(DatasetProtocol):
         optimizer_class = self.optimizer_class if optimizer_class is None else optimizer_class
         if optimizer_class == "adam":
             return tf.keras.optimizers.Adam(learning_rate)
+        elif optimizer_class == "adamw":
+            return tfa.optimizers.AdamW(weight_decay=1e-5, learning_rate=learning_rate)
         elif optimizer_class == "rmsprop":
             return tf.keras.optimizers.RMSprop(learning_rate)
         elif optimizer_class == "sgd":
@@ -617,6 +621,25 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
+    # region Discriminator
+    @property
+    def discriminator_config(self):
+        return self.config["discriminator"]
+
+    @property
+    def discriminator_mode(self):
+        return self.discriminator_config["mode"]
+
+    @property
+    def discriminator_filters(self) -> List[int]:
+        return self.discriminator_config["filters"]
+
+    @property
+    def discriminator_strides(self) -> List[List[int]]:
+        return self.discriminator_config["strides"]
+
+    # endregion
+
     @property
     def base_kernel_size(self) -> int:
         return self.config["base_kernel_size"]
@@ -639,10 +662,10 @@ class VideoProtocol(DatasetProtocol):
 
     @property
     def base_learning_rate_schedule(self):
-        from misc_utils.train_utils import WarmupSchedule
+        # from misc_utils.train_utils import WarmupSchedule
 
         learning_rate = self.learning_rate
-        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.98, staircase=False)
+        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.93, staircase=True)
         # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
         # learning_rate = CyclicSchedule(cycle_length=1000,

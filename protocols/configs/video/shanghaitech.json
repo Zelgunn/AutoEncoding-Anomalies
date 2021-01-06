@@ -10,7 +10,7 @@
     "stem_kernel_size": 7,
     "basic_block_count": 2,
     "encoder": {
-        "mode": "residual",
+        "mode": "conv",
         "filters": [64, 96, 128, 128],
         "strides": [
             [2, 2, 2],
@@ -20,7 +20,7 @@
         ]
     },
     "decoder": {
-        "mode": "residual",
+        "mode": "conv",
         "filters": [128, 128, 96, 64],
         "strides": [
             [1, 2, 2],
@@ -30,7 +30,7 @@
         ]
     },
     "discriminator": {
-        "mode": "residual",
+        "mode": "conv",
         "filters": [64, 96, 128, 128],
         "strides": [
             [2, 2, 2],
@@ -43,7 +43,7 @@
     "output_activation": "tanh",
     "batch_size": 4,
     "learning_rate": 0.0005,
-    "optimizer": "adam",
+    "optimizer": "adamw",
     "data_augmentation": {
         "dropout_noise_ratio": 0.0,
         "gaussian_noise_ratio": 0.0,
@@ -66,5 +66,5 @@
             "offset": 0.1
         }
     },
-    "current_test": "AVP : Lowered recon, increased adversarial, reactivated GDL"
+    "current_test": "AVP : Changed the learning rate schedule (from continuous 0.98 every 1000 to staircase 0.93 every 1000. Updated weight decay"
 }

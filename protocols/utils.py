@@ -56,6 +56,7 @@ def make_decoder(input_shape: Tuple[int, ...],
 
 
 def make_discriminator(input_shape: Tuple[int, ...],
+                       mode: str,
                        filters: List[int],
                        kernel_size: Union[int, List[int]],
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
@@ -65,41 +66,14 @@ def make_discriminator(input_shape: Tuple[int, ...],
                        basic_block_count=1,
                        name="Discriminator"
                        ):
-    if isinstance(kernel_size, int):
-        kernel_size = [kernel_size] * len(filters)
-
-    rank = len(input_shape) - 1
-    kwargs = {
-        "input_shape": input_shape,
-        "rank": rank,
-        "basic_block_count": basic_block_count,
-    }
-
-    intermediate_shape = input_shape
-
-    layers = []
-    for i in range(len(filters)):
-        layer = ResBlockND(filters=filters[i], kernel_size=kernel_size[i], **kwargs)
-        layers.append(layer)
-
-        layer = average_pooling(rank=rank, pool_size=strides[i])
-        layers.append(layer)
-        intermediate_shape = layer.compute_output_shape((None, *intermediate_shape))[1:]
-
-        if i == 0:
-            kwargs.pop("input_shape")
-
-    dense_initializer = VarianceScaling()
-
-    layers.append(Dense(units=intermediate_size, activation=intermediate_activation,
-                        kernel_initializer=dense_initializer))
-
-    core_model = Sequential(layers, name="{}Core".format(name))
+    core_model = make_encoder(input_shape=input_shape, mode=mode, filters=filters, kernel_size=kernel_size,
+                              strides=strides, code_size=intermediate_size, code_activation=intermediate_activation,
+                              basic_block_count=basic_block_count, name="{}Core".format(name))
 
     input_layer = core_model.input
     intermediate_output = core_model.output
-    
-    final_layer = Dense(units=1, activation="linear", kernel_initializer=dense_initializer, use_bias=False)
+
+    final_layer = Dense(units=1, activation="linear", kernel_initializer="he_normal", use_bias=False)
     final_output = final_layer(intermediate_output)
 
     outputs = [final_output, intermediate_output] if include_intermediate_output else [final_output]
