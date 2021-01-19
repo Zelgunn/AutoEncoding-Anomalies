@@ -31,14 +31,14 @@
     },
     "discriminator": {
         "mode": "conv",
-        "filters": [64, 96, 128, 128],
+        "filters": [32, 48, 64, 64],
         "strides": [
             [2, 2, 2],
             [2, 2, 2],
             [2, 2, 2],
             [1, 2, 2]
         ],
-        "intermediate_size": 64
+        "intermediate_size": 32
     },
     "output_activation": "tanh",
     "batch_size": 4,
@@ -51,7 +51,7 @@
     },
     "extract_patches": false,
     "seed": 42,
-    "epochs": 256,
+    "epochs": 64,
     "steps_per_epoch": 1000,
     "validation_steps": 128,
     "save_frequency": "epoch",
@@ -66,5 +66,5 @@
             "offset": 0.1
         }
     },
-    "current_test": "AVP : Changed the learning rate schedule (from continuous 0.98 every 1000 to staircase 0.93 every 1000. Updated weight decay"
+    "current_test": "AVP : No recon"
 }

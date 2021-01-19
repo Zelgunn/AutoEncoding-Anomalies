@@ -665,7 +665,7 @@ class VideoProtocol(DatasetProtocol):
         # from misc_utils.train_utils import WarmupSchedule
 
         learning_rate = self.learning_rate
-        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 1000, 0.93, staircase=True)
+        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 10000, 0.25, staircase=True)
         # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
         # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
         # learning_rate = CyclicSchedule(cycle_length=1000,

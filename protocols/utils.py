@@ -1,12 +1,12 @@
 from tensorflow.python.keras.models import Sequential, Model
-from tensorflow.python.keras.layers import Layer, Dense
+from tensorflow.python.keras.layers import Layer, Dense, Flatten
 from tensorflow.python.keras.layers import AveragePooling1D, AveragePooling2D, AveragePooling3D
 from tensorflow.python.keras.layers import UpSampling1D, UpSampling2D, UpSampling3D
 from tensorflow.python.keras.layers.convolutional import Conv
 from tensorflow.python.ops.init_ops import VarianceScaling
 from typing import List, Tuple, Union
 
-from CustomKerasLayers import ResBlockND, ResSASABlock
+from CustomKerasLayers import ResBlockND
 
 
 def make_encoder(input_shape: Tuple[int, ...],
@@ -26,7 +26,8 @@ def make_encoder(input_shape: Tuple[int, ...],
                                 strides=strides,
                                 code_size=code_size,
                                 code_activation=code_activation,
-                                basic_block_count=basic_block_count)
+                                basic_block_count=basic_block_count,
+                                name=name)
 
     return to_sequential(layers=layers, input_shape=input_shape, name=name)
 
@@ -50,7 +51,8 @@ def make_decoder(input_shape: Tuple[int, ...],
                                 strides=strides,
                                 channels=channels,
                                 output_activation=output_activation,
-                                basic_block_count=basic_block_count)
+                                basic_block_count=basic_block_count,
+                                name=name)
 
     return to_sequential(layers=layers, input_shape=input_shape, name=name)
 
@@ -68,13 +70,15 @@ def make_discriminator(input_shape: Tuple[int, ...],
                        ):
     core_model = make_encoder(input_shape=input_shape, mode=mode, filters=filters, kernel_size=kernel_size,
                               strides=strides, code_size=intermediate_size, code_activation=intermediate_activation,
-                              basic_block_count=basic_block_count, name="{}Core".format(name))
+                              basic_block_count=basic_block_count, name=name)
 
     input_layer = core_model.input
     intermediate_output = core_model.output
 
-    final_layer = Dense(units=1, activation="linear", kernel_initializer="he_normal", use_bias=False)
-    final_output = final_layer(intermediate_output)
+    flatten_layer = Flatten(name="{}_Flatten".format(name))
+    final_layer = Dense(units=1, activation="linear", kernel_initializer="he_normal", use_bias=False,
+                        name="{}_Output".format(name))
+    final_output = final_layer(flatten_layer(intermediate_output))
 
     outputs = [final_output, intermediate_output] if include_intermediate_output else [final_output]
 
@@ -88,6 +92,7 @@ def get_encoder_layers(rank: int,
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        code_size: int,
                        code_activation: Union[str, Layer],
+                       name: str,
                        **kwargs
                        ) -> List[Layer]:
     layers = []
@@ -100,11 +105,11 @@ def get_encoder_layers(rank: int,
     layer_activation = "relu" if mode == "conv" else "linear"
     for i in range(layer_count):
         layer = get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
-                          activation=layer_activation, name="EncoderLayer_{}".format(i), **shared_params)
+                          activation=layer_activation, name="{}_{}".format(name, i), **shared_params)
         layers += layer
 
     latent_code_layer = get_layer(filters=code_size, kernel_size=1, strides=1,
-                                  activation=code_activation, name="LatentCodeLayer", **shared_params)
+                                  activation=code_activation, name="{}_LatentCodeLayer".format(name), **shared_params)
     layers += latent_code_layer
     return layers
 
@@ -117,6 +122,7 @@ def get_decoder_layers(rank: int,
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        channels: int,
                        output_activation: Union[str, Layer],
+                       name: str,
                        **kwargs,
                        ) -> List[Layer]:
     layers = []
@@ -129,10 +135,10 @@ def get_decoder_layers(rank: int,
     layer_activation = "relu" if mode == "conv" else "linear"
     for i in range(layer_count):
         layers += get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
-                            activation=layer_activation, name="DecoderLayer_{}".format(i), **shared_params)
+                            activation=layer_activation, name="{}_{}".format(name, i), **shared_params)
 
     output_layer = get_layer(filters=channels, kernel_size=stem_kernel_size, strides=1,
-                             activation=output_activation, name="OutputLayer", **shared_params)
+                             activation=output_activation, name="{}_OutputLayer".format(name), **shared_params)
     layers += output_layer
     return layers
 
@@ -162,15 +168,8 @@ def get_layer(rank: int,
         main_layer = ResBlockND(rank=rank, filters=filters, kernel_size=kernel_size,
                                 basic_block_count=basic_block_count, strides=1, padding=padding,
                                 activation=activation, name=name)
-    elif mode == "residual_self_attention":
-        head_count = dict_get(kwargs, "head_count", default=8)
-        head_size = filters // head_count
-        basic_block_count = dict_get(kwargs, "basic_block_count", default=1)
-        main_layer = ResSASABlock(rank=rank, head_size=head_size, head_count=head_count, kernel_size=kernel_size,
-                                  basic_block_count=basic_block_count, strides=1,
-                                  activation=activation, name=name)
     else:
-        raise ValueError("`mode` must be in ['conv', 'residual', 'residual_self_attention']. Got {}".format(mode))
+        raise ValueError("`mode` must be in ['conv', 'residual']. Got {}".format(mode))
 
     if isinstance(strides, int):
         no_stride = strides == 1

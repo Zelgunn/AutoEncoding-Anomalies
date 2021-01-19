@@ -12,7 +12,7 @@ from modalities import Pattern
 class ModalityCallback(TensorBoardPlugin, ABC):
     def __init__(self,
                  inputs: Union[tf.Tensor, List[tf.Tensor]],
-                 model: keras.Model,
+                 model: Callable,
                  tensorboard: keras.callbacks.TensorBoard,
                  is_train_callback: bool,
                  update_freq: int or str,
