@@ -1,19 +1,15 @@
 import tensorflow as tf
-import tensorflow_addons as tfa
-from tensorflow.python.keras import Model, optimizers
+from tensorflow.python.keras import Model
 from abc import abstractmethod
 import numpy as np
 import cv2
-from typing import List, Tuple, Callable, Union, Optional
+from typing import Tuple, Callable, Optional
 
-from CustomKerasLayers import ConvAM
 from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
-from protocols.utils import make_encoder, make_decoder, make_discriminator
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from custom_tf_models import AE, IAE, BinAE, AEP
 from custom_tf_models import LED, RDL, ALED, PreLED
-from custom_tf_models.autoregressive import SAAM, AND
 from custom_tf_models.adversarial import IAEGAN, VAEGAN, AVP
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
 from custom_tf_models.description_length.LED import LEDGoal
@@ -26,12 +22,12 @@ class VideoProtocol(DatasetProtocol):
     def __init__(self,
                  dataset_name: str,
                  base_log_dir: str,
-                 initial_epoch: int,
+                 epoch: int,
                  ):
         super(VideoProtocol, self).__init__(dataset_name=dataset_name,
                                             protocol_name="video",
                                             base_log_dir=base_log_dir,
-                                            initial_epoch=initial_epoch)
+                                            epoch=epoch)
 
     # region Make model
     def make_model(self) -> Model:
@@ -49,8 +45,6 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_vaegan()
         elif self.model_architecture == "avp":
             model = self.make_avp()
-        elif self.model_architecture == "and":
-            model = self.make_and()
         elif self.model_architecture == "led":
             model = self.make_led()
         elif self.model_architecture == "rdl":
@@ -169,18 +163,6 @@ class VideoProtocol(DatasetProtocol):
                     gradient_penalty_lambda=1e1,
                     weight_decay_lambda=1e-5,
                     input_length=self.step_size)
-        return model
-
-    # endregion
-
-    # region Autoregressive
-    def make_and(self) -> AND:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
-        conv_am = self.make_conv_am(self.get_saam_input_shape()[1:])
-
-        model = AND(encoder=encoder, decoder=decoder, am=conv_am, step_size=self.step_size)
-
         return model
 
     # endregion
@@ -339,107 +321,6 @@ class VideoProtocol(DatasetProtocol):
 
     # endregion
 
-    # region Make sub-models
-    # region Base
-    def make_encoder(self, input_shape, name="Encoder") -> Model:
-        encoder = make_encoder(input_shape=input_shape,
-                               mode=self.encoder_mode,
-                               filters=self.encoder_filters,
-                               kernel_size=self.encoder_kernel_sizes,
-                               strides=self.encoder_strides,
-                               code_size=self.code_size,
-                               code_activation=self.code_activation,
-                               basic_block_count=self.basic_block_count,
-                               name=name,
-                               )
-        return encoder
-
-    def make_decoder(self, input_shape, name="Decoder") -> Model:
-        decoder = make_decoder(input_shape=input_shape,
-                               mode=self.decoder_mode,
-                               filters=self.decoder_filters,
-                               kernel_size=self.decoder_kernel_sizes,
-                               stem_kernel_size=self.stem_kernel_size,
-                               strides=self.decoder_strides,
-                               channels=1,
-                               output_activation=self.output_activation,
-                               basic_block_count=self.basic_block_count,
-                               name=name,
-                               )
-        return decoder
-
-    # endregion
-
-    # region Adversarial
-    def make_discriminator(self, input_shape) -> Model:
-        include_intermediate_output = self.model_architecture in ["vaegan", "avp"]
-        discriminator = make_discriminator(input_shape=input_shape,
-                                           mode=self.discriminator_mode,
-                                           filters=self.discriminator_filters,
-                                           kernel_size=self.base_kernel_size,
-                                           strides=self.discriminator_strides,
-                                           intermediate_size=self.discriminator_config["intermediate_size"],
-                                           intermediate_activation="relu",
-                                           include_intermediate_output=include_intermediate_output,
-                                           basic_block_count=self.basic_block_count)
-        return discriminator
-
-    # endregion
-
-    # region Autoregressive
-    def make_saam(self, input_shape) -> SAAM:
-        saam_config = self.config["saam"]
-        saam = SAAM(layer_count=saam_config["layer_count"],
-                    head_count=saam_config["layer_count"],
-                    head_size=saam_config["layer_count"],
-                    intermediate_size=saam_config["layer_count"],
-                    output_size=saam_config["layer_count"],
-                    output_activation="softmax",
-                    input_shape=input_shape)
-        return saam
-
-    def make_conv_am(self, input_shape):
-        conv_am = ConvAM(rank=2,
-                         filters=self.config["conv_am"]["filters"],
-                         intermediate_activation="relu",
-                         output_activation="linear",
-                         input_shape=input_shape)
-        return conv_am
-
-    # endregion
-
-    # region Optimizers
-    def make_optimizer(self,
-                       learning_rate: Union[Callable, float],
-                       optimizer_class: str = None
-                       ) -> optimizers.optimizer_v2.OptimizerV2:
-
-        optimizer_class = self.optimizer_class if optimizer_class is None else optimizer_class
-        if optimizer_class == "adam":
-            return tf.keras.optimizers.Adam(learning_rate)
-        elif optimizer_class == "adamw":
-            return tfa.optimizers.AdamW(weight_decay=1e-5, learning_rate=learning_rate)
-        elif optimizer_class == "rmsprop":
-            return tf.keras.optimizers.RMSprop(learning_rate)
-        elif optimizer_class == "sgd":
-            return tf.keras.optimizers.SGD(learning_rate)
-        else:
-            raise ValueError("`{}` is not a valid optimizer identifier.".format(optimizer_class))
-
-    def make_base_optimizer(self) -> optimizers.optimizer_v2.OptimizerV2:
-        return self.make_optimizer(self.base_learning_rate_schedule)
-
-    def make_discriminator_optimizer(self) -> optimizers.optimizer_v2.OptimizerV2:
-        if "discriminator_optimizer" in self.config:
-            discriminator_optimizer_class = self.config["discriminator_optimizer"]
-        else:
-            discriminator_optimizer_class = self.optimizer_class
-        return self.make_optimizer(self.discriminator_learning_rate_schedule, discriminator_optimizer_class)
-
-    # endregion
-
-    # endregion
-
     # region Patterns
     def get_train_pattern(self) -> Pattern:
         augment_video = self.make_video_augmentation()
@@ -542,10 +423,6 @@ class VideoProtocol(DatasetProtocol):
     # endregion
     # region Config properties
     @property
-    def model_architecture(self) -> str:
-        return self.config["model_architecture"].lower()
-
-    @property
     def height(self) -> int:
         return self.config["height"]
 
@@ -554,130 +431,16 @@ class VideoProtocol(DatasetProtocol):
         return self.config["width"]
 
     @property
+    def channels(self) -> int:
+        return 1
+
+    @property
     def step_size(self) -> int:
         return self.config["step_size"]
 
     @property
     def step_count(self) -> int:
         return self.config["step_count"]
-
-    @property
-    def code_size(self) -> int:
-        return self.config["code_size"]
-
-    # region Encoder
-    @property
-    def encoder_config(self):
-        return self.config["encoder"]
-
-    @property
-    def encoder_mode(self):
-        return self.encoder_config["mode"]
-
-    @property
-    def encoder_filters(self) -> List[int]:
-        return self.encoder_config["filters"]
-
-    @property
-    def encoder_strides(self) -> List[List[int]]:
-        return self.encoder_config["strides"]
-
-    @property
-    def encoder_kernel_sizes(self) -> List[int]:
-        layer_count = len(self.encoder_filters)
-        kernel_sizes = [self.base_kernel_size] * layer_count
-        if "stem_kernel_size" in self.config:
-            kernel_sizes[0] = self.stem_kernel_size
-        return kernel_sizes
-
-    @property
-    def code_activation(self) -> str:
-        return self.config["code_activation"]
-
-    # endregion
-
-    # region Decoder
-    @property
-    def decoder_config(self):
-        return self.config["decoder"]
-
-    @property
-    def decoder_mode(self):
-        return self.decoder_config["mode"]
-
-    @property
-    def decoder_filters(self) -> List[int]:
-        return self.decoder_config["filters"]
-
-    @property
-    def decoder_strides(self) -> List[List[int]]:
-        return self.decoder_config["strides"]
-
-    @property
-    def decoder_kernel_sizes(self) -> List[int]:
-        layer_count = len(self.decoder_filters)
-        kernel_sizes = [self.base_kernel_size] * layer_count
-        return kernel_sizes
-
-    # endregion
-
-    # region Discriminator
-    @property
-    def discriminator_config(self):
-        return self.config["discriminator"]
-
-    @property
-    def discriminator_mode(self):
-        return self.discriminator_config["mode"]
-
-    @property
-    def discriminator_filters(self) -> List[int]:
-        return self.discriminator_config["filters"]
-
-    @property
-    def discriminator_strides(self) -> List[List[int]]:
-        return self.discriminator_config["strides"]
-
-    # endregion
-
-    @property
-    def base_kernel_size(self) -> int:
-        return self.config["base_kernel_size"]
-
-    @property
-    def stem_kernel_size(self) -> int:
-        return self.config["stem_kernel_size"]
-
-    @property
-    def basic_block_count(self) -> int:
-        return self.config["basic_block_count"]
-
-    @property
-    def optimizer_class(self) -> str:
-        return self.config["optimizer"].lower()
-
-    @property
-    def learning_rate(self) -> float:
-        return self.config["learning_rate"]
-
-    @property
-    def base_learning_rate_schedule(self):
-        # from misc_utils.train_utils import WarmupSchedule
-
-        learning_rate = self.learning_rate
-        learning_rate = tf.keras.optimizers.schedules.ExponentialDecay(learning_rate, 10000, 0.25, staircase=True)
-        # learning_rate = WarmupSchedule(warmup_steps=1000, learning_rate=learning_rate)
-        # min_learning_rate = ScaledSchedule(learning_rate, 1e-2)
-        # learning_rate = CyclicSchedule(cycle_length=1000,
-        #                                learning_rate=min_learning_rate,
-        #                                max_learning_rate=learning_rate)
-        return learning_rate
-
-    @property
-    def discriminator_learning_rate_schedule(self):
-        learning_rate = self.base_learning_rate_schedule
-        # learning_rate = ScaledSchedule(learning_rate, 1.0)
-        return learning_rate
 
     # region Data augmentation
     @property

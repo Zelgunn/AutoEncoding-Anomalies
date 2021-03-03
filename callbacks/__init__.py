@@ -5,6 +5,7 @@ from callbacks.modality_callbacks.ModalityCallback import ModalityCallback
 from callbacks.modality_callbacks.ImageCallback import ImageCallback
 from callbacks.modality_callbacks.AudioCallback import AudioCallback
 from callbacks.modality_callbacks.AudioVideoCallback import AudioVideoCallback
+from callbacks.modality_callbacks.NetworkPacketCallback import NetworkPacketCallback
 from callbacks.MultipleModelsCheckpoint import MultipleModelsCheckpoint
 from callbacks.LandmarksVideoCallback import LandmarksVideoCallback
 from callbacks.CustomModelCheckpoint import CustomModelCheckpoint

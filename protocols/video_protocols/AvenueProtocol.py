@@ -4,16 +4,16 @@ from protocols import VideoProtocol, ProtocolTestConfig
 class AvenueProtocol(VideoProtocol):
     def __init__(self,
                  base_log_dir: str,
-                 initial_epoch=0,
+                 epoch=0,
                  ):
         super(AvenueProtocol, self).__init__(base_log_dir=base_log_dir,
                                              dataset_name="avenue",
-                                             initial_epoch=initial_epoch)
+                                             epoch=epoch)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()
         return ProtocolTestConfig(pattern=anomaly_pattern,
-                                  epoch=self.initial_epoch,
+                                  epoch=self.epoch,
                                   detector_stride=1,
                                   pre_normalize_predictions=True)
 

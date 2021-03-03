@@ -267,7 +267,8 @@ def main():
     protocol = Protocol(model=model,
                         dataset_name="emoly",
                         protocol_name="audio_video",
-                        output_range=(0.0, 1.0)
+                        output_range=(0.0, 1.0),
+                        base_log_dir="../logs/tests/audio_video_desync"
                         )
 
     video_preprocess = make_video_preprocess(to_grayscale=True,

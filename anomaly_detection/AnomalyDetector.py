@@ -5,6 +5,7 @@ from scipy.optimize import brentq
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import os
+from tqdm import tqdm
 from typing import Union, List, Callable, Dict, Any, Tuple, Sequence, Optional
 
 from anomaly_detection import IOCompareModel
@@ -55,6 +56,8 @@ class AnomalyDetector(Model):
             metric_name = metric if isinstance(metric, str) else metric.__name__
             self.anomaly_metrics_names.append(metric_name)
 
+        self.prog_bar = None
+
     @tf.function
     def call(self, inputs, training=None, mask=None):
         inputs, ground_truth = inputs
@@ -91,7 +94,7 @@ class AnomalyDetector(Model):
                                                      max_samples=max_samples)
 
         merged_predictions, merged_labels = self.merge_samples_predictions(predictions=predictions, labels=labels)
-        self.save_predictions(predictions=merged_predictions, labels=labels, log_dir=log_dir)
+        self.save_predictions(predictions=merged_predictions, labels=merged_labels, log_dir=log_dir)
         results = self.evaluate_predictions(predictions=merged_predictions, labels=merged_labels)
         self.print_results(results)
 
@@ -114,7 +117,7 @@ class AnomalyDetector(Model):
                           stride=1,
                           pre_normalize_predictions=True,
                           max_samples=-1
-                          ) -> Tuple[List[np.ndarray], np.ndarray]:
+                          ) -> Tuple[List[List[np.ndarray]], List[np.ndarray]]:
         predictions, labels = self.predict_anomalies_on_subset(subset=dataset.test_subset,
                                                                stride=stride,
                                                                pre_normalize_predictions=pre_normalize_predictions,
@@ -134,15 +137,18 @@ class AnomalyDetector(Model):
         sample_count = min(max_samples, len(subset.subset_folders)) if max_samples > 0 else len(subset.subset_folders)
         print("Making predictions for {} samples".format(sample_count))
 
-        for sample_index in range(sample_count):
-            sample_name = subset.subset_folders[sample_index]
-            print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name))
-            sample_results = self.predict_anomalies_on_sample(subset, sample_index, stride,
-                                                              normalize_predictions=pre_normalize_predictions)
-            sample_predictions, sample_labels = sample_results
-            for i in range(self.metric_count):
-                predictions[i].append(sample_predictions[i])
-            labels.append(sample_labels)
+        with tqdm(total=subset.size) as prog_bar:
+            self.prog_bar = prog_bar
+            for sample_index in range(sample_count):
+                sample_name = subset.subset_folders[sample_index]
+                description = "Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name)
+                self.prog_bar.set_description(description)
+                sample_results = self.predict_anomalies_on_sample(subset, sample_index, stride,
+                                                                  normalize_predictions=pre_normalize_predictions)
+                sample_predictions, sample_labels = sample_results
+                for i in range(self.metric_count):
+                    predictions[i].append(sample_predictions[i])
+                labels.append(sample_labels)
 
         return predictions, labels
 
@@ -155,6 +161,7 @@ class AnomalyDetector(Model):
         dataset = subset.make_source_browser(self.pattern, sample_index, stride=stride)
 
         predictions, labels = None, []
+
         for sample in dataset:
             sample_inputs, sample_outputs, sample_labels = self.unpack_sample(sample)
             sample_predictions = self([sample_inputs, sample_outputs])
@@ -165,6 +172,8 @@ class AnomalyDetector(Model):
             else:
                 for i in range(len(predictions)):
                     predictions[i].append(sample_predictions[i])
+            if self.prog_bar is not None:
+                self.prog_bar.update(stride)
 
         predictions = [np.concatenate(metric_prediction, axis=0) for metric_prediction in predictions]
         labels = self.timestamps_labels_to_frame_labels(labels)
@@ -188,7 +197,7 @@ class AnomalyDetector(Model):
 
     @staticmethod
     def merge_samples_predictions(predictions: List[List[np.ndarray]],
-                                  labels: np.ndarray
+                                  labels: List[np.ndarray],
                                   ) -> Tuple[List[np.ndarray], np.ndarray]:
         merged_predictions = []
         metric_count = len(predictions)
@@ -259,6 +268,7 @@ class AnomalyDetector(Model):
                 fp = roc.false_positives.numpy()
                 tpr = (tp / tp.max()).astype(np.float64)
                 fpr = (fp / fp.max()).astype(np.float64)
+                # noinspection PyTypeChecker
                 eer = brentq(lambda x: 1. - x - interp1d(fpr, tpr)(x), 0., 1.)
                 results["EER"] = eer
             # endregion
@@ -295,7 +305,7 @@ class AnomalyDetector(Model):
     # region Plotting
     def plot_predictions(self,
                          predictions: List[List[np.ndarray]],
-                         labels: np.ndarray,
+                         labels: List[np.ndarray],
                          log_dir: str,
                          samples_names: List[str],
                          ):
@@ -394,7 +404,8 @@ class AnomalyDetector(Model):
             for i in range(self.metric_count):
                 line = "{})".format(self.anomaly_metrics_names[i])
                 for result_name, result_values in results.items():
-                    value = round(float(result_values[i]), 3)
+                    value = result_values[i]
+                    # value = round(float(value), 3)
                     line += " {} = {} |".format(result_name, value)
                 line += "\n"
                 file.write(line)
@@ -502,7 +513,7 @@ class AnomalyDetector(Model):
         return sample_inputs, sample_outputs, sample_labels
 
     @staticmethod
-    def timestamps_labels_to_frame_labels(labels: List[np.ndarray]) -> np.ndarray:
+    def timestamps_labels_to_frame_labels(labels: Union[List[np.ndarray], List[tf.Tensor]]) -> np.ndarray:
         max_label_length = max([len(label) for label in labels])
         labels_array = np.ones(shape=(len(labels), max_label_length, 2), dtype=np.float32)
         for i, label in enumerate(labels):

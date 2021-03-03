@@ -6,7 +6,7 @@ class SubwayProtocol(VideoProtocol):
     def __init__(self,
                  base_log_dir: str,
                  video_id: SubwayVideo,
-                 initial_epoch=0
+                 epoch=0
                  ):
         if video_id == SubwayVideo.EXIT:
             dataset_name = "subway_exit"
@@ -23,12 +23,12 @@ class SubwayProtocol(VideoProtocol):
 
         super(SubwayProtocol, self).__init__(base_log_dir=base_log_dir,
                                              dataset_name=dataset_name,
-                                             initial_epoch=initial_epoch)
+                                             epoch=epoch)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()
         return ProtocolTestConfig(pattern=anomaly_pattern,
-                                  epoch=self.initial_epoch,
+                                  epoch=self.epoch,
                                   detector_stride=32,
                                   pre_normalize_predictions=True)
 

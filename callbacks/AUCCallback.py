@@ -58,7 +58,7 @@ class AUCWrapper(object):
 
     # endregion
 
-    @tf.function
+    # @tf.function
     def auc_summary(self, y_true, y_pred, step):
         self.reset_states()
         self.update_state(y_true, y_pred)

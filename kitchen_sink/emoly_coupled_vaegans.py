@@ -92,7 +92,8 @@ def main():
                                               strides=video_encoder_strides,
                                               code_size=code_size,
                                               code_activation="tanh",
-                                              mode="conv")
+                                              mode="conv",
+                                              name="VideoEncoder")
     video_code_shape = compute_output_shape(video_encoder_layers, video_shape)
     video_encoder_layers.append(reshape_to_common_code)
     video_encoder = to_sequential(layers=video_encoder_layers, input_shape=video_shape, name="VideoEncoder")
@@ -105,7 +106,9 @@ def main():
                                               strides=video_decoder_strides,
                                               channels=video_channels,
                                               output_activation="linear",
-                                              mode="conv")
+                                              mode="conv",
+                                              name="VideoDecoder",
+                                              stem_kernel_size=7)
     reshape_to_video_code = Reshape(target_shape=video_code_shape, name="ReshapeToVideoCodeShape")
     video_decoder_layers.insert(0, reshape_to_video_code)
     video_decoder = to_sequential(layers=video_decoder_layers, input_shape=code_shape, name="VideoDecoder")
@@ -119,7 +122,8 @@ def main():
                                              intermediate_size=video_discriminator_intermediate_size,
                                              intermediate_activation="relu",
                                              include_intermediate_output=False,
-                                             name="VideoDiscriminator")
+                                             name="VideoDiscriminator",
+                                             mode="conv")
     # endregion
 
     video_generator = AE(encoder=video_encoder, decoder=video_decoder, name="VideoGenerator")
@@ -135,7 +139,8 @@ def main():
                                               strides=audio_encoder_strides,
                                               code_size=code_size,
                                               code_activation="tanh",
-                                              mode="conv")
+                                              mode="conv",
+                                              name="AudioEncoder")
     audio_code_shape = compute_output_shape(audio_encoder_layers, audio_shape)
     audio_encoder_layers.append(reshape_to_common_code)
     audio_encoder = to_sequential(layers=audio_encoder_layers, input_shape=audio_shape, name="AudioEncoder")
@@ -148,7 +153,9 @@ def main():
                                               strides=audio_decoder_strides,
                                               channels=audio_channels,
                                               output_activation="linear",
-                                              mode="conv")
+                                              mode="conv",
+                                              name="AudioDecoder",
+                                              stem_kernel_size=7)
     reshape_to_audio_code = Reshape(target_shape=audio_code_shape, name="ReshapeToAudioCodeShape")
     audio_decoder_layers.insert(0, reshape_to_audio_code)
     audio_decoder = to_sequential(layers=audio_decoder_layers, input_shape=code_shape, name="AudioDecoder")
@@ -162,7 +169,8 @@ def main():
                                              intermediate_size=audio_discriminator_intermediate_size,
                                              intermediate_activation="relu",
                                              include_intermediate_output=False,
-                                             name="AudioDiscriminator")
+                                             name="AudioDiscriminator",
+                                             mode="conv")
     # endregion
 
     audio_generator = AE(encoder=audio_encoder, decoder=audio_decoder, name="AudioGenerator")
@@ -195,6 +203,7 @@ def main():
                         protocol_name="audio_video",
                         output_range=(-1.0, 1.0),
                         seed=seed,
+                        base_log_dir="../logs/tests/emoly_coupled_vaegans"
                         )
 
     # region Training

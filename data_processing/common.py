@@ -1,4 +1,57 @@
 import tensorflow as tf
+from enum import Enum
+from typing import Union
+
+from misc_utils.math_utils import standardize_from
+
+
+@tf.function
+def normalize_sigmoid(x: tf.Tensor) -> tf.Tensor:
+    x_min = tf.reduce_min(x)
+    x_max = tf.reduce_max(x)
+    x = (x - x_min) / (x_max - x_min)
+    return x
+
+
+@tf.function
+def normalize_tanh(x: tf.Tensor) -> tf.Tensor:
+    x = normalize_sigmoid(x)
+    x = tf.constant(2.0) * x - tf.constant(1.0)
+    return x
+
+
+class ActivationRange(Enum):
+    LINEAR = 0
+    SIGMOID = 1
+    TANH = 2
+
+    @staticmethod
+    def from_str(s: str) -> "ActivationRange":
+        s = s.lower()
+        if s == "linear":
+            return ActivationRange.LINEAR
+        elif s == "sigmoid":
+            return ActivationRange.SIGMOID
+        elif s == "tanh":
+            return ActivationRange.TANH
+        else:
+            raise ValueError("s must be in {{linear, sigmoid, tanh}} but got {}".format(s))
+
+
+def apply_activation_range(x: tf.Tensor, activation_range: Union[ActivationRange, str]) -> tf.Tensor:
+    if isinstance(activation_range, str):
+        activation_range = ActivationRange.from_str(activation_range)
+
+    if activation_range == activation_range.LINEAR:
+        if x.shape.rank >= 3:
+            x = tf.image.per_image_standardization(x)
+        else:
+            x = standardize_from(x, start_axis=0)
+    elif activation_range == activation_range.SIGMOID:
+        x = normalize_sigmoid(x)
+    elif activation_range == activation_range.TANH:
+        x = normalize_tanh(x)
+    return x
 
 
 def dropout_noise(inputs, max_rate, noise_shape_prob, seed=None):

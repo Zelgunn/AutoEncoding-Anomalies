@@ -54,10 +54,10 @@ class ImageCallback(ModalityCallback):
                 pred_sample: tf.Tensor = pred_outputs[i]
 
                 if pred_sample.shape.is_compatible_with(true_sample.shape):
-                    delta = (pred_sample - true_sample) * (tf.cast(pred_sample < true_sample, dtype=tf.uint8) * 254 + 1)
+                    delta = self.images_uint8_delta(true_sample, pred_sample)
                     self.sample_summary(data=delta, step=step, suffix="delta")
 
-    def sample_summary(self, data: tf.Tensor, step: int, suffix: str):
+    def sample_summary(self, data: tf.Tensor, step: int, suffix: str, **kwargs):
         if use_video_summary(data):
             self.video_summary(data=data, step=step, suffix=suffix)
         else:
@@ -67,3 +67,8 @@ class ImageCallback(ModalityCallback):
         for video_sample_rate in self.video_sample_rate:
             image_summary(name="{}_{}_{}".format(self.name, video_sample_rate, suffix), data=data,
                           step=step, max_outputs=self.max_outputs, fps=video_sample_rate)
+
+    @staticmethod
+    def images_uint8_delta(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
+        delta = (y - x) * (tf.cast(y < x, dtype=tf.uint8) * 254 + 1)
+        return delta

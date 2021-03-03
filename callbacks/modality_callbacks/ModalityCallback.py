@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.python.ops import summary_ops_v2
 from tensorflow import keras
 from typing import List, Union, Callable
 from abc import ABC, abstractmethod
@@ -48,12 +49,13 @@ class ModalityCallback(TensorBoardPlugin, ABC):
         return self.train_run_writer if self.is_train_callback else self.validation_run_writer
 
     def _write_logs(self, index):
-        with self.writer.as_default():
-            if not self.true_outputs_were_logged:
-                self.samples_summary(self.true_outputs, step=index, suffix="true")
-                self.true_outputs_were_logged = True
+        with summary_ops_v2.always_record_summaries():
+            with self.writer.as_default():
+                if not self.true_outputs_were_logged:
+                    self.samples_summary(self.true_outputs, step=index, suffix="true")
+                    self.true_outputs_were_logged = True
 
-            self.write_model_summary(step=index)
+                self.write_model_summary(step=index)
 
     @abstractmethod
     def write_model_summary(self, step: int):
@@ -70,7 +72,7 @@ class ModalityCallback(TensorBoardPlugin, ABC):
             self.sample_summary(data=data, step=step, suffix=suffix)
 
     @abstractmethod
-    def sample_summary(self, data: tf.Tensor, step: int, suffix: str):
+    def sample_summary(self, data: tf.Tensor, step: int, suffix: str, **kwargs):
         raise NotImplementedError
 
     def extract_logged_modalities(self, modalities) -> List[tf.Tensor]:

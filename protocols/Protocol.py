@@ -83,6 +83,7 @@ class Protocol(object):
         raise NotImplementedError
 
     def train_model(self, config: ProtocolTrainConfig, **kwargs):
+        print("Protocol - Training : Starting training on {}.".format(self.dataset_name))
         self.load_weights(epoch=config.initial_epoch)
 
         print("Protocol - Training : Making log dirs ...")
@@ -297,6 +298,16 @@ def get_dataset_folder(dataset_name: str) -> str:
 
         "emoly": "../datasets/emoly",
         "audioset": "../datasets/audioset",
+
+        "Active Wiretap": "../datasets/kitsune/Active Wiretap",
+        "ARP MitM": "../datasets/kitsune/ARP MitM",
+        "Fuzzing": "../datasets/kitsune/Fuzzing",
+        "Mirai Botnet": "../datasets/kitsune/Mirai Botnet",
+        "OS Scan": "../datasets/kitsune/OS Scan",
+        "SSDP Flood": "../datasets/kitsune/SSDP Flood",
+        "SSL Renegotiation": "../datasets/kitsune/SSL Renegotiation",
+        "SYN DoS": "../datasets/kitsune/SYN DoS",
+        "Video Injection": "../datasets/kitsune/Video Injection",
     }
 
     if dataset_name in known_datasets:

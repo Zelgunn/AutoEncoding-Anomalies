@@ -16,7 +16,7 @@ class AUCCallbackConfig(object):
                  labels_length: int,
                  prefix: str,
                  epoch_freq: int = 1,
-                 sample_count: int = 512,
+                 sample_count: int = 128,
                  convert_to_io_compare_model=False,
                  io_compare_metrics: Union[List[Union[str, Callable]], Union[str, Callable]] = "mse"
                  ):

@@ -3,76 +3,54 @@ import argparse
 
 from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
 from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTechProtocol, SubwayProtocol
+from protocols.packet_protocols import KitsuneProtocol
 
 
 def main():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument("--dataset", default="ped2")
     arg_parser.add_argument("--mode", default="train")
-    arg_parser.add_argument("--initial_epoch", default=None)
+    arg_parser.add_argument("--epoch", default=None)
     arg_parser.add_argument("--log_dir", default="../logs/AEA")
 
     args = arg_parser.parse_args()
-    dataset: str = args.dataset
-    mode: str = args.mode
-    initial_epoch = args.initial_epoch
-    log_dir: str = args.log_dir
+    run_protocol(dataset=args.dataset, mode=args.mode, epoch=args.epoch, log_dir=args.log_dir)
 
-    best_weights = {
-        "ped2": 16,
-        "ped1": 50,
-        "avenue": 22,
-        "shanghaitech": 14,
-        "exit": 11,
-        "entrance": 97,
-    }
 
-    if initial_epoch is None:
+def run_protocol(dataset: str, mode: str, epoch: int, log_dir: str):
+    if epoch is None:
         if mode == "train":
-            initial_epoch = 0
+            epoch = 0
         else:
-            initial_epoch = best_weights[dataset]
-    elif initial_epoch == "best":
-        initial_epoch = best_weights[dataset]
+            raise ValueError("Epoch must be known for testing, got None.")
     else:
-        initial_epoch = int(initial_epoch)
+        epoch = int(epoch)
 
     # policy = mixed_precision.Policy("mixed_float16")
     # mixed_precision.set_policy(policy)
 
     if dataset == "ped2":
-        protocol = UCSDProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, dataset_version=2)
+        protocol = UCSDProtocol(base_log_dir=log_dir, epoch=epoch, dataset_version=2)
     elif dataset == "ped1":
-        protocol = UCSDProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, dataset_version=1)
+        protocol = UCSDProtocol(base_log_dir=log_dir, epoch=epoch, dataset_version=1)
     elif dataset == "avenue":
-        protocol = AvenueProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch)
+        protocol = AvenueProtocol(base_log_dir=log_dir, epoch=epoch)
     elif dataset == "shanghaitech":
-        protocol = ShanghaiTechProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch)
+        protocol = ShanghaiTechProtocol(base_log_dir=log_dir, epoch=epoch)
     elif dataset == "exit":
-        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.EXIT)
+        protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.EXIT)
     elif dataset == "entrance":
-        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.ENTRANCE)
+        protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.ENTRANCE)
     elif dataset == "mall1":
-        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.MALL1)
+        protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.MALL1)
     elif dataset == "mall2":
-        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.MALL2)
+        protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.MALL2)
     elif dataset == "mall3":
-        protocol = SubwayProtocol(base_log_dir=log_dir, initial_epoch=initial_epoch, video_id=SubwayVideo.MALL3)
+        protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.MALL3)
+    elif KitsuneProtocol.is_kitsune_id(dataset):
+        protocol = KitsuneProtocol(base_log_dir=log_dir, epoch=epoch, kitsune_dataset=dataset)
     else:
-        raise ValueError(dataset)
-
-    # root = r"..\datasets\ucsd\ped2"
-    #
-    # input_video = root + r"\Test\Test004"
-    # output_video = root + r"\output.avi"
-    #
-    # protocol.autoencode_video(video_source=input_video,
-    #                           target_path=output_video,
-    #                           load_epoch=initial_epoch,
-    #                           fps=25.0,
-    #                           output_size=(128, 128))
-    #
-    # exit()
+        raise ValueError("Invalid dataset : `{}`".format(dataset))
 
     if mode == "train":
         protocol.train_model()

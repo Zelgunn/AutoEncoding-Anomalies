@@ -286,6 +286,7 @@ def main():
                         protocol_name="audio_video",
                         output_range=(-1.0, 1.0),
                         seed=seed,
+                        base_log_dir="../tests/emoly_bmeg"
                         )
 
     # region Training

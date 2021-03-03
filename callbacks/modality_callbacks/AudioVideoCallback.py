@@ -42,7 +42,7 @@ class AudioVideoCallback(ModalityCallback):
         for sample in data:
             self.sample_summary(data=sample, step=step, suffix=suffix)
 
-    def sample_summary(self, data: tf.Tensor, step: int, suffix: str):
+    def sample_summary(self, data: tf.Tensor, step: int, suffix: str, **kwargs):
         name = "{}_{}".format(self.name, suffix)
         if data.shape.rank >= 5:
             data = convert_tensor_uint8(data)

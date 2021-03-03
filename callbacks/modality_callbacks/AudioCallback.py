@@ -36,7 +36,7 @@ class AudioCallback(ModalityCallback):
         pred_outputs = self.extract_logged_modalities(pred_outputs)
         self.samples_summary(data=pred_outputs, step=step, suffix="predicted")
 
-    def sample_summary(self, data: tf.Tensor, step: int, suffix: str):
+    def sample_summary(self, data: tf.Tensor, step: int, suffix: str, **kwargs):
         audio_sample_summary(data=data,
                              sample_rate=self.sample_rate,
                              step=step,

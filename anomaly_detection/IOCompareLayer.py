@@ -10,6 +10,21 @@ def absolute_error(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     return tf.abs(y_true - y_pred)
 
 
+def log_absolute_error(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    mae = absolute_error(y_true, y_pred)
+    return tf.math.log(mae + tf.constant(1.0))
+
+
+def clipped_mae(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    mae = absolute_error(y_true, y_pred)
+    return tf.clip_by_value(mae, 0.0, 1.0)
+
+
+def clipped_mae_32(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    mae = absolute_error(y_true, y_pred)
+    return tf.clip_by_value(mae, 0.0, 32.0)
+
+
 def negative_ssim(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """
     Computes one minus SSIM between `y_true` and `y_pred`.
@@ -41,8 +56,11 @@ def negative_psnr(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
 known_metrics = {
     "mse": squared_error,
     "mae": absolute_error,
-    "ssim": negative_ssim,
-    "psnr": negative_psnr
+    # "ssim": negative_ssim,
+    # "psnr": negative_psnr,
+    "log_mae": log_absolute_error,
+    "clipped_mae": clipped_mae,
+    "clipped_mae_32": clipped_mae_32,
 }
 
 

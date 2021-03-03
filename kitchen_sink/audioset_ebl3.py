@@ -40,7 +40,8 @@ def get_audio_encoder(length: int,
                                 code_size=n * 8,
                                 code_activation="linear",
                                 basic_block_count=1,
-                                mode="conv"
+                                mode="conv",
+                                name="AudioEncoder"
                                 )
 
     input_shape = (length, channels, 1)
@@ -82,7 +83,9 @@ def get_audio_decoder(length: int,
                                 channels=1,
                                 output_activation="linear",
                                 basic_block_count=1,
-                                mode="conv"
+                                mode="conv",
+                                name="AudioDecoder",
+                                stem_kernel_size=7,
                                 )
 
     input_shape = (length // 32, 1, n * 8)
@@ -121,6 +124,7 @@ def get_video_encoder(length: int,
                                 code_activation="linear",
                                 basic_block_count=1,
                                 mode="conv",
+                                name="VideoEncoder"
                                 )
 
     layers = [
@@ -150,6 +154,8 @@ def get_video_decoder(length: int,
                                 output_activation="linear",
                                 basic_block_count=1,
                                 mode="conv",
+                                name="VideoDecoder",
+                                stem_kernel_size=7,
                                 )
 
     layers = [
@@ -249,6 +255,7 @@ def main():
                         protocol_name="audio_video",
                         output_range=(-1.0, 1.0),
                         seed=seed,
+                        base_log_dir="../logs/tests/audioset_ebl3"
                         )
 
     # region Training

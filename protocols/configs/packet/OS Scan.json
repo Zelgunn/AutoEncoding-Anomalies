@@ -1,0 +1,32 @@
+{
+    "model_architecture": "iae",
+    "step_size": 16,
+    "step_count": 3,
+    "code_size": 16,
+    "code_activation": "linear",
+    "base_kernel_size": 7,
+    "stem_kernel_size": 7,
+    "basic_block_count": 4,
+    "encoder": {
+        "mode": "conv",
+        "filters": [128, 128, 64, 64, 32, 32],
+        "strides": [1, 1, 1, 1, 1, 1]
+    },
+    "decoder": {
+        "mode": "conv",
+        "filters": [32, 32, 64, 64, 128, 128],
+        "strides": [1, 1, 1, 1, 1, 1]
+    },
+    "output_activation": "sigmoid",
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "optimizer": "adamw",
+    "seed": 42,
+    "epochs": 32,
+    "steps_per_epoch": 1000,
+    "validation_steps": 1024,
+    "save_frequency": "epoch",
+    "auc_frequency": 1,
+    "auc_sample_count": 1024,
+    "current_test": "IAE : base setup"
+}

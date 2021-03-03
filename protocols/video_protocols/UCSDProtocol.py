@@ -5,7 +5,7 @@ class UCSDProtocol(VideoProtocol):
     def __init__(self,
                  base_log_dir: str,
                  dataset_version=2,
-                 initial_epoch=0
+                 epoch=0
                  ):
         if dataset_version not in [1, 2]:
             raise ValueError("`dataset_version` must either be 1 (ped1) or 2 (ped2). Received {}."
@@ -13,14 +13,14 @@ class UCSDProtocol(VideoProtocol):
         dataset_name = "ped1" if dataset_version == 1 else "ped2"
 
         super(UCSDProtocol, self).__init__(dataset_name=dataset_name,
-                                           initial_epoch=initial_epoch,
+                                           epoch=epoch,
                                            base_log_dir=base_log_dir)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()
 
         return ProtocolTestConfig(pattern=anomaly_pattern,
-                                  epoch=self.initial_epoch,
+                                  epoch=self.epoch,
                                   detector_stride=1,
                                   pre_normalize_predictions=True
                                   )
