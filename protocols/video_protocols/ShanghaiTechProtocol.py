@@ -1,14 +1,18 @@
+from typing import Dict
+
 from protocols import VideoProtocol, ProtocolTestConfig
 
 
 class ShanghaiTechProtocol(VideoProtocol):
     def __init__(self,
                  base_log_dir: str,
-                 epoch=0
+                 epoch=0,
+                 config: Dict = None,
                  ):
         super(ShanghaiTechProtocol, self).__init__(base_log_dir=base_log_dir,
                                                    dataset_name="shanghaitech",
-                                                   epoch=epoch)
+                                                   epoch=epoch,
+                                                   config=config)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()

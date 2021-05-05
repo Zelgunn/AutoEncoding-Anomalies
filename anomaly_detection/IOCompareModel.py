@@ -9,7 +9,7 @@ class IOCompareModel(Model):
     def __init__(self,
                  autoencoder: Union[Callable, AE],
                  postprocessor: Callable = None,
-                 metrics: List[Union[str, Callable]] = "mse",
+                 metrics: Union[List[Union[str, Callable]], str, Callable] = "mae",
                  **kwargs):
         super(IOCompareModel, self).__init__(**kwargs)
         self.autoencoder = autoencoder

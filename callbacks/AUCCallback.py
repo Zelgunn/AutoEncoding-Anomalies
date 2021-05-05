@@ -237,7 +237,13 @@ class AUCCallback(TensorBoardPlugin):
         if not isinstance(predictions_model, IOCompareModel):
             outputs = None
 
-        labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, labels_length)
+        if labels.ndim == 3:
+            labels = SubsetLoader.timestamps_labels_to_frame_labels(labels, labels_length)
+        elif labels.shape[-1] != labels_length:
+            if labels_length == 1:
+                labels = np.max(labels, axis=1)
+            else:
+                raise NotImplementedError
 
         auc_callback = AUCCallback(predictions_model=predictions_model,
                                    tensorboard=tensorboard,

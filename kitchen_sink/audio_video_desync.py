@@ -11,7 +11,7 @@ from modalities import Pattern, ModalityLoadInfo, RawVideo, MelSpectrogram
 from custom_tf_models.energy_based import EBM, TakeStepESF, OffsetSequences  # , IdentityESF, SwitchSamplesESF
 from CustomKerasLayers import SpatialTransformer, ResBlock1D, ResBlock3D, ResBlock1DTranspose, ResBlock3DTranspose
 from CustomKerasLayers import ExpandDims
-from data_processing.video_preprocessing import make_video_preprocess
+from data_processing.video_processing.video_preprocessing import make_video_preprocess
 
 
 def time_to_batch(inputs):

@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras.engine.base_layer import Layer
+from typing import Callable, Union
 
 
 def squared_error(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -76,7 +77,7 @@ class IOCompareLayer(Layer):
     """
 
     def __init__(self,
-                 metric="mse",
+                 metric: Union[Callable, str] = "mae",
                  **kwargs):
         super(IOCompareLayer, self).__init__(trainable=False, **kwargs)
 

@@ -3,17 +3,17 @@ from tensorflow.python.keras import Model
 from abc import abstractmethod
 import numpy as np
 import cv2
-from typing import Tuple, Callable, Optional
+from typing import Tuple, Callable, Optional, Dict
 
 from protocols import DatasetProtocol
 from callbacks.configs import ImageCallbackConfig
 from modalities import Pattern, ModalityLoadInfo, RawVideo
 from custom_tf_models import AE, IAE, BinAE, AEP
 from custom_tf_models import LED, RDL, ALED, PreLED
-from custom_tf_models.adversarial import IAEGAN, VAEGAN, AVP
+from custom_tf_models.adversarial import VAEGAN, AVP
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
 from custom_tf_models.description_length.LED import LEDGoal
-from data_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
+from data_processing.video_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
 
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
@@ -23,11 +23,13 @@ class VideoProtocol(DatasetProtocol):
                  dataset_name: str,
                  base_log_dir: str,
                  epoch: int,
+                 config: Dict = None,
                  ):
         super(VideoProtocol, self).__init__(dataset_name=dataset_name,
                                             protocol_name="video",
                                             base_log_dir=base_log_dir,
-                                            epoch=epoch)
+                                            epoch=epoch,
+                                            config=config)
 
     # region Make model
     def make_model(self) -> Model:
@@ -65,23 +67,10 @@ class VideoProtocol(DatasetProtocol):
         self.setup_model(model)
         return model
 
-    def setup_model(self, model: Model):
-        model.build(self.get_encoder_input_batch_shape(False))
-        if isinstance(model, (IAE, LED)):
-            # noinspection PyProtectedMember
-            model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
-        model.compile(optimizer=self.make_base_optimizer())
-
     # region AE
-    def make_ae(self) -> AE:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
-
-        model = AE(encoder=encoder, decoder=decoder)
-        return model
 
     def make_aep(self) -> AEP:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
+        encoder = self.make_encoder(self.encoder_input_shape)
         latent_code_shape = self.get_latent_code_shape(encoder)
         decoder = self.make_decoder(latent_code_shape)
         predictor = self.make_decoder(latent_code_shape)
@@ -94,43 +83,17 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_bin_ae(self) -> BinAE:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+        encoder, decoder = self.make_encoder_decoder()
 
         model = BinAE(encoder=encoder, decoder=decoder)
         return model
 
     # endregion
 
-    # region IAE
-    def make_iae(self) -> IAE:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
-
-        model = IAE(encoder=encoder, decoder=decoder, step_size=self.step_size)
-        return model
-
-    def make_iaegan(self) -> IAEGAN:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
-
-        discriminator_input_shape = self.get_encoder_input_shape()
-        discriminator = self.make_discriminator(discriminator_input_shape)
-
-        model = IAEGAN(encoder=encoder,
-                       decoder=decoder,
-                       discriminator=discriminator,
-                       step_size=self.step_size,
-                       discriminator_optimizer=self.make_discriminator_optimizer())
-        return model
-
-    # endregion
-
     # region VAE
     def make_vaegan(self) -> VAEGAN:
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
-        discriminator = self.make_discriminator(self.get_encoder_input_shape())
+        encoder, decoder = self.make_encoder_decoder()
+        discriminator = self.make_discriminator(self.encoder_input_shape)
 
         model = VAEGAN(encoder=encoder,
                        decoder=decoder,
@@ -144,7 +107,7 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_avp(self) -> AVP:
-        encoder_input_shape = self.get_encoder_input_shape()
+        encoder_input_shape = self.encoder_input_shape
         encoder = self.make_encoder(encoder_input_shape)
         decoder = self.make_decoder(self.get_latent_code_shape(encoder))
 
@@ -169,8 +132,7 @@ class VideoProtocol(DatasetProtocol):
 
     # region LED
     def make_led(self):
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+        encoder, decoder = self.make_encoder_decoder()
 
         # autoencoder = AE(encoder, decoder)
         # autoencoder.load_weights("../logs/AEA/video/ped2/weights_019")
@@ -193,8 +155,7 @@ class VideoProtocol(DatasetProtocol):
 
     # region LED Variants
     def make_rdl(self):
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+        encoder, decoder = self.make_encoder_decoder()
 
         model = RDL(encoder=encoder,
                     decoder=decoder,
@@ -204,7 +165,7 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_aled(self):
-        encoder = self.make_encoder(self.get_encoder_input_shape())
+        encoder = self.make_encoder(self.encoder_input_shape)
         latent_code_shape = self.get_latent_code_shape(encoder)
         decoder = self.make_decoder(latent_code_shape)
         generator = self.make_decoder(latent_code_shape, name="ResidualGenerator")
@@ -219,8 +180,7 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     def make_preled(self):
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+        encoder, decoder = self.make_encoder_decoder()
         predictor = self.make_decoder(self.get_latent_code_shape(encoder))
 
         model = PreLED(encoder=encoder,
@@ -244,12 +204,11 @@ class VideoProtocol(DatasetProtocol):
     def make_ebm(self):
         from tensorflow.python.keras.models import Sequential
         from tensorflow.python.keras.layers import Dense, Flatten
-        # noinspection PyUnresolvedReferences
-        from tensorflow.python.keras.initializers import VarianceScaling
+        from tensorflow.python.ops.init_ops import VarianceScaling
         from custom_tf_models.energy_based.energy_state_functions.FlipSequence import FlipSequence
         from custom_tf_models.energy_based.energy_state_functions.IdentityESF import IdentityESF
 
-        encoder = self.make_encoder(self.get_encoder_input_shape())
+        encoder = self.make_encoder(self.encoder_input_shape)
         kernel_initializer = VarianceScaling()
         energy_model = Sequential(
             layers=[
@@ -272,8 +231,7 @@ class VideoProtocol(DatasetProtocol):
         from custom_tf_models.energy_based.energy_state_functions.FlipSequence import FlipSequence
         from custom_tf_models.energy_based.energy_state_functions.IdentityESF import IdentityESF
 
-        encoder = self.make_encoder(self.get_encoder_input_shape())
-        decoder = self.make_decoder(self.get_latent_code_shape(encoder))
+        encoder, decoder = self.make_encoder_decoder()
 
         model = EBAE(encoder=encoder,
                      decoder=decoder,
@@ -293,31 +251,6 @@ class VideoProtocol(DatasetProtocol):
         return model
 
     # endregion
-
-    # endregion
-
-    # region Sub-models input shapes
-    def get_encoder_input_batch_shape(self, use_batch_size=False) -> Tuple[None, int, int, int, int]:
-        batch_size = self.batch_size if use_batch_size else None
-        shape = (batch_size, self.step_size, self.height, self.width, 1)
-        return shape
-
-    def get_encoder_input_shape(self) -> Tuple[int, int, int, int]:
-        shape = self.get_encoder_input_batch_shape()[1:]
-        return shape
-
-    def get_latent_code_batch_shape(self, encoder: Model):
-        shape = encoder.compute_output_shape(self.get_encoder_input_batch_shape())
-        if self.model_architecture in ["vaegan", "avp"]:
-            shape = (*shape[:-1], shape[-1] // 2)
-        return shape
-
-    def get_latent_code_shape(self, encoder: Model):
-        return self.get_latent_code_batch_shape(encoder=encoder)[1:]
-
-    def get_saam_input_shape(self):
-        shape = (None, self.step_count, self.code_size)
-        return shape
 
     # endregion
 
@@ -435,12 +368,8 @@ class VideoProtocol(DatasetProtocol):
         return 1
 
     @property
-    def step_size(self) -> int:
-        return self.config["step_size"]
-
-    @property
-    def step_count(self) -> int:
-        return self.config["step_count"]
+    def encoder_input_shape(self) -> Tuple[int, int, int, int]:
+        return self.step_size, self.height, self.width, self.channels
 
     # region Data augmentation
     @property
@@ -466,21 +395,6 @@ class VideoProtocol(DatasetProtocol):
         return self.config["extract_patches"]
 
     # endregion
-    @property
-    def input_length(self) -> int:
-        if self.model_architecture in ["aep", "preled"]:
-            return self.step_size
-        else:
-            return self.output_length
-
-    @property
-    def output_length(self) -> int:
-        if self.model_architecture in ["iae", "and", "iaegan", "avp"]:
-            return self.step_size * self.step_count
-        elif self.model_architecture in ["aep", "preled"]:
-            return self.step_size * 2
-        else:
-            return self.step_size
 
     @property
     def led_goal(self) -> Optional[LEDGoal]:

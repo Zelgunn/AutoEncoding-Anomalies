@@ -63,7 +63,7 @@ class AnomalyDetectorCallback(TensorBoardPlugin):
 
         print("`{}` took {:.2f} seconds.".format(self.name, time() - start_time))
 
-    def predict_anomalies(self) -> Tuple[List[np.ndarray], np.ndarray]:
+    def predict_anomalies(self) -> Tuple[List[List[np.ndarray]], List[np.ndarray]]:
         return self.anomaly_detector.predict_anomalies(dataset=self.dataset,
                                                        stride=self.stride,
                                                        pre_normalize_predictions=self.pre_normalize_predictions,

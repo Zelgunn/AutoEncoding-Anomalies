@@ -3,7 +3,7 @@ import tensorflow_addons as tfa
 from tensorflow.python.keras import Model, optimizers
 import numpy as np
 from abc import abstractmethod
-from typing import Dict, List, Union, Callable
+from typing import Dict, List, Union, Callable, Tuple, Any
 import json
 import os
 from shutil import copyfile
@@ -13,7 +13,7 @@ from modalities import Pattern
 from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from callbacks.configs import AUCCallbackConfig, AnomalyDetectorCallbackConfig
-from custom_tf_models import AE, IAE, LED
+from custom_tf_models import AE, VAE, IAE, VIAE, LED, CnC, IterativeAE
 from custom_tf_models.energy_based import EBAE
 from custom_tf_models.adversarial import IAEGAN
 
@@ -24,8 +24,11 @@ class DatasetProtocol(Protocol):
                  protocol_name: str,
                  base_log_dir: str,
                  epoch: int,
+                 config: Dict = None,
                  ):
-        self.config = self.load_config(protocol_name, dataset_name)
+        if config is None:
+            config = self.load_config(protocol_name, dataset_name)
+        self.config = config
         if "seed" not in self.config:
             self.config["seed"] = int(np.random.randint(low=0, high=2 ** 31, dtype=np.int32))
         output_range = (-1.0, 1.0) if self.output_activation == "tanh" else (0.0, 1.0)
@@ -128,6 +131,13 @@ class DatasetProtocol(Protocol):
                                   sample_count=self.auc_sample_count)
             ]
 
+        if isinstance(model, CnC):
+            auc_callbacks_configs += [
+                AUCCallbackConfig(model.mean_relevance_energy, anomaly_pattern, labels_length=1, prefix="CnC",
+                                  convert_to_io_compare_model=False, epoch_freq=self.auc_frequency,
+                                  sample_count=self.auc_sample_count)
+            ]
+
         return auc_callbacks_configs
 
     def get_anomaly_detector_callback_configs(self) -> List[AnomalyDetectorCallbackConfig]:
@@ -154,11 +164,6 @@ class DatasetProtocol(Protocol):
         return log_dir
 
     # region Config
-    @property
-    @abstractmethod
-    def output_length(self) -> int:
-        raise NotImplementedError
-
     def get_config_path(self, protocol_name: str = None, dataset_name: str = None):
         if protocol_name is None:
             protocol_name = self.protocol_name
@@ -169,8 +174,11 @@ class DatasetProtocol(Protocol):
 
     def load_config(self, protocol_name: str = None, dataset_name: str = None) -> Dict:
         config_path = self.get_config_path(protocol_name, dataset_name)
-        with open(config_path) as config_file:
-            config = json.load(config_file)
+        try:
+            with open(config_path) as config_file:
+                config = json.load(config_file)
+        except json.decoder.JSONDecodeError:
+            raise RuntimeError("Could not load protocol config from {}".format(config_path))
         return config
 
     def save_model_config(self, log_dir: str):
@@ -182,6 +190,11 @@ class DatasetProtocol(Protocol):
         source_path = os.path.join(self.dataset_folder, tfrecords_config_filename)
         target_path = os.path.join(log_dir, "dataset_{}".format(tfrecords_config_filename))
         copyfile(src=source_path, dst=target_path)
+
+    def get_config_value(self, key: str, default: Any) -> Any:
+        if key not in self.config:
+            self.config[key] = default
+        return self.config[key]
 
     # region Training
     @property
@@ -213,21 +226,57 @@ class DatasetProtocol(Protocol):
 
     @property
     def auc_frequency(self) -> int:
-        if "auc_frequency" not in self.config:
-            self.config["auc_frequency"] = 1
-        return self.config["auc_frequency"]
+        return self.get_config_value("auc_frequency", default=1)
 
     @property
     def auc_sample_count(self) -> int:
-        if "auc_sample_count" not in self.config:
-            self.config["auc_sample_count"] = 128
-        return self.config["auc_sample_count"]
+        return self.get_config_value("auc_sample_count", default=128)
+
+    # endregion
+
+    # region Shapes
+    @property
+    def encoder_input_shape(self) -> Tuple[int, ...]:
+        raise NotImplementedError("This currently must be defined in sub-classes.")
+
+    # region Time (step_size, step_count, ...)
+    @property
+    def input_length(self) -> int:
+        if self.model_architecture in ["aep", "preled"]:
+            return self.step_size
+        else:
+            return self.output_length
+
+    @property
+    def output_length(self) -> int:
+        if self.model_architecture in ["iae", "viae", "and", "iaegan", "avp"]:
+            return self.step_size * self.step_count
+        elif self.model_architecture in ["aep", "preled"]:
+            return self.step_size * 2
+        else:
+            return self.step_size
+
+    @property
+    def step_size(self) -> int:
+        return self.config["step_size"]
+
+    @property
+    def step_count(self) -> int:
+        return self.config["step_count"]
+
+    @property
+    def extra_steps(self) -> int:
+        if "extra_steps" in self.config:
+            return int(self.config["extra_steps"])
+        return 0
 
     # endregion
 
     @property
     def channels(self) -> int:
         return self.config["channels"]
+
+    # endregion
 
     # region Encoder
     @property
@@ -255,12 +304,23 @@ class DatasetProtocol(Protocol):
         return kernel_sizes
 
     @property
-    def code_size(self) -> int:
+    def latent_code_size(self) -> int:
         return self.config["code_size"]
+
+    @property
+    def encoder_output_size(self) -> int:
+        code_size = self.latent_code_size
+        if self.model_architecture in ["vae", "viae", "vaegan", "iaegan", "avp"]:
+            code_size *= 2
+        return code_size
 
     @property
     def code_activation(self) -> str:
         return self.config["code_activation"]
+
+    @property
+    def kl_divergence_lambda(self) -> float:
+        return self.get_config_value("kl_divergence_lambda", default=1e-2)
 
     # endregion
 
@@ -355,6 +415,132 @@ class DatasetProtocol(Protocol):
     # endregion
     # endregion
 
+    # region Make models
+
+    def make_ae(self) -> AE:
+        encoder, decoder = self.make_encoder_decoder()
+        model = AE(encoder=encoder, decoder=decoder)
+        return model
+
+    def make_vae(self) -> VAE:
+        encoder, decoder = self.make_encoder_decoder()
+        model = VAE(encoder=encoder,
+                    decoder=decoder,
+                    kl_divergence_loss_factor=self.kl_divergence_lambda,
+                    )
+        return model
+
+    def make_iae(self) -> IAE:
+        encoder, decoder = self.make_encoder_decoder()
+        model = IAE(encoder=encoder,
+                    decoder=decoder,
+                    step_size=self.step_size,
+                    use_stochastic_loss=False
+                    )
+        return model
+
+    def make_viae(self) -> VIAE:
+        encoder, decoder = self.make_encoder_decoder()
+        model = VIAE(encoder=encoder,
+                     decoder=decoder,
+                     step_size=self.step_size,
+                     use_stochastic_loss=False,
+                     kl_divergence_lambda=self.kl_divergence_lambda,
+                     )
+        return model
+
+    def make_iaegan(self) -> IAEGAN:
+        encoder, decoder = self.make_encoder_decoder()
+        discriminator = self.make_discriminator()
+
+        model = IAEGAN(encoder=encoder,
+                       decoder=decoder,
+                       discriminator=discriminator,
+                       step_size=self.step_size,
+                       extra_steps=self.extra_steps,
+                       use_stochastic_loss=False,
+                       reconstruction_lambda=1e0,
+                       kl_divergence_lambda=1e-3,
+                       adversarial_lambda=1e-2,
+                       gradient_penalty_lambda=1e1,
+                       )
+        return model
+
+    def make_cnc(self) -> CnC:
+        encoder, decoder = self.make_encoder_decoder()
+        relevance_estimator = make_encoder(input_shape=self.encoder_input_shape,
+                                           mode=self.encoder_mode,
+                                           filters=self.encoder_filters,
+                                           kernel_size=self.encoder_kernel_sizes,
+                                           strides=self.encoder_strides,
+                                           code_size=self.encoder_output_size,
+                                           code_activation="linear",
+                                           basic_block_count=self.basic_block_count,
+                                           name="RelevanceEstimator",
+                                           )
+
+        model = CnC(encoder=encoder,
+                    relevance_estimator=relevance_estimator,
+                    decoder=decoder,
+                    relevance_loss_weight=1.0,
+                    skip_loss_weight=1.0,
+                    energy_margin=1.0,
+                    theta=0.5)
+        return model
+
+    def make_led(self) -> LED:
+        encoder, decoder = self.make_encoder_decoder()
+
+        # from custom_tf_models.description_length.LED import LEDGoal
+        # goal_schedule = LEDGoal(initial_rate=0.03, decay_steps=1000, decay_rate=0.85, offset=0.03, staircase=False)
+        goal_schedule = None
+
+        model = LED(encoder=encoder,
+                    decoder=decoder,
+                    features_per_block=1,
+                    merge_dims_with_features=True,
+                    description_energy_loss_lambda=1e-3,
+                    use_noise=True,
+                    noise_stddev=0.1,
+                    reconstruct_noise=False,
+                    goal_schedule=goal_schedule,
+                    allow_negative_description_loss_weight=True,
+                    goal_delta_factor=4.0,
+                    unmasked_reconstruction_weight=1.0,
+                    energy_margin=1.0)
+        return model
+
+    def make_iterative_ae(self) -> IterativeAE:
+        encoder_input_batch_shape = self.get_encoder_input_batch_shape()
+        encoders = []
+        decoders = []
+
+        block_size = 16
+        iteration_count = self.latent_code_size // block_size
+        for i in range(iteration_count):
+            encoder = make_encoder(input_shape=self.encoder_input_shape, mode=self.encoder_mode,
+                                   filters=self.encoder_filters, kernel_size=self.encoder_kernel_sizes,
+                                   strides=self.encoder_strides, code_size=block_size,
+                                   code_activation=self.code_activation,
+                                   basic_block_count=self.basic_block_count, name="Encoder_{}".format(i))
+            decoder_input_shape = encoder.compute_output_shape(encoder_input_batch_shape)[1:]
+            decoder = make_decoder(input_shape=decoder_input_shape, mode=self.decoder_mode,
+                                   filters=self.decoder_filters, kernel_size=self.decoder_kernel_sizes,
+                                   stem_kernel_size=self.stem_kernel_size, strides=self.decoder_strides,
+                                   channels=self.channels, output_activation="linear",
+                                   basic_block_count=self.basic_block_count, name="Decoder_{}".format(i))
+            encoders.append(encoder)
+            decoders.append(decoder)
+
+        model = IterativeAE(encoders=encoders,
+                            decoders=decoders,
+                            output_activation=self.output_activation,
+                            stop_accumulator_gradients=False,
+                            )
+        return model
+
+    # endregion
+
     # region Make sub-models
     # region Base
     def make_encoder(self, input_shape, name="Encoder") -> Model:
@@ -363,7 +549,7 @@ class DatasetProtocol(Protocol):
                                filters=self.encoder_filters,
                                kernel_size=self.encoder_kernel_sizes,
                                strides=self.encoder_strides,
-                               code_size=self.code_size,
+                               code_size=self.encoder_output_size,
                                code_activation=self.code_activation,
                                basic_block_count=self.basic_block_count,
                                name=name,
@@ -384,10 +570,21 @@ class DatasetProtocol(Protocol):
                                )
         return decoder
 
+    def make_encoder_decoder(self, input_shape=None, encoder_name="Encoder", decoder_name="Decoder"):
+        if input_shape is None:
+            input_shape = self.encoder_input_shape
+
+        encoder = self.make_encoder(input_shape, name=encoder_name)
+        decoder = self.make_decoder(self.get_latent_code_shape(encoder), name=decoder_name)
+        return encoder, decoder
+
     # endregion
 
     # region Adversarial
-    def make_discriminator(self, input_shape) -> Model:
+    def make_discriminator(self, input_shape=None) -> Model:
+        if input_shape is None:
+            input_shape = self.get_discriminator_input_shape()
+
         include_intermediate_output = self.model_architecture in ["vaegan", "avp"]
         discriminator = make_discriminator(input_shape=input_shape,
                                            mode=self.discriminator_mode,
@@ -401,6 +598,30 @@ class DatasetProtocol(Protocol):
         return discriminator
 
     # endregion
+
+    # region Sub-models input shapes
+
+    def get_encoder_input_batch_shape(self, use_batch_size=False):
+        batch_size = self.batch_size if use_batch_size else None
+        shape = (batch_size, *self.encoder_input_shape)
+        return shape
+
+    def get_latent_code_batch_shape(self, encoder: Model):
+        shape = encoder.compute_output_shape(self.get_encoder_input_batch_shape())
+        shape = (*shape[:-1], self.latent_code_size)
+        return shape
+
+    def get_latent_code_shape(self, encoder: Model):
+        return self.get_latent_code_batch_shape(encoder=encoder)[1:]
+
+    def get_discriminator_input_shape(self) -> Tuple[int, int]:
+        shape = self.encoder_input_shape
+        if self.model_architecture in ["iaegan"]:
+            shape = (self.input_length, shape[-1])
+        return shape
+
+    # endregion
+
     # endregion
 
     # region Optimizers
@@ -432,3 +653,10 @@ class DatasetProtocol(Protocol):
         return self.make_optimizer(self.discriminator_learning_rate_schedule, discriminator_optimizer_class)
 
     # endregion
+
+    def setup_model(self, model: Model):
+        model.build(self.get_encoder_input_batch_shape(False))
+        if isinstance(model, (IAE, LED)):
+            # noinspection PyProtectedMember
+            model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
+        model.compile(optimizer=self.make_base_optimizer())

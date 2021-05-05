@@ -89,7 +89,6 @@ class CustomModelCheckpoint(Callback):
             mode = "auto"
         return mode
 
-    # noinspection PyUnresolvedReferences
     @staticmethod
     def get_monitor_op(mode: str, monitor):
         if mode == "min":

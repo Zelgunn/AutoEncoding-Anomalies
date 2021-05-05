@@ -8,7 +8,7 @@ from typing import List, Callable, Dict, Sequence, Union, Optional
 
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig, AnomalyDetectorCallbackConfig
-from datasets import DatasetLoader, SingleSetConfig
+from datasets import DatasetLoader, SingleSetConfig, TFRecordDatasetLoader
 from misc_utils.train_utils import save_model_info
 from modalities import Pattern
 
@@ -76,25 +76,20 @@ class Protocol(object):
         self.base_log_dir = base_log_dir
 
         self.dataset_folder = get_dataset_folder(dataset_name)
-        self.dataset_config = SingleSetConfig(self.dataset_folder, output_range=output_range)
-        self.dataset_loader = DatasetLoader(self.dataset_config)
+        self.dataset_config: Optional[SingleSetConfig] = None
+        self.dataset_loader: Optional[DatasetLoader] = None
+        self.init_dataset_loader(self.dataset_folder, output_range)
+
+    def init_dataset_loader(self, dataset_folder, output_range):
+        self.dataset_config = SingleSetConfig(dataset_folder, output_range=output_range)
+        self.dataset_loader = TFRecordDatasetLoader(self.dataset_config)
 
     def make_model(self) -> Model:
         raise NotImplementedError
 
-    def train_model(self, config: ProtocolTrainConfig, **kwargs):
-        print("Protocol - Training : Starting training on {}.".format(self.dataset_name))
-        self.load_weights(epoch=config.initial_epoch)
-
-        print("Protocol - Training : Making log dirs ...")
-        log_dir = self.make_log_dir("train")
-
-        print("Protocol - Training : Making callbacks ...")
-        callbacks = self.make_callback(log_dir, config)
-
-        print("Protocol - Training : Making datasets ...")
-        subset = self.dataset_loader.train_subset
+    def make_train_dataset_splits(self, config: ProtocolTrainConfig):
         split_folders = {}
+        subset = self.dataset_loader.train_subset
         train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern,
                                                                     split=0.9,
                                                                     batch_size=config.batch_size,
@@ -106,6 +101,21 @@ class Protocol(object):
             print("Elements in {} :".format(dataset_name))
             for path in split_folders[dataset_name]:
                 print("===> {}".format(os.path.basename(path)))
+
+        return train_dataset, val_dataset
+
+    def train_model(self, config: ProtocolTrainConfig, **kwargs):
+        print("Protocol - Training : Starting training on {}.".format(self.dataset_name))
+        self.load_weights(epoch=config.initial_epoch, expect_partial=False)
+
+        print("Protocol - Training : Making log dirs ...")
+        log_dir = self.make_log_dir("train")
+
+        print("Protocol - Training : Making callbacks ...")
+        callbacks = self.make_callback(log_dir, config)
+
+        print("Protocol - Training : Making datasets ...")
+        train_dataset, val_dataset = self.make_train_dataset_splits(config=config)
 
         print("Protocol - Training : Fit loop ...")
         self.model.fit(train_dataset, steps_per_epoch=config.steps_per_epoch, epochs=config.epochs,
@@ -163,7 +173,7 @@ class Protocol(object):
         return callbacks
 
     def test_model(self, config: ProtocolTestConfig):
-        self.load_weights(epoch=config.epoch)
+        self.load_weights(epoch=config.epoch, expect_partial=True)
 
         compare_metrics = list(known_metrics.keys())
         additional_metrics = self.additional_test_metrics
@@ -177,7 +187,7 @@ class Protocol(object):
 
         log_dir = self.make_log_dir("anomaly_detection")
 
-        if self.dataset_name is "emoly":
+        if self.dataset_name == "emoly":
             folders = self.dataset_loader.test_subset.subset_folders
             folders = [folder for folder in folders if "acted" in folder]
             self.dataset_loader.test_subset.subset_folders = folders
@@ -194,7 +204,7 @@ class Protocol(object):
                                               )
 
     def log_model_latent_codes(self, config: ProtocolTestConfig):
-        self.load_weights(epoch=config.epoch)
+        self.load_weights(epoch=config.epoch, expect_partial=True)
 
         anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
                                            pattern=config.pattern,
@@ -246,13 +256,16 @@ class Protocol(object):
         save_model_info(self.model, log_dir)
         return log_dir
 
-    def load_weights(self, epoch: int, verbose=False):
+    def load_weights(self, epoch: int, verbose=False, expect_partial=False):
         weights_path = os.path.join(self.dataset_log_dir, "weights_{epoch:03d}")
         if verbose:
             print("Protocol : Loading weights from {} ..".format(weights_path))
 
         if epoch > 0:
-            self.model.load_weights(weights_path.format(epoch=epoch))
+            checkpoint = tf.train.Checkpoint(self.model)
+            checkpoint.restore(weights_path.format(epoch=epoch))
+            if expect_partial:
+                checkpoint.expect_partial()
 
     # region Properties
     @property
@@ -266,7 +279,6 @@ class Protocol(object):
     @property
     def autoencoder_name(self) -> str:
         if hasattr(self.autoencoder, "name"):
-            # noinspection PyUnresolvedReferences
             return self.autoencoder.name
         else:
             return self.autoencoder.__name__

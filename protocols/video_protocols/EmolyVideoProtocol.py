@@ -1,3 +1,5 @@
+from typing import Dict
+
 from protocols import VideoProtocol, ProtocolTestConfig
 
 
@@ -5,10 +7,12 @@ class EmolyVideoProtocol(VideoProtocol):
     def __init__(self,
                  base_log_dir: str,
                  epoch=0,
+                 config: Dict = None,
                  ):
         super(EmolyVideoProtocol, self).__init__(base_log_dir=base_log_dir,
                                                  dataset_name="emoly",
-                                                 epoch=epoch)
+                                                 epoch=epoch,
+                                                 config=config)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()

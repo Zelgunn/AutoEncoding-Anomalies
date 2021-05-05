@@ -1,3 +1,5 @@
+from typing import Dict
+
 from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
 from protocols import VideoProtocol, ProtocolTestConfig
 
@@ -6,7 +8,8 @@ class SubwayProtocol(VideoProtocol):
     def __init__(self,
                  base_log_dir: str,
                  video_id: SubwayVideo,
-                 epoch=0
+                 epoch=0,
+                 config: Dict = None,
                  ):
         if video_id == SubwayVideo.EXIT:
             dataset_name = "subway_exit"
@@ -23,7 +26,8 @@ class SubwayProtocol(VideoProtocol):
 
         super(SubwayProtocol, self).__init__(base_log_dir=base_log_dir,
                                              dataset_name=dataset_name,
-                                             epoch=epoch)
+                                             epoch=epoch,
+                                             config=config)
 
     def get_test_config(self) -> ProtocolTestConfig:
         anomaly_pattern = self.get_anomaly_pattern()

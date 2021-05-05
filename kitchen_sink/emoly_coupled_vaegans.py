@@ -6,7 +6,7 @@ from custom_tf_models import AE
 from custom_tf_models.adversarial import CoupledVAEGANs
 from protocols.utils import get_encoder_layers, get_decoder_layers, make_discriminator, to_sequential
 from modalities import Pattern, ModalityLoadInfo, RawVideo, RawAudio, Faces
-from data_processing.video_preprocessing import make_video_preprocess
+from data_processing.video_processing.video_preprocessing import make_video_preprocess
 from protocols import Protocol, ProtocolTrainConfig
 from callbacks.configs import ImageCallbackConfig, AUCCallbackConfig
 

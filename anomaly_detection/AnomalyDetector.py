@@ -98,11 +98,10 @@ class AnomalyDetector(Model):
         results = self.evaluate_predictions(predictions=merged_predictions, labels=merged_labels)
         self.print_results(results)
 
-        samples_names = [os.path.basename(folder) for folder in dataset.test_subset.subset_folders]
         self.plot_predictions(predictions=predictions,
                               labels=labels,
                               log_dir=log_dir,
-                              samples_names=samples_names)
+                              samples_names=dataset.test_subset.sample_names)
 
         additional_config["stride"] = stride
         additional_config["pre-normalize predictions"] = pre_normalize_predictions
@@ -134,13 +133,13 @@ class AnomalyDetector(Model):
         labels = []
         predictions = [[] for _ in range(self.metric_count)]
 
-        sample_count = min(max_samples, len(subset.subset_folders)) if max_samples > 0 else len(subset.subset_folders)
+        sample_count = min(max_samples, subset.sample_count) if max_samples > 0 else subset.sample_count
         print("Making predictions for {} samples".format(sample_count))
 
         with tqdm(total=subset.size) as prog_bar:
             self.prog_bar = prog_bar
             for sample_index in range(sample_count):
-                sample_name = subset.subset_folders[sample_index]
+                sample_name = subset.sample_names[sample_index]
                 description = "Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name)
                 self.prog_bar.set_description(description)
                 sample_results = self.predict_anomalies_on_sample(subset, sample_index, stride,
@@ -347,11 +346,9 @@ class AnomalyDetector(Model):
                        fancybox=True, shadow=True)
 
         if ratio is None:
-            # noinspection PyUnresolvedReferences
             ratio = np.log(sample_length + 1) * 0.75
 
         adjust_figure_aspect(plt.gcf(), ratio)
-        # noinspection PyUnresolvedReferences
         dpi = (np.sqrt(sample_length) + 100) * 4
 
         self.plot_labels(labels)
@@ -446,19 +443,17 @@ class AnomalyDetector(Model):
         latent_codes: Union[tf.Tensor, List[tf.Tensor]] = []
         names, labels = [], []
 
-        sample_count = len(subset.subset_folders)
+        sample_count = subset.sample_count
         print("Computing latent codes for {} samples".format(sample_count))
 
         for sample_index in range(sample_count):
-            sample_folder = subset.subset_folders[sample_index]
-            print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_folder))
+            sample_name = subset.sample_names[sample_index]
+            print("Predicting on sample n{}/{} ({})".format(sample_index + 1, sample_count, sample_name))
 
             sample_latent_codes, sample_labels = self.compute_latent_codes_on_sample(subset, sample_index, stride)
             latent_codes.append(sample_latent_codes)
 
-            sample_name = os.path.split(sample_folder)[-1]
             names += [sample_name] * len(sample_latent_codes)
-
             labels.append(sample_labels)
 
         latent_codes: tf.Tensor = tf.concat(latent_codes, axis=0)
@@ -525,9 +520,7 @@ class AnomalyDetector(Model):
         end_after_half = end >= 0.5
         not_equal = start != end
 
-        # noinspection PyUnresolvedReferences
         labels = np.logical_and(start_before_half, end_after_half)
-        # noinspection PyUnresolvedReferences
         labels = np.logical_and(labels, not_equal)
         labels = np.any(labels, axis=1)
 
