@@ -4,6 +4,7 @@ import argparse
 from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
 from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTechProtocol, SubwayProtocol
 from protocols.packet_protocols import KitsuneProtocol
+from protocols.audio_video_protocols import EmolyProtocol
 
 
 def main():
@@ -49,6 +50,8 @@ def run_protocol(dataset: str, mode: str, epoch: int, log_dir: str):
         protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.MALL3)
     elif KitsuneProtocol.is_kitsune_id(dataset):
         protocol = KitsuneProtocol(base_log_dir=log_dir, epoch=epoch, kitsune_dataset=dataset)
+    elif dataset == "emoly":
+        protocol = EmolyProtocol(base_log_dir=log_dir, epoch=epoch)
     else:
         raise ValueError("Invalid dataset : `{}`".format(dataset))
 

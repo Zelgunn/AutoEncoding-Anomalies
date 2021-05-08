@@ -6,7 +6,7 @@ from custom_tf_models import AE
 from custom_tf_models.adversarial import CoupledVAEGANs
 from protocols.utils import get_encoder_layers, get_decoder_layers, make_discriminator, to_sequential
 from modalities import Pattern, ModalityLoadInfo, RawVideo, RawAudio, Faces
-from data_processing.video_processing.video_preprocessing import make_video_preprocess
+from data_processing.video_processing.video_preprocessing import make_video_preprocessor
 from protocols import Protocol, ProtocolTrainConfig
 from callbacks.configs import ImageCallbackConfig, AUCCallbackConfig
 
@@ -207,9 +207,10 @@ def main():
                         )
 
     # region Training
-    video_preprocess = make_video_preprocess(to_grayscale=video_channels == 1,
-                                             activation_range="tanh",
-                                             target_size=(video_height, video_width))
+    video_preprocess = make_video_preprocessor(to_grayscale=video_channels == 1,
+                                               activation_range="tanh",
+                                               include_labels=False,
+                                               target_size=(video_height, video_width))
 
     def preprocess(inputs):
         audio, video, faces = inputs

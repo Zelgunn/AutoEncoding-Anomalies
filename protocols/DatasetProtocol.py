@@ -476,6 +476,7 @@ class DatasetProtocol(Protocol):
                                            code_size=self.encoder_output_size,
                                            code_activation="linear",
                                            basic_block_count=self.basic_block_count,
+                                           flatten_code=False,
                                            name="RelevanceEstimator",
                                            )
 
@@ -521,7 +522,7 @@ class DatasetProtocol(Protocol):
             encoder = make_encoder(input_shape=self.encoder_input_shape, mode=self.encoder_mode,
                                    filters=self.encoder_filters, kernel_size=self.encoder_kernel_sizes,
                                    strides=self.encoder_strides, code_size=block_size,
-                                   code_activation=self.code_activation,
+                                   code_activation=self.code_activation, flatten_code=False,
                                    basic_block_count=self.basic_block_count, name="Encoder_{}".format(i))
             decoder_input_shape = encoder.compute_output_shape(encoder_input_batch_shape)[1:]
             decoder = make_decoder(input_shape=decoder_input_shape, mode=self.decoder_mode,
@@ -543,7 +544,7 @@ class DatasetProtocol(Protocol):
 
     # region Make sub-models
     # region Base
-    def make_encoder(self, input_shape, name="Encoder") -> Model:
+    def make_encoder(self, input_shape, flatten_code=False, name="Encoder") -> Model:
         encoder = make_encoder(input_shape=input_shape,
                                mode=self.encoder_mode,
                                filters=self.encoder_filters,
@@ -552,6 +553,7 @@ class DatasetProtocol(Protocol):
                                code_size=self.encoder_output_size,
                                code_activation=self.code_activation,
                                basic_block_count=self.basic_block_count,
+                               flatten_code=flatten_code,
                                name=name,
                                )
         return encoder
@@ -601,10 +603,13 @@ class DatasetProtocol(Protocol):
 
     # region Sub-models input shapes
 
-    def get_encoder_input_batch_shape(self, use_batch_size=False):
+    def to_batch_shape(self, shape, use_batch_size=False):
         batch_size = self.batch_size if use_batch_size else None
-        shape = (batch_size, *self.encoder_input_shape)
+        shape = (batch_size, *shape)
         return shape
+
+    def get_encoder_input_batch_shape(self, use_batch_size=False):
+        return self.to_batch_shape(self.encoder_input_shape, use_batch_size)
 
     def get_latent_code_batch_shape(self, encoder: Model):
         shape = encoder.compute_output_shape(self.get_encoder_input_batch_shape())

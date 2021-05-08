@@ -1,0 +1,39 @@
+{
+    "model_architecture": "modal_sync",
+    "input_time": 2.56,
+    "audio": {
+        "channels": 128,
+        "encoder": {
+            "mode": "conv",
+            "basic_block_count": 2,
+            "code_size": 32,
+            "filters": [64, 128, 256],
+            "kernel_sizes": [7, 7, 7],
+            "strides": [4, 4, 4]
+        }
+    },
+    "video": {
+        "image_size": [128, 128],
+        "channels": 1,
+        "encoder": {
+            "mode": "conv",
+            "basic_block_count": 2,
+            "code_size": 32,
+            "filters": [64, 64, 64, 64],
+            "kernel_sizes": [7, 3, 3, 3],
+            "strides": [[2, 4, 4], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
+        }
+    },
+    "code_activation": "relu",
+    "output_activation": "sigmoid",
+    "batch_size": 4,
+    "learning_rate": 0.0001,
+    "optimizer": "adam",
+    "seed": 42,
+    "epochs": 128,
+    "steps_per_epoch": 1000,
+    "validation_steps": 128,
+    "save_frequency": "epoch",
+    "auc_frequency": 1,
+    "current_test": "Modal Sync : Dev mode"
+}

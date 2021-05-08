@@ -6,6 +6,7 @@ import time
 import os
 from typing import List, Callable, Dict, Sequence, Union, Optional
 
+from custom_tf_models import AE
 from anomaly_detection import AnomalyDetector, known_metrics
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig, AnomalyDetectorCallbackConfig
 from datasets import DatasetLoader, SingleSetConfig, TFRecordDatasetLoader
@@ -90,12 +91,20 @@ class Protocol(object):
     def make_train_dataset_splits(self, config: ProtocolTrainConfig):
         split_folders = {}
         subset = self.dataset_loader.train_subset
-        train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern,
-                                                                    split=0.9,
-                                                                    batch_size=config.batch_size,
-                                                                    seed=self.seed,  # numpy seed
-                                                                    parallel_cores=8,
-                                                                    split_folders=split_folders)
+        split = 1.0
+        if split >= 1.0:
+            train_dataset = subset.make_tf_dataset(config.pattern,
+                                                   batch_size=config.batch_size,
+                                                   seed=self.seed,
+                                                   parallel_cores=8)
+            val_dataset = None
+        else:
+            train_dataset, val_dataset = subset.make_tf_datasets_splits(config.pattern,
+                                                                        split=split,
+                                                                        batch_size=config.batch_size,
+                                                                        seed=self.seed,  # numpy seed
+                                                                        parallel_cores=8,
+                                                                        split_folders=split_folders)
 
         for dataset_name in split_folders:
             print("Elements in {} :".format(dataset_name))
@@ -175,12 +184,16 @@ class Protocol(object):
     def test_model(self, config: ProtocolTestConfig):
         self.load_weights(epoch=config.epoch, expect_partial=True)
 
-        compare_metrics = list(known_metrics.keys())
+        if isinstance(self.model, AE):
+            compare_metrics = list(known_metrics.keys())
+        else:
+            compare_metrics = None
+
         additional_metrics = self.additional_test_metrics
         if config.additional_metrics is not None:
             additional_metrics = [*additional_metrics, *config.additional_metrics]
 
-        anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
+        anomaly_detector = AnomalyDetector(model=self.autoencoder,
                                            pattern=config.pattern,
                                            compare_metrics=compare_metrics,
                                            additional_metrics=additional_metrics)
@@ -206,7 +219,7 @@ class Protocol(object):
     def log_model_latent_codes(self, config: ProtocolTestConfig):
         self.load_weights(epoch=config.epoch, expect_partial=True)
 
-        anomaly_detector = AnomalyDetector(autoencoder=self.autoencoder,
+        anomaly_detector = AnomalyDetector(model=self.autoencoder,
                                            pattern=config.pattern,
                                            compare_metrics=[],
                                            additional_metrics=None)
@@ -264,8 +277,8 @@ class Protocol(object):
         if epoch > 0:
             checkpoint = tf.train.Checkpoint(self.model)
             checkpoint.restore(weights_path.format(epoch=epoch))
-            if expect_partial:
-                checkpoint.expect_partial()
+            # if expect_partial:
+            #     checkpoint.expect_partial()
 
     # region Properties
     @property

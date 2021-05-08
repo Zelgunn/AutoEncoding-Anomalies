@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def extract_faces(video: tf.Tensor, face_coord: tf.Tensor, *args):
+def extract_faces(video: tf.Tensor, face_coord: tf.Tensor):
     _, height, width, _ = tf.unstack(tf.shape(video))
     height = tf.cast(height, tf.float32)
     width = tf.cast(width, tf.float32)
@@ -22,4 +22,4 @@ def extract_faces(video: tf.Tensor, face_coord: tf.Tensor, *args):
 
     video = tf.image.crop_to_bounding_box(video, offset_height, offset_width, target_height, target_width)
 
-    return video, *args
+    return video

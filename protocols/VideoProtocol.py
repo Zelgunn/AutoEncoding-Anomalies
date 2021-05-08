@@ -13,8 +13,7 @@ from custom_tf_models import LED, RDL, ALED, PreLED
 from custom_tf_models.adversarial import VAEGAN, AVP
 from custom_tf_models.energy_based import EBGAN, EBM, EBAE
 from custom_tf_models.description_length.LED import LEDGoal
-from data_processing.video_processing.video_preprocessing import make_video_augmentation, make_video_preprocess
-
+from data_processing.video_processing import make_video_augmented_preprocessor, make_video_preprocessor
 from data_processing.video_processing.VideoPatchExtractor import VideoPatchExtractor
 
 
@@ -264,8 +263,8 @@ class VideoProtocol(DatasetProtocol):
         )
         return pattern
 
-    def get_image_pattern(self) -> Pattern:
-        video_preprocess = self.make_video_preprocess()
+    def get_image_pattern(self, include_labels: bool = False) -> Pattern:
+        video_preprocess = self.make_video_preprocess(include_labels)
 
         if self.extract_patches:
             video_patch_extractor = VideoPatchExtractor(patch_size=self.height)
@@ -280,29 +279,34 @@ class VideoProtocol(DatasetProtocol):
             batch_processor=batch_processor,
             postprocessor=postprocessor,
         )
+
+        if include_labels:
+            return pattern.with_labels()
+
         return pattern
 
     def get_anomaly_pattern(self) -> Pattern:
-        return self.get_image_pattern().with_labels()
+        return self.get_image_pattern(include_labels=True)
 
     # endregion
 
     # region Pre-processes / Post-process
     def make_video_augmentation(self) -> Callable:
         negative_prob = 0.5 if self.use_random_negative else 0.0
-        return make_video_augmentation(length=self.output_length,
-                                       height=self.height,
-                                       width=self.width,
-                                       channels=self.dataset_channels,
-                                       dropout_noise_ratio=self.dropout_noise_ratio,
-                                       negative_prob=negative_prob,
-                                       activation_range=self.output_activation)
+        return make_video_augmented_preprocessor(length=self.output_length,
+                                                 height=self.height,
+                                                 width=self.width,
+                                                 channels=self.dataset_channels,
+                                                 dropout_noise_ratio=self.dropout_noise_ratio,
+                                                 negative_prob=negative_prob,
+                                                 activation_range=self.output_activation)
 
-    def make_video_preprocess(self) -> Callable:
+    def make_video_preprocess(self, include_labels: bool) -> Callable:
         target_size = (self.height, self.width) if not self.extract_patches == "resize" else None
-        return make_video_preprocess(to_grayscale=self.dataset_channels == 3,
-                                     activation_range=self.output_activation,
-                                     target_size=target_size)
+        return make_video_preprocessor(to_grayscale=self.dataset_channels == 3,
+                                       activation_range=self.output_activation,
+                                       include_labels=include_labels,
+                                       target_size=target_size)
 
     def make_video_post_process(self) -> Callable:
         pass

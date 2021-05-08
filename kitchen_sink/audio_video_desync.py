@@ -11,7 +11,7 @@ from modalities import Pattern, ModalityLoadInfo, RawVideo, MelSpectrogram
 from custom_tf_models.energy_based import EBM, TakeStepESF, OffsetSequences  # , IdentityESF, SwitchSamplesESF
 from CustomKerasLayers import SpatialTransformer, ResBlock1D, ResBlock3D, ResBlock1DTranspose, ResBlock3DTranspose
 from CustomKerasLayers import ExpandDims
-from data_processing.video_processing.video_preprocessing import make_video_preprocess
+from data_processing.video_processing.video_preprocessing import make_video_preprocessor
 
 
 def time_to_batch(inputs):
@@ -271,14 +271,15 @@ def main():
                         base_log_dir="../logs/tests/audio_video_desync"
                         )
 
-    video_preprocess = make_video_preprocess(to_grayscale=True,
-                                             activation_range="sigmoid",
-                                             target_size=(video_height, video_width))
+    video_train_preprocess = make_video_preprocessor(to_grayscale=True,
+                                                     activation_range="sigmoid",
+                                                     include_labels=False,
+                                                     target_size=(video_height, video_width))
 
-    def preprocess(inputs: Tuple[tf.Tensor, tf.Tensor]):
+    def train_preprocess(inputs: Tuple[tf.Tensor, tf.Tensor]):
         audio, video = inputs
         # noinspection PyArgumentList
-        video = video_preprocess(video)
+        video = video_train_preprocess(video)
         return audio, video
 
     train_pattern = Pattern(
@@ -286,7 +287,7 @@ def main():
             ModalityLoadInfo(MelSpectrogram, length=audio_load_length),
             ModalityLoadInfo(RawVideo, length=video_load_length),
         ),
-        preprocessor=preprocess
+        preprocessor=train_preprocess
     )
     # endregion
 
@@ -299,7 +300,7 @@ def main():
                                     ModalityLoadInfo(MelSpectrogram, length=audio_step_length),
                                     ModalityLoadInfo(RawVideo, length=video_step_length),
                                 ),
-                                preprocessor=preprocess
+                                preprocessor=train_preprocess
                             ),
                             is_train_callback=True,
                             name="FocusPreview",

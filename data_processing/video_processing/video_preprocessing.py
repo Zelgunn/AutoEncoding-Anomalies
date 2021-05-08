@@ -4,15 +4,15 @@ from typing import Tuple, Callable, Union, Optional
 from data_processing.common import dropout_noise, ActivationRange, apply_activation_range
 
 
-def make_video_augmentation(length: int, height: int, width: int, channels: int,
-                            activation_range: Union[ActivationRange, str],
-                            dropout_noise_ratio=0.0,
-                            gaussian_noise_std=0.0,
-                            negative_prob=0.0,
-                            ):
+def make_video_augmented_preprocessor(length: int, height: int, width: int, channels: int,
+                                      activation_range: Union[ActivationRange, str],
+                                      dropout_noise_ratio=0.0,
+                                      gaussian_noise_std=0.0,
+                                      negative_prob=0.0,
+                                      ):
     to_grayscale = channels == 3
 
-    def augment_video(video: tf.Tensor) -> tf.Tensor:
+    def augmented_preprocessor(video: tf.Tensor) -> tf.Tensor:
         video = tf.image.random_crop(video, size=(length, height, width, channels))
 
         if dropout_noise_ratio > 0.0:
@@ -32,14 +32,16 @@ def make_video_augmentation(length: int, height: int, width: int, channels: int,
 
         return video
 
-    return augment_video
+    return augmented_preprocessor
 
 
-def make_video_preprocess(to_grayscale: bool,
-                          activation_range: Union[ActivationRange, str],
-                          target_size: Tuple[int, int] = None
-                          ) -> Callable[[tf.Tensor, Optional[tf.Tensor]], Tuple[tf.Tensor, Optional[tf.Tensor]]]:
-    def preprocess(video: tf.Tensor, labels: tf.Tensor = None):
+def make_video_preprocessor(to_grayscale: bool,
+                            activation_range: Union[ActivationRange, str],
+                            include_labels: bool,
+                            target_size: Tuple[int, int] = None,
+                            ) -> Union[Callable[[tf.Tensor], tf.Tensor],
+                                       Callable[[tf.Tensor, tf.Tensor], Tuple[tf.Tensor, tf.Tensor]]]:
+    def base_preprocessor(video: tf.Tensor):
         if target_size is not None:
             (height, width) = target_size
             video = tf.image.resize(video, (height, width))
@@ -48,13 +50,17 @@ def make_video_preprocess(to_grayscale: bool,
             video = convert_to_grayscale(video)
 
         video = apply_activation_range(video, activation_range)
+        return video
 
-        if labels is None:
-            return video
-        else:
+    if include_labels:
+        def preprocessor(video: tf.Tensor, labels: tf.Tensor):
+            video = base_preprocessor(video)
             return video, labels
+    else:
+        def preprocessor(video: tf.Tensor):
+            return base_preprocessor(video)
 
-    return preprocess
+    return preprocessor
 
 
 def video_random_cropping(video: tf.Tensor, crop_ratio: float, output_length: int):

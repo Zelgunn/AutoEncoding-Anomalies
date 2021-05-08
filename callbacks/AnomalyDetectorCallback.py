@@ -31,7 +31,7 @@ class AnomalyDetectorCallback(TensorBoardPlugin):
                                                       update_freq="epoch",
                                                       epoch_freq=epoch_freq)
 
-        self.anomaly_detector = AnomalyDetector(autoencoder=autoencoder,
+        self.anomaly_detector = AnomalyDetector(model=autoencoder,
                                                 pattern=pattern,
                                                 compare_metrics=compare_metrics,
                                                 additional_metrics=additional_metrics,

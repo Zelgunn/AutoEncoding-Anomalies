@@ -6,7 +6,7 @@ from custom_tf_models import AE
 from custom_tf_models.auxiliary.EBL3 import EBL3
 from protocols.utils import get_encoder_layers, get_decoder_layers, to_sequential
 from modalities import Pattern, ModalityLoadInfo, RawVideo, MelSpectrogram
-from data_processing.video_processing.video_preprocessing import make_video_preprocess
+from data_processing.video_processing.video_preprocessing import make_video_preprocessor
 from protocols import Protocol, ProtocolTrainConfig
 from callbacks.configs import ImageCallbackConfig
 from CustomKerasLayers import ResBlock1D
@@ -259,9 +259,10 @@ def main():
                         )
 
     # region Training
-    video_preprocess = make_video_preprocess(to_grayscale=video_channels == 1,
-                                             activation_range="tanh",
-                                             target_size=(video_height, video_width))
+    video_preprocess = make_video_preprocessor(to_grayscale=video_channels == 1,
+                                               activation_range="tanh",
+                                               include_labels=False,
+                                               target_size=(video_height, video_width))
 
     def preprocess(inputs):
         audio, video = inputs

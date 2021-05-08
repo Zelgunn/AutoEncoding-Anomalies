@@ -20,7 +20,7 @@ class EmolyProtocol(AudioVideoProtocol):
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.epoch,
                                   detector_stride=32,
-                                  pre_normalize_predictions=True)
+                                  pre_normalize_predictions=False)
 
     @property
     def video_sample_rate(self) -> int:
@@ -28,4 +28,7 @@ class EmolyProtocol(AudioVideoProtocol):
 
     @property
     def audio_sample_rate(self) -> int:
-        raise NotImplementedError
+        if self.use_mfcc:
+            return 100
+        else:
+            return 48000

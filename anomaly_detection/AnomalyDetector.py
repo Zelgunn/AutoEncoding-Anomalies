@@ -17,7 +17,7 @@ from misc_utils.numpy_utils import normalize
 
 class AnomalyDetector(Model):
     def __init__(self,
-                 autoencoder: Union[Callable, AE],
+                 model: Union[Callable, Model, AE],
                  pattern: Pattern,
                  compare_metrics: Optional[List[Union[str, Callable[[tf.Tensor, tf.Tensor], tf.Tensor]]]] = "mse",
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
@@ -25,7 +25,7 @@ class AnomalyDetector(Model):
                  ):
         """
 
-        :param autoencoder:
+        :param model:
         :param pattern:
         :param compare_metrics:
         :param additional_metrics:
@@ -36,12 +36,12 @@ class AnomalyDetector(Model):
         if (compare_metrics is None) and (additional_metrics is None):
             raise ValueError("At least `compare_metrics` or `additional_metrics` must be specified.")
 
-        self.autoencoder = autoencoder
+        self.model = model
         self.pattern = pattern
         self.compare_metrics = compare_metrics
 
         if compare_metrics is not None:
-            self.io_compare_model = IOCompareModel(autoencoder=autoencoder,
+            self.io_compare_model = IOCompareModel(autoencoder=model,
                                                    postprocessor=self.pattern.postprocessor,
                                                    metrics=compare_metrics)
         else:
@@ -62,8 +62,12 @@ class AnomalyDetector(Model):
     def call(self, inputs, training=None, mask=None):
         inputs, ground_truth = inputs
 
-        inputs = tf.expand_dims(inputs, axis=0)
-        ground_truth = tf.expand_dims(ground_truth, axis=0)
+        if isinstance(inputs, (list, tuple)):
+            inputs = [tf.expand_dims(x, axis=0) for x in inputs]
+            ground_truth = [tf.expand_dims(x, axis=0) for x in ground_truth]
+        else:
+            inputs = tf.expand_dims(inputs, axis=0)
+            ground_truth = tf.expand_dims(ground_truth, axis=0)
 
         inputs = self.pattern.process_batch(inputs)
         ground_truth = self.pattern.process_batch(ground_truth)
@@ -146,6 +150,8 @@ class AnomalyDetector(Model):
                                                                   normalize_predictions=pre_normalize_predictions)
                 sample_predictions, sample_labels = sample_results
                 for i in range(self.metric_count):
+                    print(sample_name, sample_predictions[i].mean(), sample_predictions[i].min(),
+                          sample_predictions[i].max())
                     predictions[i].append(sample_predictions[i])
                 labels.append(sample_labels)
 
@@ -419,7 +425,7 @@ class AnomalyDetector(Model):
                                         dataset: DatasetLoader,
                                         stride=1,
                                         ) -> Tuple[tf.Tensor, Dict[str, Sequence]]:
-        if not hasattr(self.autoencoder, "encode"):
+        if not hasattr(self.model, "encode"):
             raise ValueError("self.autoencoder must have an `encode` method.")
 
         train_latent_codes, train_samples_infos = self.compute_latent_codes_on_subset(subset=dataset.train_subset,
@@ -476,7 +482,7 @@ class AnomalyDetector(Model):
             sample_inputs = tf.expand_dims(sample_inputs, axis=0)
             sample_inputs = self.pattern.process_batch(sample_inputs)
 
-            latent_code = self.autoencoder.encode(sample_inputs)
+            latent_code = self.model.encode(sample_inputs)
             latent_code = tf.reduce_mean(latent_code, axis=[1, 2, 3])
             latent_code = tf.reshape(latent_code, shape=[-1])
             latent_codes.append(latent_code)
@@ -492,18 +498,21 @@ class AnomalyDetector(Model):
     def metric_count(self) -> int:
         return len(self.anomaly_metrics_names)
 
-    @staticmethod
-    def unpack_sample(sample: Union[Tuple[tf.Tensor, tf.Tensor], Tuple[tf.Tensor, tf.Tensor, tf.Tensor]]
-                      ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        if len(sample) == 2:
-            sample_inputs, sample_labels = sample
-            sample_outputs = sample_inputs
+    @property
+    def modality_count(self) -> int:
+        return len(self.pattern)
 
-        elif len(sample) == 3:
+    def unpack_sample(self, sample: Union[Tuple[tf.Tensor, tf.Tensor], Tuple[tf.Tensor, tf.Tensor, tf.Tensor]]
+                      ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        if len(sample) == 3 and isinstance(sample[0], tf.Tensor) and self.modality_count != 3:
             sample_inputs, sample_outputs, sample_labels = sample
 
+        elif len(sample) == self.modality_count:
+            *sample_inputs, sample_labels = sample
+            sample_outputs = sample_inputs
+
         else:
-            raise ValueError("Length of sample must either be 2 or 3. Found {}".format(len(sample)))
+            raise ValueError("Length of sample does not match. Found {}".format(len(sample)))
 
         return sample_inputs, sample_outputs, sample_labels
 
@@ -532,7 +541,7 @@ class AnomalyDetector(Model):
 
     def get_config(self):
         return {
-            "autoencoder": self.autoencoder,
+            "autoencoder": self.model,
             "pattern": self.pattern,
             "compare_metrics": self.compare_metrics,
             "additional_metrics": self.additional_metrics,

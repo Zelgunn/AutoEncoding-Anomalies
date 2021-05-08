@@ -5,7 +5,7 @@ from tensorflow.python.keras.layers import Input, Dense, Reshape, Concatenate, L
 from custom_tf_models.energy_based.BMEG import BMEG, ModalityModels
 from CustomKerasLayers import ResBlock1D, ResBlock3D, ResBlock1DTranspose, ResBlock3DTranspose
 from modalities import Pattern, ModalityLoadInfo, RawVideo, MelSpectrogram, Faces
-from data_processing.video_processing.video_preprocessing import make_video_preprocess
+from data_processing.video_processing.video_preprocessing import make_video_preprocessor
 from protocols import Protocol, ProtocolTrainConfig
 from callbacks.configs import AudioVideoCallbackConfig, AUCCallbackConfig
 
@@ -290,9 +290,10 @@ def main():
                         )
 
     # region Training
-    video_preprocess = make_video_preprocess(to_grayscale=video_channels == 1,
-                                             activation_range="tanh",
-                                             target_size=(video_height, video_length))
+    video_preprocess = make_video_preprocessor(to_grayscale=video_channels == 1,
+                                               activation_range="tanh",
+                                               include_labels=False,
+                                               target_size=(video_height, video_length))
 
     def preprocess(inputs):
         audio, video, faces = inputs
