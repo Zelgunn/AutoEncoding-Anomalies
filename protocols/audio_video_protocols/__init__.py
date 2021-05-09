@@ -1,1 +1,2 @@
 from protocols.audio_video_protocols.EmolyProtocol import EmolyProtocol
+from protocols.audio_video_protocols.AudiosetProtocol import AudiosetProtocol
