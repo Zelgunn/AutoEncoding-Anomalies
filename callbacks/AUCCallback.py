@@ -12,7 +12,7 @@ from typing import Tuple, Optional, Callable, Union
 from anomaly_detection import IOCompareModel
 from callbacks import TensorBoardPlugin
 from misc_utils.plot_utils import plot_line2d_to_array
-from misc_utils.general import to_constant_list
+from misc_utils.general import TensorList, SingleTensor, to_constant_list, unpack_test_sample
 from misc_utils.numpy_utils import normalize
 from datasets import SubsetLoader
 from modalities import Pattern
@@ -101,9 +101,9 @@ class AUCCallback(TensorBoardPlugin):
     def __init__(self,
                  predictions_model: Model,
                  tensorboard: TensorBoard,
-                 inputs: np.ndarray,
-                 outputs: np.ndarray,
-                 labels: np.ndarray,
+                 inputs: TensorList,
+                 outputs: TensorList,
+                 labels: SingleTensor,
                  update_freq: int or str = "epoch",
                  epoch_freq: int = None,
                  plot_size: Tuple = None,
@@ -218,6 +218,7 @@ class AUCCallback(TensorBoardPlugin):
                     test_subset: SubsetLoader,
                     pattern: Pattern,
                     labels_length: int,
+                    modality_count: int,
                     samples_count=512,
                     epoch_freq=1,
                     batch_size=32,
@@ -225,14 +226,7 @@ class AUCCallback(TensorBoardPlugin):
                     seed=None
                     ) -> "AUCCallback":
         batch = test_subset.get_batch(batch_size=samples_count, pattern=pattern, seed=seed)
-
-        if pattern.output_count == 2:
-            inputs, labels = batch
-            outputs = inputs
-        elif pattern.output_count == 3:
-            inputs, outputs, labels = batch
-        else:
-            raise ValueError("Pattern's length is {} and should either be 2 and 3.".format(pattern.output_count))
+        inputs, outputs, labels = unpack_test_sample(batch, modality_count=modality_count)
 
         if not isinstance(predictions_model, IOCompareModel):
             outputs = None

@@ -34,7 +34,8 @@ class SubwayProtocol(VideoProtocol):
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.epoch,
                                   detector_stride=32,
-                                  pre_normalize_predictions=True)
+                                  pre_normalize_predictions=True,
+                                  compare_metrics="mae")
 
     @property
     def dataset_channels(self) -> int:

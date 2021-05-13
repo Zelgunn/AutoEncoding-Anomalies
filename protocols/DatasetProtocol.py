@@ -475,6 +475,7 @@ class DatasetProtocol(Protocol):
                                            strides=self.encoder_strides,
                                            code_size=self.encoder_output_size,
                                            code_activation="linear",
+                                           use_code_bias=True,
                                            basic_block_count=self.basic_block_count,
                                            flatten_code=False,
                                            name="RelevanceEstimator",
@@ -522,7 +523,7 @@ class DatasetProtocol(Protocol):
             encoder = make_encoder(input_shape=self.encoder_input_shape, mode=self.encoder_mode,
                                    filters=self.encoder_filters, kernel_size=self.encoder_kernel_sizes,
                                    strides=self.encoder_strides, code_size=block_size,
-                                   code_activation=self.code_activation, flatten_code=False,
+                                   code_activation=self.code_activation, use_code_bias=True, flatten_code=False,
                                    basic_block_count=self.basic_block_count, name="Encoder_{}".format(i))
             decoder_input_shape = encoder.compute_output_shape(encoder_input_batch_shape)[1:]
             decoder = make_decoder(input_shape=decoder_input_shape, mode=self.decoder_mode,
@@ -552,6 +553,7 @@ class DatasetProtocol(Protocol):
                                strides=self.encoder_strides,
                                code_size=self.encoder_output_size,
                                code_activation=self.code_activation,
+                               use_code_bias=True,
                                basic_block_count=self.basic_block_count,
                                flatten_code=flatten_code,
                                name=name,

@@ -1,10 +1,10 @@
 from tensorflow.python.keras.models import Sequential, Model
 from tensorflow.python.keras.layers import Layer, Dense, Flatten
+from tensorflow.python.keras.layers import Conv1D, Conv2D, Conv3D
 from tensorflow.python.keras.layers import AveragePooling1D, AveragePooling2D, AveragePooling3D
 from tensorflow.python.keras.layers import UpSampling1D, UpSampling2D, UpSampling3D
-from tensorflow.python.keras.layers.convolutional import Conv
 from tensorflow.python.ops.init_ops import VarianceScaling
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Type
 
 from CustomKerasLayers import ResBlockND
 
@@ -16,6 +16,7 @@ def make_encoder(input_shape: Tuple[int, ...],
                  strides: Union[List[Tuple[int, ...]], List[List[int]], List[int]],
                  code_size: int,
                  code_activation: Union[str, Layer],
+                 use_code_bias: bool,
                  basic_block_count=1,
                  flatten_code=False,
                  name="Encoder"
@@ -27,6 +28,7 @@ def make_encoder(input_shape: Tuple[int, ...],
                                 strides=strides,
                                 code_size=code_size,
                                 code_activation=code_activation,
+                                use_code_bias=use_code_bias,
                                 basic_block_count=basic_block_count,
                                 flatten_code=flatten_code,
                                 name=name)
@@ -72,7 +74,7 @@ def make_discriminator(input_shape: Tuple[int, ...],
                        ):
     core_model = make_encoder(input_shape=input_shape, mode=mode, filters=filters, kernel_size=kernel_size,
                               strides=strides, code_size=intermediate_size, code_activation=intermediate_activation,
-                              basic_block_count=basic_block_count, flatten_code=False, name=name)
+                              use_code_bias=False, basic_block_count=basic_block_count, flatten_code=False, name=name)
 
     input_layer = core_model.input
     intermediate_output = core_model.output
@@ -94,6 +96,7 @@ def get_encoder_layers(rank: int,
                        strides: Union[List[Tuple[int, int, int]], List[List[int]], List[int]],
                        code_size: int,
                        code_activation: Union[str, Layer],
+                       use_code_bias: bool,
                        flatten_code: bool,
                        name: str,
                        **kwargs
@@ -103,15 +106,15 @@ def get_encoder_layers(rank: int,
     layer_count = len(filters)
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size] * layer_count
-    shared_params = {"rank": rank, "transposed": False, "mode": mode, "use_bias": True, **kwargs}
+    shared_params = {"rank": rank, "transposed": False, "mode": mode, **kwargs}
 
     layer_activation = "linear" if mode == "residual" else "relu"
     for i in range(layer_count):
-        layer = get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
+        layer = get_layer(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i], use_bias=True,
                           activation=layer_activation, name="{}_{}".format(name, i), **shared_params)
         layers += layer
 
-    latent_code_layer = get_layer(filters=code_size, kernel_size=1, strides=1,
+    latent_code_layer = get_layer(filters=code_size, kernel_size=1, strides=1, use_bias=use_code_bias,
                                   activation=code_activation, name="{}_LatentCodeLayer".format(name), **shared_params)
     layers += latent_code_layer
 
@@ -167,9 +170,10 @@ def get_layer(rank: int,
     padding = dict_get(kwargs, "padding", default="same")
     if mode == "conv":
         kernel_initializer = dict_get(kwargs, "kernel_initializer", default=VarianceScaling())
-        main_layer = Conv(rank=rank, filters=filters, kernel_size=kernel_size, kernel_initializer=kernel_initializer,
-                          strides=1, padding=padding, activation=activation, use_bias=use_bias,
-                          name=name)
+        conv_class = get_conv_class(rank)
+        main_layer = conv_class(filters=filters, kernel_size=kernel_size, kernel_initializer=kernel_initializer,
+                                strides=1, padding=padding, activation=activation, use_bias=use_bias,
+                                name=name)
     elif mode == "dense":
         kernel_initializer = dict_get(kwargs, "kernel_initializer", default=VarianceScaling())
         main_layer = Dense(units=filters, activation=activation, use_bias=use_bias,
@@ -201,6 +205,11 @@ def to_sequential(layers: List[Layer], input_shape: Tuple[int, ...], name: str) 
     # noinspection PyProtectedMember
     layers[0]._batch_input_shape = (None, *input_shape)
     return Sequential(layers=layers, name=name)
+
+
+def get_conv_class(rank: int) -> Union[Type[Conv1D], Type[Conv2D], Type[Conv3D]]:
+    conv_classes = {1: Conv1D, 2: Conv2D, 3: Conv3D}
+    return conv_classes[rank]
 
 
 def upsampling(rank: int,

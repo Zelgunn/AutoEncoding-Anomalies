@@ -13,6 +13,7 @@ from datasets import DatasetLoader, SubsetLoader
 from modalities import Pattern
 from custom_tf_models import AE
 from misc_utils.numpy_utils import normalize
+from misc_utils.general import unpack_test_sample
 
 
 class AnomalyDetector(Model):
@@ -168,7 +169,7 @@ class AnomalyDetector(Model):
         predictions, labels = None, []
 
         for sample in dataset:
-            sample_inputs, sample_outputs, sample_labels = self.unpack_sample(sample)
+            sample_inputs, sample_outputs, sample_labels = unpack_test_sample(sample, self.modality_count)
             sample_predictions = self([sample_inputs, sample_outputs])
 
             labels.append(sample_labels)
@@ -477,7 +478,7 @@ class AnomalyDetector(Model):
         latent_codes, labels = [], []
 
         for sample in dataset:
-            sample_inputs, _, sample_labels = self.unpack_sample(sample)
+            sample_inputs, _, sample_labels = unpack_test_sample(sample, self.modality_count)
 
             sample_inputs = tf.expand_dims(sample_inputs, axis=0)
             sample_inputs = self.pattern.process_batch(sample_inputs)
@@ -500,21 +501,7 @@ class AnomalyDetector(Model):
 
     @property
     def modality_count(self) -> int:
-        return len(self.pattern)
-
-    def unpack_sample(self, sample: Union[Tuple[tf.Tensor, tf.Tensor], Tuple[tf.Tensor, tf.Tensor, tf.Tensor]]
-                      ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-        if len(sample) == 3 and isinstance(sample[0], tf.Tensor) and self.modality_count != 3:
-            sample_inputs, sample_outputs, sample_labels = sample
-
-        elif len(sample) == self.modality_count:
-            *sample_inputs, sample_labels = sample
-            sample_outputs = sample_inputs
-
-        else:
-            raise ValueError("Length of sample does not match. Found {}".format(len(sample)))
-
-        return sample_inputs, sample_outputs, sample_labels
+        return len(self.pattern) - 1
 
     @staticmethod
     def timestamps_labels_to_frame_labels(labels: Union[List[np.ndarray], List[tf.Tensor]]) -> np.ndarray:

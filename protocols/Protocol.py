@@ -45,6 +45,7 @@ class ProtocolTestConfig(object):
                  epoch: int,
                  detector_stride: int,
                  pre_normalize_predictions: bool,
+                 compare_metrics: Union[Union[str, Callable], List[Union[str, Callable]]],
                  additional_metrics: List[Callable[[tf.Tensor], tf.Tensor]] = None,
                  **kwargs,
                  ):
@@ -52,6 +53,8 @@ class ProtocolTestConfig(object):
         self.epoch = epoch
         self.detector_stride = detector_stride
         self.pre_normalize_predictions = pre_normalize_predictions
+        compare_metrics = compare_metrics if isinstance(compare_metrics, list) else [compare_metrics]
+        self.compare_metrics: List[Union[str, Callable]] = compare_metrics
         self.additional_metrics = additional_metrics
         self.kwargs = kwargs
 
@@ -91,7 +94,7 @@ class Protocol(object):
     def make_train_dataset_splits(self, config: ProtocolTrainConfig):
         split_folders = {}
         subset = self.dataset_loader.train_subset
-        split = 1.0
+        split = 0.9
         if split >= 1.0:
             train_dataset = subset.make_tf_dataset(config.pattern,
                                                    batch_size=config.batch_size,
@@ -137,7 +140,7 @@ class Protocol(object):
                       ) -> List[Callback]:
         print("Protocol - Make Callbacks - Tensorboard ...")
         tensorboard = TensorBoard(log_dir=log_dir, update_freq=32, profile_batch=0,
-                                  histogram_freq=1, write_images=False)
+                                  histogram_freq=0, write_images=False)
         callbacks = [tensorboard, TerminateOnNaN()]
         # region Checkpoint
         print("Protocol - Make Callbacks - Checkpoint ...")
@@ -184,10 +187,7 @@ class Protocol(object):
     def test_model(self, config: ProtocolTestConfig):
         self.load_weights(epoch=config.epoch, expect_partial=True)
 
-        if isinstance(self.model, AE):
-            compare_metrics = list(known_metrics.keys())
-        else:
-            compare_metrics = None
+        compare_metrics = config.compare_metrics if isinstance(self.model, AE) else None
 
         additional_metrics = self.additional_test_metrics
         if config.additional_metrics is not None:

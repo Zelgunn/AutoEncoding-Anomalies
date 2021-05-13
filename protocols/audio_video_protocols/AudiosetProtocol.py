@@ -15,11 +15,7 @@ class AudiosetProtocol(AudioVideoProtocol):
                                                config=config)
 
     def get_test_config(self) -> ProtocolTestConfig:
-        anomaly_pattern = self.get_anomaly_pattern()
-        return ProtocolTestConfig(pattern=anomaly_pattern,
-                                  epoch=self.epoch,
-                                  detector_stride=32,
-                                  pre_normalize_predictions=False)
+        raise RuntimeError("Audioset is not an anomaly detection dataset.")
 
     @property
     def video_sample_rate(self) -> int:

@@ -85,7 +85,8 @@ class KitsuneProtocol(PacketProtocol):
         return ProtocolTestConfig(pattern=anomaly_pattern,
                                   epoch=self.epoch,
                                   detector_stride=32,
-                                  pre_normalize_predictions=True)
+                                  pre_normalize_predictions=True,
+                                  compare_metrics="log_mae")
 
     @property
     def channels(self) -> int:

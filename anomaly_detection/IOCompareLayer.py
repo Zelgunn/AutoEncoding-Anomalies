@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow.python.keras.engine.base_layer import Layer
-from typing import Callable, Union
+from typing import Callable, Union, List
+
+from misc_utils.math_utils import reduce_mean_from
 
 
 def squared_error(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
@@ -54,14 +56,24 @@ def negative_psnr(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     return - tf.image.psnr(y_true, y_pred, max_val=1.0)
 
 
+def multi_modal_mae(y_true: List[tf.Tensor], y_pred: List[tf.Tensor]) -> tf.Tensor:
+    maes = []
+    for _y_true, _y_pred in zip(y_true, y_pred):
+        mae = reduce_mean_from(tf.abs(_y_true - _y_pred), start_axis=1)
+        maes.append(mae)
+    result = tf.reduce_mean(maes, axis=0)
+    return result
+
+
 known_metrics = {
     "mse": squared_error,
     "mae": absolute_error,
-    # "ssim": negative_ssim,
-    # "psnr": negative_psnr,
+    "ssim": negative_ssim,
+    "psnr": negative_psnr,
     "log_mae": log_absolute_error,
     "clipped_mae": clipped_mae,
     "clipped_mae_32": clipped_mae_32,
+    "multi_modal_mae": multi_modal_mae,
 }
 
 

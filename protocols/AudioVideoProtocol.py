@@ -1,14 +1,17 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from abc import abstractmethod
+import numpy as np
+import os
 from typing import Dict, Tuple, Callable, List, Any, Union
 
 from protocols import DatasetProtocol
-from protocols.utils import make_encoder
+from protocols.utils import make_encoder, make_decoder
+from callbacks.configs import AUCCallbackConfig
 from modalities import Pattern, ModalityLoadInfo, RawVideo, RawAudio, Faces, MelSpectrogram
 from data_processing.video_processing import make_video_preprocessor, extract_faces
 from data_processing.audio_processing import MFCCProcessor
-from custom_tf_models.multimodal import ModalSync
+from custom_tf_models.multimodal import ModalSync, MMAE
 
 
 class AudioVideoProtocol(DatasetProtocol):
@@ -18,6 +21,7 @@ class AudioVideoProtocol(DatasetProtocol):
                  epoch: int,
                  config: Dict = None,
                  ):
+        self.base_log_dir = base_log_dir
         super(AudioVideoProtocol, self).__init__(dataset_name=dataset_name,
                                                  protocol_name="audio_video",
                                                  base_log_dir=base_log_dir,
@@ -29,6 +33,8 @@ class AudioVideoProtocol(DatasetProtocol):
     def make_model(self) -> Model:
         if self.model_architecture == "modal_sync":
             model = self.make_modal_sync()
+        elif self.model_architecture == "mmae":
+            model = self.make_mmae()
         else:
             raise ValueError("Unknown architecture : {}.".format(self.model_architecture))
 
@@ -39,10 +45,12 @@ class AudioVideoProtocol(DatasetProtocol):
         audio_input_shape = self.to_batch_shape(self.audio_shape)
         video_input_shape = self.to_batch_shape(self.video_shape)
         model.build([audio_input_shape, video_input_shape])
-        if isinstance(model, ModalSync):
-            audio_input_shape = self.to_batch_shape(self.audio_shape, use_batch_size=True)
-            video_input_shape = self.to_batch_shape(self.video_shape, use_batch_size=True)
-            model._set_inputs(tf.zeros(audio_input_shape), tf.zeros(video_input_shape))
+
+        audio_input_shape = self.to_batch_shape(self.audio_shape, use_batch_size=True)
+        video_input_shape = self.to_batch_shape(self.video_shape, use_batch_size=True)
+        # noinspection PyProtectedMember
+        model._set_inputs((tf.zeros(audio_input_shape), tf.zeros(video_input_shape)))
+
         model.compile(optimizer=self.make_base_optimizer())
 
     def make_modal_sync(self) -> ModalSync:
@@ -61,6 +69,7 @@ class AudioVideoProtocol(DatasetProtocol):
                                     strides=[1] * len(filters),
                                     code_size=1,
                                     code_activation="linear",
+                                    use_code_bias=True,
                                     flatten_code=False,
                                     name="EnergyModel",
                                     )
@@ -68,6 +77,40 @@ class AudioVideoProtocol(DatasetProtocol):
         model = ModalSync(encoders=[audio_encoder, video_encoder],
                           energy_model=energy_model,
                           energy_margin=None)
+        return model
+
+    def make_mmae(self) -> MMAE:
+        audio_encoder = self.make_encoder(input_shape=self.audio_shape, flatten_code=False, name="AudioEncoder")
+        video_encoder = self.make_encoder(input_shape=self.video_shape, flatten_code=False, name="VideoEncoder")
+
+        audio_code_shape = audio_encoder.compute_output_shape((None, *self.audio_shape))[1:]
+        video_code_shape = video_encoder.compute_output_shape((None, *self.video_shape))[1:]
+
+        audio_code_size = np.prod(audio_code_shape)
+        video_code_size = np.prod(video_code_shape)
+        fusion_code_size = audio_code_size + video_code_size
+
+        filters = [fusion_code_size // 4, fusion_code_size // 16, fusion_code_size // 4]
+        fusion_model = make_encoder((fusion_code_size,),
+                                    mode="dense",
+                                    filters=filters,
+                                    kernel_size=[1] * len(filters),
+                                    strides=[1] * len(filters),
+                                    code_size=fusion_code_size,
+                                    code_activation="relu",
+                                    use_code_bias=True,
+                                    flatten_code=False,
+                                    name="EnergyModel",
+                                    )
+
+        audio_decoder = self.make_decoder(input_shape=audio_code_shape, name="AudioDecoder")
+        video_decoder = self.make_decoder(input_shape=video_code_shape, name="VideoDecoder")
+
+        model = MMAE(encoders=[audio_encoder, video_encoder],
+                     decoders=[audio_decoder, video_decoder],
+                     fusion_model=fusion_model,
+                     reconstruction_loss_function=self.get_modal_sync_pretrained_error_function(),
+                     multi_modal_loss=True)
         return model
 
     # endregion
@@ -83,6 +126,15 @@ class AudioVideoProtocol(DatasetProtocol):
         else:
             raise RuntimeError
 
+    def make_decoder(self, input_shape, name="Decoder") -> Model:
+        lower_case_name = name.lower()
+        if "audio" in lower_case_name:
+            return self.make_audio_decoder(input_shape, name)
+        elif "video" in lower_case_name:
+            return self.make_video_decoder(input_shape, name)
+        else:
+            raise RuntimeError
+
     # region Audio (sub-models)
 
     def make_audio_encoder(self, input_shape, flatten_code=False, name="AudioEncoder") -> Model:
@@ -93,8 +145,23 @@ class AudioVideoProtocol(DatasetProtocol):
                                strides=self.audio_encoder_strides,
                                code_size=self.audio_code_size,
                                code_activation=self.code_activation,
-                               basic_block_count=self.audio_basic_block_count,
+                               use_code_bias=True,
+                               basic_block_count=self.audio_encoder_basic_block_count,
                                flatten_code=flatten_code,
+                               name=name,
+                               )
+        return encoder
+
+    def make_audio_decoder(self, input_shape, name="AudioDecoder") -> Model:
+        encoder = make_decoder(input_shape=input_shape,
+                               mode=self.audio_encoder_mode,
+                               filters=self.audio_encoder_filters,
+                               kernel_size=self.audio_encoder_kernel_sizes,
+                               stem_kernel_size=self.audio_decoder_stem_size,
+                               strides=self.audio_encoder_strides,
+                               channels=self.audio_channels,
+                               output_activation=self.output_activation,
+                               basic_block_count=self.audio_encoder_basic_block_count,
                                name=name,
                                )
         return encoder
@@ -111,8 +178,23 @@ class AudioVideoProtocol(DatasetProtocol):
                                strides=self.video_encoder_strides,
                                code_size=self.video_code_size,
                                code_activation=self.code_activation,
-                               basic_block_count=self.video_basic_block_count,
+                               use_code_bias=True,
+                               basic_block_count=self.video_encoder_basic_block_count,
                                flatten_code=flatten_code,
+                               name=name,
+                               )
+        return encoder
+
+    def make_video_decoder(self, input_shape, name="VideoDecoder") -> Model:
+        encoder = make_decoder(input_shape=input_shape,
+                               mode=self.video_encoder_mode,
+                               filters=self.video_encoder_filters,
+                               kernel_size=self.video_encoder_kernel_sizes,
+                               stem_kernel_size=self.video_decoder_stem_size,
+                               strides=self.video_encoder_strides,
+                               channels=self.video_channels,
+                               output_activation=self.output_activation,
+                               basic_block_count=self.video_encoder_basic_block_count,
                                name=name,
                                )
         return encoder
@@ -245,6 +327,48 @@ class AudioVideoProtocol(DatasetProtocol):
 
     # endregion
 
+    # region Pre-trained modules
+    def get_pretrained_modal_sync_model(self) -> ModalSync:
+        load_path = os.path.join(self.base_log_dir, "audio_video/audioset/pretrained_modal_sync_73")
+        modal_sync_model = tf.keras.models.load_model(load_path)
+        return modal_sync_model
+
+    def get_modal_sync_pretrained_error_function(self) -> Callable[[List[tf.Tensor], List[tf.Tensor]], tf.Tensor]:
+        modal_sync_model = self.get_pretrained_modal_sync_model()
+        modal_sync_model.trainable = False
+
+        def error_function(inputs: List[tf.Tensor], outputs: List[tf.Tensor]) -> tf.Tensor:
+            inputs_encoded = modal_sync_model.encode(inputs)
+            outputs_encoded = modal_sync_model.encode(outputs)
+            return tf.abs(inputs_encoded - outputs_encoded)
+
+        return error_function
+
+    # endregion
+
+    # region Callbacks
+
+    def get_auc_callback_configs(self) -> List[AUCCallbackConfig]:
+        if self.auc_frequency < 1:
+            return []
+
+        anomaly_pattern = self.get_anomaly_pattern()
+        auc_callbacks_configs = []
+
+        model = self.model
+
+        if isinstance(model, MMAE):
+            auc_callbacks_configs += [
+                AUCCallbackConfig(model, anomaly_pattern, labels_length=1, prefix="AE",
+                                  convert_to_io_compare_model=True, epoch_freq=self.auc_frequency,
+                                  io_compare_metrics="multi_modal_mae", sample_count=self.auc_sample_count),
+            ]
+
+        return auc_callbacks_configs
+
+    # endregion
+
+    # region Properties
     @property
     def encoder_input_shape(self) -> Tuple[int, ...]:
         raise RuntimeError("Not a single encoder input shape can be specified for audio-video protocols.")
@@ -343,8 +467,49 @@ class AudioVideoProtocol(DatasetProtocol):
         return self.audio_encoder_config["code_size"]
 
     @property
-    def audio_basic_block_count(self) -> int:
+    def audio_encoder_basic_block_count(self) -> int:
         return self.audio_encoder_config["basic_block_count"]
+
+    # endregion
+
+    # region Audio decoder properties
+    @property
+    def audio_decoder_config(self) -> Dict[str, Any]:
+        return self.audio_config["decoder"]
+
+    @property
+    def audio_decoder_mode(self) -> str:
+        return self.audio_decoder_config["mode"]
+
+    @property
+    def audio_decoder_filters(self) -> List[int]:
+        return self.audio_decoder_config["filters"]
+
+    @property
+    def audio_decoder_depth(self) -> int:
+        return len(self.audio_decoder_filters)
+
+    @property
+    def audio_decoder_kernel_sizes(self) -> Union[int, List[int]]:
+        kernel_sizes = self.audio_decoder_config["kernel_sizes"]
+        if not isinstance(kernel_sizes, (list, tuple)):
+            kernel_sizes = [kernel_sizes] * self.audio_decoder_depth
+        return kernel_sizes
+
+    @property
+    def audio_decoder_strides(self) -> Union[int, List[int]]:
+        strides = self.audio_decoder_config["strides"]
+        if not isinstance(strides, (list, tuple)):
+            strides = [strides] * self.audio_decoder_depth
+        return strides
+
+    @property
+    def audio_decoder_stem_size(self) -> int:
+        return self.audio_decoder_config["stem_size"]
+
+    @property
+    def audio_decoder_basic_block_count(self) -> int:
+        return self.audio_decoder_config["basic_block_count"]
 
     # endregion
 
@@ -455,8 +620,51 @@ class AudioVideoProtocol(DatasetProtocol):
         return self.video_encoder_config["code_size"]
 
     @property
-    def video_basic_block_count(self) -> int:
+    def video_encoder_basic_block_count(self) -> int:
         return self.video_encoder_config["basic_block_count"]
+
     # endregion
 
+    # region Video decoder properties
+    @property
+    def video_decoder_config(self) -> Dict[str, Any]:
+        return self.video_config["decoder"]
+
+    @property
+    def video_decoder_mode(self) -> str:
+        return self.video_decoder_config["mode"]
+
+    @property
+    def video_decoder_filters(self) -> List[int]:
+        return self.video_decoder_config["filters"]
+
+    @property
+    def video_decoder_depth(self) -> int:
+        return len(self.video_decoder_filters)
+
+    @property
+    def video_decoder_kernel_sizes(self) -> Union[int, List[int]]:
+        kernel_sizes = self.video_decoder_config["kernel_sizes"]
+        if not isinstance(kernel_sizes, (list, tuple)):
+            kernel_sizes = [kernel_sizes] * self.video_decoder_depth
+        return kernel_sizes
+
+    @property
+    def video_decoder_strides(self) -> Union[int, List[int]]:
+        strides = self.video_decoder_config["strides"]
+        if not isinstance(strides, (list, tuple)):
+            strides = [strides] * self.video_decoder_depth
+        return strides
+
+    @property
+    def video_decoder_stem_size(self) -> int:
+        return self.video_decoder_config["stem_size"]
+
+    @property
+    def video_decoder_basic_block_count(self) -> int:
+        return self.video_decoder_config["basic_block_count"]
+
+    # endregion
+
+    # endregion
     # endregion

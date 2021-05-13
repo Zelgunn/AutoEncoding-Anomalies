@@ -6,7 +6,7 @@
         "encoder": {
             "mode": "conv",
             "basic_block_count": 2,
-            "code_size": 32,
+            "code_size": 64,
             "filters": [64, 128, 256],
             "kernel_sizes": [7, 7, 7],
             "strides": [4, 4, 4]
@@ -18,7 +18,7 @@
         "encoder": {
             "mode": "conv",
             "basic_block_count": 2,
-            "code_size": 32,
+            "code_size": 64,
             "filters": [64, 64, 64, 64],
             "kernel_sizes": [7, 3, 3, 3],
             "strides": [[2, 4, 4], [2, 2, 2], [2, 2, 2], [2, 2, 2]]
@@ -26,7 +26,7 @@
     },
     "code_activation": "relu",
     "output_activation": "sigmoid",
-    "batch_size": 4,
+    "batch_size": 8,
     "learning_rate": 0.0001,
     "optimizer": "adam",
     "seed": 42,
