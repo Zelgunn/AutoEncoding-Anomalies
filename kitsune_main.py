@@ -20,7 +20,7 @@ from protocols.Protocol import get_dataset_folder
 from protocols.packet_protocols import KitsuneProtocol
 from misc_utils.general import int_ceil
 from misc_utils.numpy_utils import safe_normalize, safe_standardize
-from custom_tf_models import VIAE, CnC, LED
+from custom_tf_models import VIAE, CnC, LED, LTM
 
 
 class KitsuneTest(object):
@@ -49,7 +49,7 @@ class KitsuneTest(object):
         self.roc = tf.metrics.AUC(curve="ROC", num_thresholds=self.num_thresholds)
         self.pr = tf.metrics.AUC(curve="PR", num_thresholds=self.num_thresholds)
 
-        if not isinstance(self.model, (CnC, LED)):
+        if not isinstance(self.model, (CnC, LED, LTM)):
             score_mode = "reconstruction"
         elif score_mode == "auto":
             score_mode = "combined"
@@ -222,9 +222,18 @@ class KitsuneTest(object):
         elif self.score_mode == "energy":
             anomaly_scores = self.compute_energy_anomaly_scores(inputs, use_log=use_log)
         elif self.score_mode == "combined":
-            reconstruction_scores = self.compute_reconstruction_anomaly_scores(inputs, use_log=use_log)
-            energy_scores = self.compute_energy_anomaly_scores(inputs, use_log=use_log)
-            anomaly_scores = self.tf_normalize(reconstruction_scores) + self.tf_normalize(energy_scores)
+            if isinstance(self.model, (CnC, LED)):
+                reconstruction_scores = self.compute_reconstruction_anomaly_scores(inputs, use_log=use_log)
+                energy_scores = self.compute_energy_anomaly_scores(inputs, use_log=use_log)
+                anomaly_scores = self.tf_normalize(reconstruction_scores) + self.tf_normalize(energy_scores)
+            elif isinstance(self.model, LTM):
+                interpolation_scores = self.compute_anomaly_scores(inputs, self.sample_length,
+                                                                   self.model.compute_interpolation_error, use_log)
+                norm_scores = self.compute_anomaly_scores(inputs, self.sample_length,
+                                                          self.model.compute_norm_error, use_log)
+                anomaly_scores = self.tf_normalize(interpolation_scores) + self.tf_normalize(norm_scores)
+            else:
+                raise RuntimeError
         else:
             raise RuntimeError
 
@@ -243,6 +252,9 @@ class KitsuneTest(object):
             score_function = self.model.mean_relevance_energy
         elif isinstance(self.model, LED):
             score_function = self.model.compute_description_energy
+        elif isinstance(self.model, LTM):
+            # score_function = self.model.compute_norm_error
+            score_function = self.model.compute_interpolation_error
         else:
             raise RuntimeError
         anomaly_scores = self.compute_anomaly_scores(inputs, self.sample_length, score_function, use_log)

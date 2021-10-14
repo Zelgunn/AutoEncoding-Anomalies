@@ -77,6 +77,8 @@ class PacketProtocol(DatasetProtocol):
             model = self.make_led()
         elif self.model_architecture == "iterative_ae":
             model = self.make_iterative_ae()
+        elif self.model_architecture == "ltm":
+            model = self.make_ltm()
         else:
             raise ValueError("Unknown architecture : {}".format(self.model_architecture))
 
