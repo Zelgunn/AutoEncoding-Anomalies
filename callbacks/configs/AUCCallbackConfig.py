@@ -12,10 +12,11 @@ from misc_utils.general import get_model_inputs_count
 
 class AUCCallbackConfig(object):
     def __init__(self,
-                 base_model: Union[Model, Callable],
+                 base_model: Model,
                  pattern: Pattern,
                  labels_length: int,
                  prefix: str,
+                 base_function: Callable = None,
                  epoch_freq: int = 1,
                  batch_size: int = 4,
                  sample_count: int = 128,
@@ -23,16 +24,20 @@ class AUCCallbackConfig(object):
                  io_compare_metrics: Union[List[Union[str, Callable]], Union[str, Callable]] = "mse"
                  ):
 
+        if base_function is None:
+            base_function = base_model
+
         if convert_to_io_compare_model:
-            predictions_model = IOCompareModel(base_model,
+            predictions_model = IOCompareModel(base_function,
                                                metrics=io_compare_metrics,
                                                name="{}AutoencoderRawPredictionsModel".format(prefix))
-        elif not isinstance(base_model, Model):
-            predictions_model = LambdaModel(function=base_model, name="{}RawPredictionsModel".format(prefix))
+        elif not isinstance(base_function, Model):
+            predictions_model = LambdaModel(function=base_function, name="{}RawPredictionsModel".format(prefix))
         else:
-            predictions_model = base_model
+            predictions_model = base_function
 
         self.base_model = base_model
+        self.base_function = base_function
         self.predictions_model = predictions_model
         self.pattern = pattern
         self.labels_length = labels_length
