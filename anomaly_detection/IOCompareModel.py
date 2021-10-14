@@ -28,6 +28,7 @@ class IOCompareModel(Model):
         if (len(inputs) % 2) != 0:
             raise ValueError("You must provide an even number of tensors for this model, "
                              "made from [inputs] + [ground_truth].")
+
         inputs_count = len(inputs) // 2
         inputs, ground_truth = inputs[:inputs_count], inputs[inputs_count:]
 

@@ -13,7 +13,7 @@ from modalities import Pattern
 from protocols import Protocol, ProtocolTrainConfig, ProtocolTestConfig
 from protocols.utils import make_encoder, make_decoder, make_discriminator
 from callbacks.configs import AUCCallbackConfig, AnomalyDetectorCallbackConfig
-from custom_tf_models import AE, VAE, IAE, VIAE, LED, CnC, IterativeAE
+from custom_tf_models import AE, VAE, IAE, VIAE, LED, CnC, IterativeAE, LTM
 from custom_tf_models.energy_based import EBAE
 from custom_tf_models.adversarial import IAEGAN
 
@@ -119,23 +119,34 @@ class DatasetProtocol(Protocol):
 
         if isinstance(model, IAE):
             auc_callbacks_configs += [
-                AUCCallbackConfig(model.interpolate, anomaly_pattern, labels_length=self.output_length, prefix="IAE",
+                AUCCallbackConfig(model, anomaly_pattern, base_function=model.interpolate,
+                                  labels_length=self.output_length, prefix="IAE",
                                   convert_to_io_compare_model=True, epoch_freq=self.auc_frequency,
                                   io_compare_metrics="clipped_mae", sample_count=self.auc_sample_count)
             ]
 
         if isinstance(model, IAEGAN):
             auc_callbacks_configs += [
-                AUCCallbackConfig(model.discriminate, anomaly_pattern, labels_length=1, prefix="GAN",
-                                  convert_to_io_compare_model=False, epoch_freq=self.auc_frequency,
+                AUCCallbackConfig(model, anomaly_pattern, base_function=model.discriminate, labels_length=1,
+                                  prefix="GAN", convert_to_io_compare_model=False, epoch_freq=self.auc_frequency,
                                   sample_count=self.auc_sample_count)
             ]
 
         if isinstance(model, CnC):
             auc_callbacks_configs += [
-                AUCCallbackConfig(model.mean_relevance_energy, anomaly_pattern, labels_length=1, prefix="CnC",
-                                  convert_to_io_compare_model=False, epoch_freq=self.auc_frequency,
+                AUCCallbackConfig(model, anomaly_pattern, base_function=model.mean_relevance_energy, labels_length=1,
+                                  prefix="CnC", convert_to_io_compare_model=False, epoch_freq=self.auc_frequency,
                                   sample_count=self.auc_sample_count)
+            ]
+
+        if isinstance(model, LTM):
+            auc_callbacks_configs += [
+                AUCCallbackConfig(model, anomaly_pattern, base_function=model.compute_interpolation_error,
+                                  labels_length=1, prefix="LTM_InterpolationError", convert_to_io_compare_model=False,
+                                  epoch_freq=self.auc_frequency, sample_count=self.auc_sample_count),
+                # AUCCallbackConfig(model, anomaly_pattern, base_function=model.compute_norm_error,
+                #                   labels_length=1, prefix="LTM_NormError", convert_to_io_compare_model=False,
+                #                   epoch_freq=self.auc_frequency, sample_count=self.auc_sample_count)
             ]
 
         return auc_callbacks_configs
@@ -249,7 +260,7 @@ class DatasetProtocol(Protocol):
 
     @property
     def output_length(self) -> int:
-        if self.model_architecture in ["iae", "viae", "and", "iaegan", "avp"]:
+        if self.model_architecture in ["iae", "viae", "and", "iaegan", "avp", "ltm"]:
             return self.step_size * self.step_count
         elif self.model_architecture in ["aep", "preled"]:
             return self.step_size * 2
@@ -419,6 +430,10 @@ class DatasetProtocol(Protocol):
 
     def make_ae(self) -> AE:
         encoder, decoder = self.make_encoder_decoder()
+        # ltm = LTM(encoder, step_size=16, pull_lambda=1e-1, normalize_interpolated=False)
+        # ltm.load_weights(r"E:\Users\Degva\Documents\_PhD\Tensorflow\logs\AEA\packet\Active Wiretap\weights_256")
+        # self.setup_model(ltm)
+        # encoder.trainable = False
         model = AE(encoder=encoder, decoder=decoder)
         return model
 
@@ -539,6 +554,16 @@ class DatasetProtocol(Protocol):
                             output_activation=self.output_activation,
                             stop_accumulator_gradients=False,
                             )
+        return model
+
+    def make_ltm(self) -> LTM:
+        encoder = self.make_encoder(input_shape=self.encoder_input_shape, flatten_code=True)
+        model = LTM(encoder=encoder,
+                    step_size=self.step_size,
+                    interpolation_lambda=1.0,
+                    pull_lambda=1e-1,
+                    normalize_interpolated=False,
+                    )
         return model
 
     # endregion
@@ -663,7 +688,6 @@ class DatasetProtocol(Protocol):
 
     def setup_model(self, model: Model):
         model.build(self.get_encoder_input_batch_shape(False))
-        if isinstance(model, (IAE, LED)):
-            # noinspection PyProtectedMember
-            model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
+        # noinspection PyProtectedMember
+        model._set_inputs(tf.zeros(self.get_encoder_input_batch_shape(True)))
         model.compile(optimizer=self.make_base_optimizer())

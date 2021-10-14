@@ -27,7 +27,7 @@ class UCSDProtocol(VideoProtocol):
                                   epoch=self.epoch,
                                   detector_stride=1,
                                   pre_normalize_predictions=True,
-                                  compare_metrics="mae"
+                                  compare_metrics=["mae"]
                                   )
 
     @property

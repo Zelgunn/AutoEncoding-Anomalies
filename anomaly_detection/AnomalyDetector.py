@@ -151,8 +151,6 @@ class AnomalyDetector(Model):
                                                                   normalize_predictions=pre_normalize_predictions)
                 sample_predictions, sample_labels = sample_results
                 for i in range(self.metric_count):
-                    print(sample_name, sample_predictions[i].mean(), sample_predictions[i].min(),
-                          sample_predictions[i].max())
                     predictions[i].append(sample_predictions[i])
                 labels.append(sample_labels)
 

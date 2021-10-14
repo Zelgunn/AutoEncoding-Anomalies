@@ -38,6 +38,8 @@ class VideoProtocol(DatasetProtocol):
             model = self.make_aep()
         elif self.model_architecture == "iae":
             model = self.make_iae()
+        elif self.model_architecture == "viae":
+            model = self.make_viae()
         elif self.model_architecture == "bin_ae":
             model = self.make_bin_ae()
         elif self.model_architecture == "iaegan":
@@ -299,7 +301,8 @@ class VideoProtocol(DatasetProtocol):
                                                  channels=self.dataset_channels,
                                                  dropout_noise_ratio=self.dropout_noise_ratio,
                                                  negative_prob=negative_prob,
-                                                 activation_range=self.output_activation)
+                                                 activation_range=self.output_activation,
+                                                 gaussian_noise_std=self.gaussian_noise_std)
 
     def make_video_preprocess(self, include_labels: bool) -> Callable:
         target_size = (self.height, self.width) if not self.extract_patches == "resize" else None
@@ -385,8 +388,8 @@ class VideoProtocol(DatasetProtocol):
         return self.data_augmentation_config["dropout_noise_ratio"]
 
     @property
-    def gaussian_noise_ratio(self) -> float:
-        return self.data_augmentation_config["gaussian_noise_ratio"]
+    def gaussian_noise_std(self) -> float:
+        return self.data_augmentation_config["gaussian_noise_std"]
 
     @property
     def use_random_negative(self) -> bool:
