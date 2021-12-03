@@ -8,3 +8,4 @@ Basic configuration files allows for rapid iterations.
 This project relies on other modules developed for it (on this github) : custom_tf_models, datasets, modaliies, CustomKerasLayers, and misc_utils.
 
 This project was realised during my PhD Thesis, which was founded by the UBS (Université de Bretagne Sud) and the DGA (Direction Générale de l'Armement).
+(The Github repository is not currently up-to-date!)
