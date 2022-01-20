@@ -199,8 +199,9 @@ class DatasetProtocol(Protocol):
 
     def save_dataset_config(self, log_dir: str):
         source_path = os.path.join(self.dataset_folder, tfrecords_config_filename)
-        target_path = os.path.join(log_dir, "dataset_{}".format(tfrecords_config_filename))
-        copyfile(src=source_path, dst=target_path)
+        if os.path.exists(source_path):
+            target_path = os.path.join(log_dir, "dataset_{}".format(tfrecords_config_filename))
+            copyfile(src=source_path, dst=target_path)
 
     def get_config_value(self, key: str, default: Any) -> Any:
         if key not in self.config:

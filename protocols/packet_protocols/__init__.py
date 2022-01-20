@@ -1,1 +1,2 @@
 from protocols.packet_protocols.KitsuneProtocol import KitsuneProtocol
+from protocols.packet_protocols.CIDDSProtocol import CIDDSProtocol

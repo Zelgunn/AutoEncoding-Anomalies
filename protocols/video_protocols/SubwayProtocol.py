@@ -1,6 +1,6 @@
 from typing import Dict
 
-from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
+from datasets.tfrecord_builders.video_datasets.SubwayTFRB import SubwayVideo
 from protocols import VideoProtocol, ProtocolTestConfig
 
 

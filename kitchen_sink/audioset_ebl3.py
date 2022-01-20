@@ -41,7 +41,9 @@ def get_audio_encoder(length: int,
                                 code_activation="linear",
                                 basic_block_count=1,
                                 mode="conv",
-                                name="AudioEncoder"
+                                name="AudioEncoder",
+                                flatten_code=False,
+                                use_code_bias=True,
                                 )
 
     input_shape = (length, channels, 1)
@@ -124,7 +126,9 @@ def get_video_encoder(length: int,
                                 code_activation="linear",
                                 basic_block_count=1,
                                 mode="conv",
-                                name="VideoEncoder"
+                                name="VideoEncoder",
+                                flatten_code=False,
+                                use_code_bias=True,
                                 )
 
     layers = [

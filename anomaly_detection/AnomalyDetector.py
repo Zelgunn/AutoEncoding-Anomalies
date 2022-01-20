@@ -66,7 +66,7 @@ class AnomalyDetector(Model):
         if isinstance(inputs, (list, tuple)):
             inputs = [tf.expand_dims(x, axis=0) for x in inputs]
             ground_truth = [tf.expand_dims(x, axis=0) for x in ground_truth]
-        else:
+        elif inputs.shape[0] != 1:
             inputs = tf.expand_dims(inputs, axis=0)
             ground_truth = tf.expand_dims(ground_truth, axis=0)
 
@@ -180,7 +180,14 @@ class AnomalyDetector(Model):
                 self.prog_bar.update(stride)
 
         predictions = [np.concatenate(metric_prediction, axis=0) for metric_prediction in predictions]
-        labels = self.timestamps_labels_to_frame_labels(labels)
+        if (len(labels[0].shape) == 2) and (labels[0].shape[1] == 2):
+            labels = self.timestamps_labels_to_frame_labels(labels)
+        elif len(labels[0].shape) == 1:
+            labels = np.stack(labels, axis=0)
+            labels = np.any(labels > 0.5, axis=1)
+        else:
+            raise ValueError("Labels should either be timestamps with shape [n, 2] or [length], got {}".
+                             format(labels[0].shape))
 
         if normalize_predictions:
             predictions = [normalize(metric_prediction) for metric_prediction in predictions]

@@ -1,0 +1,34 @@
+{
+    "model_architecture": "viae",
+    "step_size": 16,
+    "step_count": 4,
+    "code_size": 2,
+    "code_activation": "linear",
+    "stem_kernel_size": 3,
+    "base_kernel_size": 3,
+    "basic_block_count": 4,
+    "encoder": {
+        "mode": "conv",
+        "filters": [128, 96, 64, 48, 32, 24, 16, 8, 4],
+        "strides": [1, 1, 1, 1, 1, 1, 1, 2, 2]
+    },
+    "decoder": {
+        "mode": "conv",
+        "filters": [4, 8, 16, 24, 32, 48, 64, 96, 128],
+        "strides": [2, 2, 1, 1, 1, 1, 1, 1, 1]
+    },
+    "output_activation": "sigmoid",
+    "gaussian_noise_std" : 0.00,
+    "train_samples_ratio" : 1.0,
+    "batch_size": 128,
+    "learning_rate": 0.001,
+    "optimizer": "adam",
+    "seed": 42,
+    "epochs": 256,
+    "steps_per_epoch": 1000,
+    "validation_steps": 128,
+    "save_frequency": "epoch",
+    "auc_frequency": 4,
+    "auc_sample_count": 2048,
+    "current_test": "VIAE : Initial tests with VIAE"
+}

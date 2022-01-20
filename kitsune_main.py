@@ -15,7 +15,7 @@ from scipy.interpolate import interp1d
 from typing import Tuple, List, Dict, Optional, Callable
 
 from main import run_protocol
-from datasets.data_readers import PacketReader
+from datasets.data_readers import KitsunePacketReader
 from protocols.Protocol import get_dataset_folder
 from protocols.packet_protocols import KitsuneProtocol
 from misc_utils.general import int_ceil
@@ -145,8 +145,7 @@ class KitsuneTest(object):
     def get_packets(self, max_frame_count: int = None) -> np.ndarray:
         if not os.path.exists(self.get_packets_numpy_filepath()):
             packets_file = self.get_packets_csv_filepath()
-            packets_reader = PacketReader(packets_file, max_frame_count=max_frame_count,
-                                          discard_first_column=self.is_mirai)
+            packets_reader = KitsunePacketReader(packets_file, max_frame_count=max_frame_count, is_mirai=self.is_mirai)
             packets = np.stack([packet for packet in packets_reader], axis=0)
             np.save(self.get_packets_numpy_filepath(), packets)
         else:
@@ -654,7 +653,9 @@ class KitsuneTestSet(object):
                 checkpoint.restore(weights_path).expect_partial()
 
                 packets = tf.convert_to_tensor(test.get_packets()[:test.train_samples_count], dtype=tf.float32)
-                anomaly_scores = test.compute_anomaly_scores(packets, use_log=self.use_log_score)
+                anomaly_scores = test.compute_anomaly_scores(inputs=packets, samples_length=test.sample_length,
+                                                             score_function=test.compute_base_anomaly_score,
+                                                             use_log=self.use_log_score)
 
                 method_scores = []
                 for method in methods_used:

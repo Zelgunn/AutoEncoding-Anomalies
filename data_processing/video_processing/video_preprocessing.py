@@ -1,5 +1,5 @@
 import tensorflow as tf
-from typing import Tuple, Callable, Union, Optional
+from typing import Tuple, Callable, Union
 
 from data_processing.common import dropout_noise, ActivationRange, apply_activation_range
 

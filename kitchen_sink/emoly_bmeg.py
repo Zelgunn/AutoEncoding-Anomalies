@@ -381,7 +381,7 @@ def main():
         error.set_shape((None, video_length))
         return error
 
-    auc_callback_config = AUCCallbackConfig(base_model=model.autoencode, pattern=auc_pattern,
+    auc_callback_config = AUCCallbackConfig(base_model=model, pattern=auc_pattern, base_function=model.autoencode,
                                             labels_length=video_length, prefix="", sample_count=2048,
                                             convert_to_io_compare_model=True,
                                             io_compare_metrics=audio_video_reconstruction_score)

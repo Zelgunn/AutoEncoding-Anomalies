@@ -1,9 +1,9 @@
 # from tensorflow.keras.mixed_precision import experimental as mixed_precision
 import argparse
 
-from datasets.tfrecord_builders.SubwayTFRB import SubwayVideo
+from datasets.tfrecord_builders.video_datasets.SubwayTFRB import SubwayVideo
 from protocols.video_protocols import UCSDProtocol, AvenueProtocol, ShanghaiTechProtocol, SubwayProtocol
-from protocols.packet_protocols import KitsuneProtocol
+from protocols.packet_protocols import KitsuneProtocol, CIDDSProtocol
 from protocols.audio_video_protocols import EmolyProtocol, AudiosetProtocol
 
 
@@ -48,12 +48,14 @@ def run_protocol(dataset: str, mode: str, epoch: int, log_dir: str):
         protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.MALL2)
     elif dataset == "mall3":
         protocol = SubwayProtocol(base_log_dir=log_dir, epoch=epoch, video_id=SubwayVideo.MALL3)
-    elif KitsuneProtocol.is_kitsune_id(dataset):
-        protocol = KitsuneProtocol(base_log_dir=log_dir, epoch=epoch, kitsune_dataset=dataset)
     elif dataset == "emoly":
         protocol = EmolyProtocol(base_log_dir=log_dir, epoch=epoch)
     elif dataset == "audioset":
         protocol = AudiosetProtocol(base_log_dir=log_dir, epoch=epoch)
+    elif KitsuneProtocol.is_kitsune_id(dataset):
+        protocol = KitsuneProtocol(base_log_dir=log_dir, epoch=epoch, kitsune_dataset=dataset)
+    elif dataset.startswith("cidds"):
+        protocol = CIDDSProtocol(base_log_dir=log_dir, epoch=epoch, network_protocol=dataset)
     else:
         raise ValueError("Invalid dataset : `{}`".format(dataset))
 

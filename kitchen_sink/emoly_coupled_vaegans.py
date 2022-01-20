@@ -93,7 +93,10 @@ def main():
                                               code_size=code_size,
                                               code_activation="tanh",
                                               mode="conv",
-                                              name="VideoEncoder")
+                                              name="VideoEncoder",
+                                              flatten_code=False,
+                                              use_code_bias=True,
+                                              )
     video_code_shape = compute_output_shape(video_encoder_layers, video_shape)
     video_encoder_layers.append(reshape_to_common_code)
     video_encoder = to_sequential(layers=video_encoder_layers, input_shape=video_shape, name="VideoEncoder")
@@ -140,7 +143,10 @@ def main():
                                               code_size=code_size,
                                               code_activation="tanh",
                                               mode="conv",
-                                              name="AudioEncoder")
+                                              name="AudioEncoder",
+                                              flatten_code=False,
+                                              use_code_bias=True,
+                                              )
     audio_code_shape = compute_output_shape(audio_encoder_layers, audio_shape)
     audio_encoder_layers.append(reshape_to_common_code)
     audio_encoder = to_sequential(layers=audio_encoder_layers, input_shape=audio_shape, name="AudioEncoder")
@@ -299,7 +305,7 @@ def main():
         error.set_shape((None, video_length))
         return error
 
-    auc_callback_config = AUCCallbackConfig(base_model=model.autoencode, pattern=auc_pattern,
+    auc_callback_config = AUCCallbackConfig(base_model=model, pattern=auc_pattern, base_function=model.autoencode,
                                             labels_length=video_length, prefix="", sample_count=2048,
                                             convert_to_io_compare_model=True,
                                             io_compare_metrics=audio_video_reconstruction_score)

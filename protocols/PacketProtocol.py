@@ -115,9 +115,10 @@ class PacketProtocol(DatasetProtocol):
         anomaly_pattern = self.get_anomaly_pattern()
         if isinstance(self.model, LED):
             auc_callbacks_configs += [
-                AUCCallbackConfig(self.model.compute_description_energy, anomaly_pattern, labels_length=1, prefix="LED",
-                                  convert_to_io_compare_model=False, epoch_freq=self.auc_frequency,
-                                  sample_count=self.auc_sample_count)
+                AUCCallbackConfig(base_model=self.model, pattern=anomaly_pattern,
+                                  base_function=self.model.compute_description_energy,
+                                  labels_length=1, prefix="LED", convert_to_io_compare_model=False,
+                                  epoch_freq=self.auc_frequency, sample_count=self.auc_sample_count)
             ]
 
         return auc_callbacks_configs

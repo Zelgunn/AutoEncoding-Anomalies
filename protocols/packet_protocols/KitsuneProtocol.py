@@ -1,8 +1,8 @@
 import os
 from typing import Union, Dict
 
-from datasets.tfrecord_builders.KitsuneTFRB import KitsuneDataset
-from datasets.loaders.kitsune import KitsuneLoader
+from datasets.tfrecord_builders.nids_datasets.KitsuneTFRB import KitsuneDataset
+from datasets.loaders.nprecords import KitsuneLoader
 from protocols import PacketProtocol, ProtocolTestConfig, ProtocolTrainConfig
 
 dataset_id_to_name = {

@@ -7,7 +7,7 @@ import os
 from typing import List, Callable, Dict, Sequence, Union, Optional
 
 from custom_tf_models import AE
-from anomaly_detection import AnomalyDetector, known_metrics
+from anomaly_detection import AnomalyDetector
 from callbacks.configs import ModalityCallbackConfig, AUCCallbackConfig, AnomalyDetectorCallbackConfig
 from datasets import DatasetLoader, SingleSetConfig, TFRecordDatasetLoader
 from misc_utils.train_utils import save_model_info
@@ -128,6 +128,9 @@ class Protocol(object):
 
         print("Protocol - Training : Making datasets ...")
         train_dataset, val_dataset = self.make_train_dataset_splits(config=config)
+
+        self.model.summary()
+        exit()
 
         print("Protocol - Training : Fit loop ...")
         self.model.fit(train_dataset, steps_per_epoch=config.steps_per_epoch, epochs=config.epochs,
@@ -269,6 +272,7 @@ class Protocol(object):
         save_model_info(self.model, log_dir)
         return log_dir
 
+    # noinspection PyUnusedLocal
     def load_weights(self, epoch: int, verbose=False, expect_partial=False):
         weights_path = os.path.join(self.dataset_log_dir, "weights_{epoch:03d}")
         if verbose:
@@ -333,6 +337,9 @@ def get_dataset_folder(dataset_name: str) -> str:
         "SSL Renegotiation": "../datasets/kitsune/SSL Renegotiation",
         "SYN DoS": "../datasets/kitsune/SYN DoS",
         "Video Injection": "../datasets/kitsune/Video Injection",
+
+        "CIDDS.TCP": "../datasets/cidds/OpenStack",
+        "CIDDS.UDP": "../datasets/cidds/OpenStack",
     }
 
     if dataset_name in known_datasets:
